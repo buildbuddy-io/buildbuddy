@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"slices"
 	"sort"
 	"sync"
@@ -2049,6 +2050,77 @@ func TestEnqueueTaskReservation_RequiresAppClientIdentity(t *testing.T) {
 	localClient := &schedulerClient{localServer: scheduler}
 	_, err = localClient.EnqueueTaskReservation(ctx, request())
 	require.True(t, status.IsUnavailableError(err))
+}
+
+func TestCancelTaskReservation_RequiresAppClientIdentity(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityApp)
+	scheduler := env.GetSchedulerService().(*SchedulerServer)
+
+	request := func() *scpb.CancelTaskReservationRequest {
+		return &scpb.CancelTaskReservationRequest{TaskId: "task-id", ExecutorId: "executor-id"}
+	}
+	contextWithIdentity := func(client string) context.Context {
+		identityService := env.GetClientIdentityService()
+		header, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+			Origin: interfaces.ClientIdentityInternalOrigin,
+			Client: client,
+		}, time.Minute)
+		require.NoError(t, err)
+		incomingCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+		validatedCtx, err := identityService.ValidateIncomingIdentity(incomingCtx)
+		require.NoError(t, err)
+		return validatedCtx
+	}
+
+	_, err := scheduler.CancelTaskReservation(ctx, request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	_, err = scheduler.CancelTaskReservation(contextWithIdentity(interfaces.ClientIdentityExecutor), request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// The executor isn't connected to this app, which is not an error.
+	_, err = scheduler.CancelTaskReservation(contextWithIdentity(interfaces.ClientIdentityApp), request())
+	require.NoError(t, err)
+}
+
+func TestCancelOnRemoteExecutor_PeerReturnsUnimplemented(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	scheduler := env.GetSchedulerService().(*SchedulerServer)
+
+	// A peer app that predates CancelTaskReservation answers it with
+	// Unimplemented, as apps on older versions do during a rollout.
+	calls := make(chan string, 1)
+	peer := grpc.NewServer(grpc.UnknownServiceHandler(func(srv any, stream grpc.ServerStream) error {
+		method, _ := grpc.MethodFromServerStream(stream)
+		calls <- method
+		return status.UnimplementedErrorf("unknown method %s", method)
+	}))
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	go peer.Serve(lis)
+	t.Cleanup(peer.Stop)
+
+	node := &executionNode{
+		ExecutionNode:     &scpb.ExecutionNode{ExecutorId: "executor-id"},
+		schedulerHostPort: lis.Addr().String(),
+	}
+	// Best effort: the error is logged and dropped.
+	scheduler.cancelOnRemoteExecutor(ctx, node, "task-id")
+
+	// The scheduler caches the peer connection and never closes it; close it
+	// so the test doesn't leak its goroutines.
+	conn, err := scheduler.schedulerClientCache.conns.Get(node.schedulerHostPort)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	// The peer handled the call before the client got its response.
+	select {
+	case method := <-calls:
+		require.Equal(t, "/scheduler.Scheduler/CancelTaskReservation", method)
+	default:
+		require.FailNow(t, "CancelTaskReservation did not reach the peer")
+	}
 }
 
 func TestEnqueueTaskReservation_Exists(t *testing.T) {

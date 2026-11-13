@@ -2500,10 +2500,19 @@ func TestContainerRegistryBypass(t *testing.T) {
 }
 
 func TestProactiveCancellation(t *testing.T) {
+	for _, forward := range []bool{false, true} {
+		t.Run(fmt.Sprintf("forward=%t", forward), func(t *testing.T) {
+			testProactiveCancellation(t, forward)
+		})
+	}
+}
+
+func testProactiveCancellation(t *testing.T, forward bool) {
 	// Disable work stealing and queue pruning to make scheduling more
 	// predictable and make sure we're testing the right thing.
 	flags.Set(t, "executor.excess_capacity_threshold", -1)
 	flags.Set(t, "executor.queue_trim_interval", 0)
+	flags.Set(t, "remote_execution.forward_proactive_cancellations", forward)
 
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
@@ -2518,7 +2527,11 @@ func TestProactiveCancellation(t *testing.T) {
 
 	// Schedule command1 to occupy one executor.
 	cmd1 := rbe.ExecuteControlledCommand("command1", &rbetest.ExecuteControlledOpts{})
+	cmd1TaskID := cmd1.WaitAccepted()
 	cmd1.WaitStarted()
+	// Make sure both of command1's reservations have been delivered, so that
+	// a late one can't be queued behind command2.
+	rbe.WaitForTaskReservationsRecorded(cmd1TaskID, executor1, executor2)
 
 	// The other executor should try the lease and fail, then eventually there
 	// should be no tasks in either queue.
@@ -2530,9 +2543,12 @@ func TestProactiveCancellation(t *testing.T) {
 	// - Get queued on the busy executor (waiting for resources)
 	// - Start running on the other executor
 	cmd2 := rbe.ExecuteControlledCommand("command2", &rbetest.ExecuteControlledOpts{})
+	cmd2TaskID := cmd2.WaitAccepted()
 	cmd2.WaitStarted()
 
-	// Wait for the task reservation to be queued on the busy executor.
+	// Wait for the task reservation to be queued on the busy executor, and
+	// recorded for proactive cancellation.
+	rbe.WaitForTaskReservationsRecorded(cmd2TaskID, executor1, executor2)
 	require.Eventually(t, func() bool {
 		return totalQueueLen() == 1
 	}, time.Minute, 10*time.Millisecond)
@@ -2550,6 +2566,58 @@ func TestProactiveCancellation(t *testing.T) {
 	}, time.Minute, 10*time.Millisecond)
 
 	// Clean up: exit command1.
+	cmd1.Exit(0)
+	res1 := cmd1.Wait()
+	assert.Equal(t, 0, res1.ExitCode)
+}
+
+func TestProactiveCancellation_AcrossApps(t *testing.T) {
+	flags.Set(t, "executor.excess_capacity_threshold", -1)
+	flags.Set(t, "executor.queue_trim_interval", 0)
+	flags.Set(t, "remote_execution.forward_proactive_cancellations", true)
+
+	rbe := rbetest.NewRBETestEnv(t)
+	app1 := rbe.AddBuildBuddyServer()
+	app2 := rbe.AddBuildBuddyServer()
+
+	// Pin each executor to a different app, so that the app finalizing a task
+	// is never the app holding the other executor's work stream.
+	executor1 := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "executor1", PinnedApp: app1})
+	executor2 := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "executor2", PinnedApp: app2})
+
+	totalQueueLen := func() int {
+		return executor1.QueueLength() + executor2.QueueLength()
+	}
+
+	cmd1 := rbe.ExecuteControlledCommand("command1", &rbetest.ExecuteControlledOpts{})
+	cmd1TaskID := cmd1.WaitAccepted()
+	cmd1.WaitStarted()
+	// Make sure both of command1's reservations have been delivered, so that
+	// a late one can't be queued behind command2.
+	rbe.WaitForTaskReservationsRecorded(cmd1TaskID, executor1, executor2)
+	require.Eventually(t, func() bool {
+		return totalQueueLen() == 0
+	}, time.Minute, 10*time.Millisecond)
+
+	// command2 can only start on the free executor, and is queued on the busy
+	// one. Wait until that reservation is also recorded for proactive
+	// cancellation.
+	cmd2 := rbe.ExecuteControlledCommand("command2", &rbetest.ExecuteControlledOpts{})
+	cmd2TaskID := cmd2.WaitAccepted()
+	cmd2.WaitStarted()
+	rbe.WaitForTaskReservationsRecorded(cmd2TaskID, executor1, executor2)
+	require.Eventually(t, func() bool {
+		return totalQueueLen() == 1
+	}, time.Minute, 10*time.Millisecond)
+
+	cmd2.Exit(0)
+	res2 := cmd2.Wait()
+	assert.Equal(t, 0, res2.ExitCode)
+
+	require.Eventually(t, func() bool {
+		return totalQueueLen() == 0
+	}, time.Minute, 10*time.Millisecond)
+
 	cmd1.Exit(0)
 	res1 := cmd1.Wait()
 	assert.Equal(t, 0, res1.ExitCode)
