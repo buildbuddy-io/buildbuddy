@@ -639,9 +639,10 @@ func (sm *Replica) deleteTxnRollbackMarkersBefore(wb pebble.Batch, req *rfpb.Del
 }
 
 func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
+	start, end := keys.Range(sm.replicaPrefix())
 	iterOpts := &pebble.IterOptions{
-		LowerBound: constants.LocalPrefix,
-		UpperBound: constants.MetaRangePrefix,
+		LowerBound: start,
+		UpperBound: end,
 	}
 	iter, err := db.NewIter(iterOpts)
 	if err != nil {
@@ -2082,9 +2083,10 @@ func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
 }
 
 func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error {
+	start, end := keys.Range(sm.replicaPrefix())
 	iter, err := snap.NewIter(&pebble.IterOptions{
-		LowerBound: constants.LocalPrefix,
-		UpperBound: constants.MetaRangePrefix,
+		LowerBound: start,
+		UpperBound: end,
 	})
 	if err != nil {
 		return err

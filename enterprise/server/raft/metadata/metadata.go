@@ -867,12 +867,18 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	return &mdpb.DeleteResponse{}, nil
 }
 
-func (rc *Server) TestingWaitForGC(ctx context.Context) error {
-	// Flush pending atime updates before running GC so that the eviction
-	// sampler sees up-to-date access times.
+// TestingFlushAtimeUpdates blocks until every atime update enqueued before
+// the call has been proposed.
+func (rc *Server) TestingFlushAtimeUpdates() {
 	done := make(chan struct{})
 	rc.accesses <- &accessTimeUpdate{done: done}
 	<-done
+}
+
+func (rc *Server) TestingWaitForGC(ctx context.Context) error {
+	// Flush pending atime updates before running GC so that the eviction
+	// sampler sees up-to-date access times.
+	rc.TestingFlushAtimeUpdates()
 	return rc.store.TestingWaitForGC(ctx)
 }
 
