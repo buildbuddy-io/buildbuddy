@@ -113,6 +113,16 @@ filegroup(
 )
 
 filegroup(
+    name = "runfiles",
+    data = [
+        "//enterprise/server/remote_execution/containers/ociruntime:crun",
+        "//enterprise/vmsupport/bin:initrd.cpio",
+        "//enterprise/vmsupport/bin:vmlinux",
+        "//enterprise/vmsupport/bin:vmlinux_6.18",
+    ],
+)
+
+filegroup(
     name = "config_files",
     data = [
         "//enterprise/config:config_files",
@@ -128,7 +138,8 @@ go_binary(
         "--max_shutdown_duration=3s",
     ],
     data = [
-        "//enterprise:licenses",
+        ":config_files",
+        ":runfiles",
     ],
     embed = [":executor_lib"],
 )
@@ -637,14 +648,15 @@ image_layer(
     # Do not include runfiles so that we can separate configuration files out
     # into a separate layer. This lets us use a base image without those files
     # when building our production images.
-    include_runfiles = True,
+    include_runfiles = False,
     tags = ["manual"],
 )
 
 pkg_tar(
-    name = "licenses_tar",
+    name = "runfiles_tar",
     srcs = [
         ":licenses",
+        ":runfiles",
     ],
     include_runfiles = True,
     package_dir = EXECUTOR_PACKAGE_ROOT,
@@ -655,12 +667,13 @@ pkg_tar(
 )
 
 layer_from_tar(
-    name = "licenses_image_layer",
-    src = "licenses_tar",
+    name = "runfiles_image_layer",
+    src = "runfiles_tar",
     annotations = {
-        "org.opencontainers.image.title": "Enterprise BuildBuddy Server Licenses",
+        "org.opencontainers.image.title": "Enterprise BuildBuddy Executor Runfiles",
         "org.opencontainers.image.description": (
-            "Contains the licenses for the Buildbuddy executor."
+            "Contains the runfiles necessary to run the enterprise " +
+            "BuildBuddy executor. Does not include configuration files."
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
@@ -697,7 +710,7 @@ image_manifest(
             ":runc_patch_image_layer_%s" % arch,
             ":executor_tools_image_layer_%s" % arch,
             ":podman_static_image_layer",
-            ":licenses_image_layer",
+            ":runfiles_image_layer",
             ":binary_image_layer",
         ]
         for platform, arch in {
