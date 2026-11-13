@@ -1133,6 +1133,13 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// Experiments may append overrides after the initial property parsing.
+	// Use the same precedence as the executor for scheduling requirements.
+	finalProperties, err := platform.ParseProperties(executionTask)
+	if err != nil {
+		return nil, err
+	}
+
 	schedulingMetadata := &scpb.SchedulingMetadata{
 		Os:                props.OS,
 		Arch:              props.Arch,
@@ -1154,6 +1161,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		// an unsupported request fails at scheduling time with a message
 		// naming the type that no executor supports.
 		RequestedIsolationType: platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
+		RequiresVfs:            finalProperties.EnableVFS,
 	}
 	if *writeExecutionProgressStateToRedis {
 		// Record the scheduling metadata now rather than relying on getting it
