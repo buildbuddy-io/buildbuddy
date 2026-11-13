@@ -415,16 +415,46 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 	if accessToken == "" {
 		accessToken = req.GetEnv()[ci_runner_env.RepoTokenEnvVarName]
 	}
+	// If the token is still not set, try fetching the token from a Workflow
+	// configured for the same repo.
+	if accessToken == "" && req.GetGitRepo().GetRepoUrl() != "" {
+		repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
+		if err != nil {
+			return nil, status.WrapError(err, "normalize git repo url")
+		}
 
-	// Use env override headers for credentials. If the token is not set, the
-	// scheduler requests one from the GitHub app when an executor leases the
-	// task.
+		gitToken, err := r.getGitHubAccessToken(ctx, u.GetGroupID(), repoURL.String())
+		if err != nil {
+			log.Warningf("Could not fetch git auth token for %s for hosted runner"+
+				" (Note: The token is not needed for public repos): %s", repoURL, err)
+		}
+		accessToken = gitToken
+	}
+
+	// Use env override headers for credentials.
+	// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
 	envOverrides := []string{
 		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
 		ci_runner_env.RepoUserEnvVarName + "=" + username,
 		ci_runner_env.RepoTokenEnvVarName + "=" + accessToken,
 	}
 	return envOverrides, nil
+}
+
+func (r *runnerService) getGitHubAccessToken(ctx context.Context, groupID string, repoURL string) (string, error) {
+	gh := r.env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	token, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run

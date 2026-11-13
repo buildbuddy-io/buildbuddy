@@ -45,6 +45,7 @@ go_test(
     srcs = ["hostedrunner_test.go"],
     embed = [":hostedrunner"],
     deps = [
+        "//enterprise/server/githubapp",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/util/ci_runner_util",
@@ -62,6 +63,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testgit",
         "//server/util/authutil",
         "//server/util/platform",
         "//server/util/testing/flags",
