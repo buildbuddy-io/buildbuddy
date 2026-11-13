@@ -868,8 +868,7 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 }
 
 // TestingFlushAtimeUpdates blocks until every atime update enqueued before
-// the call has been flushed (proposed through raft). The sentinel travels the
-// same channel as the updates, so channel ordering guarantees completeness.
+// the call has been proposed.
 func (rc *Server) TestingFlushAtimeUpdates() {
 	done := make(chan struct{})
 	rc.accesses <- &accessTimeUpdate{done: done}

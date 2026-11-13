@@ -18,13 +18,11 @@ import (
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
-// This file benchmarks the state-machine apply path for the two mutations
-// that dominate cache write traffic: SetRequest (record writes) and
-// UpdateAtimeRequest (the write side effect of FindMissing/Get hits older
-// than atime_update_threshold). It reports pebble write-amplification
-// metrics alongside latency.
+// Benchmarks for the apply path of the two mutations that dominate cache write
+// traffic, SetRequest and UpdateAtimeRequest. They report the pebble bytes
+// written per op alongside latency.
 
-// benchPayloadSize approximates a typical metadata record's inline payload.
+// benchPayloadSize approximates a typical record's inline payload.
 const benchPayloadSize = 100
 
 var benchPayload = make([]byte, benchPayloadSize)
@@ -44,8 +42,7 @@ func benchReplica(b *testing.B) (*testutil.TestingReplica, *entryMaker) {
 	return repl, em
 }
 
-// benchRecords returns n records with deterministic, collision-free digests
-// plus their file-metadata keys.
+// benchRecords returns n records with distinct digests, and their keys.
 func benchRecords(b *testing.B, n int) ([]*sgpb.FileRecord, [][]byte) {
 	fs := filestore.New()
 	records := make([]*sgpb.FileRecord, 0, n)
@@ -86,7 +83,7 @@ func benchSetEntry(em *entryMaker, fr *sgpb.FileRecord, key []byte, atimeUsec in
 	}))
 }
 
-// pebbleWriteStats snapshots the write-side pebble metrics we care about.
+// pebbleWriteStats is a snapshot of pebble's write-side metrics.
 type pebbleWriteStats struct {
 	walBytes       uint64
 	flushedBytes   uint64
@@ -103,9 +100,8 @@ func writeStats(db pebble.IPebbleDB) pebbleWriteStats {
 	return s
 }
 
-// reportWriteAmp flushes the memtable and reports per-op pebble write bytes
-// accumulated since `before`: WAL bytes (direct batch-commit cost), flushed
-// bytes, and compaction write bytes (background write amplification).
+// reportWriteAmp flushes the memtable and reports the pebble bytes written
+// per op since `before`: WAL, flush and compaction.
 func reportWriteAmp(b *testing.B, db pebble.IPebbleDB, before pebbleWriteStats, ops int) {
 	require.NoError(b, db.Flush())
 	after := writeStats(db)
@@ -114,9 +110,8 @@ func reportWriteAmp(b *testing.B, db pebble.IPebbleDB, before pebbleWriteStats, 
 	b.ReportMetric(float64(after.compactedBytes-before.compactedBytes)/float64(ops), "compact-B/op")
 }
 
-// BenchmarkSetApply measures the apply cost of SetRequest record writes. It
-// cycles through a fixed pool of records, so most applies are overwrites.
-// Request construction happens in-loop, so it is included in the time.
+// BenchmarkSetApply measures applying SetRequests. It cycles through a fixed
+// pool of records, so most applies are overwrites.
 func BenchmarkSetApply(b *testing.B) {
 	repl, em := benchReplica(b)
 	const n = 1024
@@ -135,8 +130,7 @@ func BenchmarkSetApply(b *testing.B) {
 	}
 	b.StopTimer()
 
-	// Union errors are carried in responses, not Update's error; verify the
-	// path end-to-end once rather than paying response decoding per op.
+	// Errors are carried in the responses, so check one apply end to end.
 	e := benchSetEntry(em, records[0], recordKeys[0], int64(1_000_000+i))
 	rsp, err := repl.Update([]dbsm.Entry{e})
 	require.NoError(b, err)
@@ -145,9 +139,7 @@ func BenchmarkSetApply(b *testing.B) {
 	reportWriteAmp(b, db, before, i)
 }
 
-// BenchmarkUpdateAtimeApply measures the apply cost of UpdateAtimeRequest --
-// the write FindMissing traffic generates once records age past
-// atime_update_threshold.
+// BenchmarkUpdateAtimeApply measures applying UpdateAtimeRequests.
 func BenchmarkUpdateAtimeApply(b *testing.B) {
 	repl, em := benchReplica(b)
 	const n = 1024
@@ -164,8 +156,7 @@ func BenchmarkUpdateAtimeApply(b *testing.B) {
 	b.ReportAllocs()
 	i := 0
 	for b.Loop() {
-		// The atime strictly increases, so every apply takes the write path
-		// rather than the atime-moved-backwards early return.
+		// The atime always increases, so every apply writes.
 		e := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.UpdateAtimeRequest{
 			Key:            recordKeys[i%n],
 			AccessTimeUsec: int64(2_000_000 + i),

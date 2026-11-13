@@ -20,8 +20,7 @@ func TestAtimeIndexKey(t *testing.T) {
 	assert.Equal(t, int64(12345678), atime)
 	assert.Equal(t, fileKey, fk)
 
-	// Byte order equals atime order (including atimes whose big-endian bytes
-	// contain '/', 0x2f).
+	// Byte order is atime order, even when the atime bytes contain '/'.
 	older := keys.AtimeIndexKey("foo", 0x2f2f2f, fileKey)
 	newer := keys.AtimeIndexKey("foo", 0x2f2f2f+1, fileKey)
 	assert.Negative(t, bytes.Compare(older, newer))
@@ -31,20 +30,16 @@ func TestAtimeIndexKey(t *testing.T) {
 	assert.Equal(t, int64(0x2f2f2f), atime)
 	assert.Equal(t, fileKey, fk)
 
-	// Partition bounds contain the partition's entries and exclude others.
+	// Partition bounds include the partition's entries and exclude others',
+	// including a partition whose ID extends this one's.
 	start, end := keys.AtimeIndexPartitionRange("foo")
 	assert.True(t, bytes.Compare(start, k) <= 0 && bytes.Compare(k, end) < 0)
 	other := keys.AtimeIndexKey("fop", 12345678, fileKey)
 	assert.False(t, bytes.Compare(start, other) <= 0 && bytes.Compare(other, end) < 0)
-	// The case a separator-delimited range must actually guard against is a
-	// partition ID that extends another as a prefix: "foobar" stays outside
-	// "foo"'s bounds only because the trailing '/' (0x2f) sorts below the
-	// extension's next byte.
 	ext := keys.AtimeIndexKey("foobar", 12345678, fileKey)
 	assert.False(t, bytes.Compare(start, ext) <= 0 && bytes.Compare(ext, end) < 0)
 
-	// A negative atime is clamped to zero: encoded as uint64 it would sort
-	// after every valid entry, breaking "byte order equals time order".
+	// A negative atime is clamped to zero, so it sorts first.
 	neg := keys.AtimeIndexKey("foo", -5, fileKey)
 	part, atime, fk, err = keys.ParseAtimeIndexKey(neg)
 	require.NoError(t, err)

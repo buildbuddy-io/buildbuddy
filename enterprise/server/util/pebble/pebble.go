@@ -96,10 +96,8 @@ type Iterator interface {
 	// contents may change on the next call to Next.
 	Value() []byte
 
-	// Error returns any accumulated error. An iterator error makes the
-	// positioning methods return false, indistinguishable from normal
-	// exhaustion; callers that must not mistake a truncated scan for a
-	// complete one should check Error after iteration finishes.
+	// Error returns any accumulated error. Check it after a scan: an error
+	// ends iteration the same way exhaustion does.
 	Error() error
 }
 

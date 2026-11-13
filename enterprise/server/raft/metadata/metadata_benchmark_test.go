@@ -95,26 +95,19 @@ func BenchmarkFind(b *testing.B) {
 	}
 }
 
-// atimeFlushCount reads the number of atime flush batches proposed so far.
-// With atime_write_batch_size=1, batches == individual updates.
+// atimeFlushCount returns the number of atime flush batches proposed so far.
 func atimeFlushCount(b *testing.B) uint64 {
 	m := &dto.Metric{}
 	require.NoError(b, metrics.RaftBatchAtimeUpdateDurationUsec.Write(m))
 	return m.GetHistogram().GetSampleCount()
 }
 
-// BenchmarkFindWithAtimeUpdates measures Find while every hit also enqueues
-// an atime update (threshold 0) -- the write side effect FindMissing traffic
-// generates in production once records age past atime_update_threshold.
-// atime_write_batch_size=1 makes the flusher propose each update immediately,
-// so nothing waits on the 10s flush timer and the flush-histogram count
-// equals the number of updates actually proposed (b.N minus buffer drops).
+// BenchmarkFindWithAtimeUpdates measures Find when every hit enqueues an atime
+// update. Each update is its own flush batch, so the flush count is the number
+// of updates proposed. ns/op covers only Find; the async work is reported as:
 //
-// ns/op covers only Find; the async pipeline's debt is paid in the drain step
-// and reported separately:
-//
-//	atime-updates/op: updates proposed per Find (1.0 = pipeline kept up, no drops)
-//	drain-ms:         time to flush the backlog after Finds stopped
+//	atime-updates/op: updates proposed per Find (1.0 means none were dropped)
+//	drain-ms:         time to flush the backlog after the Finds stopped
 func BenchmarkFindWithAtimeUpdates(b *testing.B) {
 	flags.Set(b, "cache.raft.atime_update_threshold", time.Duration(0))
 	flags.Set(b, "cache.raft.atime_write_batch_size", 1)
