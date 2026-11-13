@@ -2,7 +2,7 @@ import { Subject, Subscription, from } from "rxjs";
 import { eventlog } from "../../proto/eventlog_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import errorService from "../errors/error_service";
-import rpcService, { Cancelable } from "../service/rpc_service";
+import rpcService, { Cancelable, CancelablePromise, ExtendedBuildBuddyService } from "../service/rpc_service";
 import { streamWithRetry } from "../util/rpc";
 
 const POLL_TAIL_INTERVAL_MS = 3_000;
@@ -26,10 +26,16 @@ export default class InvocationLogsModel {
 
   // Polling-based state
   private responseSubscription?: Subscription;
+  private responseRPC?: CancelablePromise<eventlog.GetEventLogChunkResponse>;
   private pollTailTimeout?: number;
 
   // Server-stream based state
   private stream?: Cancelable;
+  // Match the service selected by a same-region BES endpoint so learning the
+  // endpoint does not unnecessarily cancel and replay the current log stream.
+  private service: ExtendedBuildBuddyService = rpcService.getRegionalServiceOrDefault(window.location.origin);
+  private fetchingRequested = false;
+  private fetchGeneration = 0;
 
   constructor(
     private invocationId: string,
@@ -38,6 +44,7 @@ export default class InvocationLogsModel {
 
   startFetching() {
     this.stopFetching();
+    this.fetchingRequested = true;
     this.complete = false;
     if (capabilities.config.streamingHttpEnabled && capabilities.config.invocationLogStreamingEnabled) {
       this.streamLogs();
@@ -46,10 +53,30 @@ export default class InvocationLogsModel {
     }
   }
 
+  /** Switch live log reads to the BES region once the invocation identifies it. */
+  setService(service: ExtendedBuildBuddyService) {
+    if (service === this.service) return;
+    const restart = this.fetchingRequested;
+    this.stopFetching();
+    this.service = service;
+    // Restart at chunk zero. Reusing a prefix while replaying chunks would append
+    // the persisted portion twice, and the old region's live tail may be stale.
+    this.logs = "";
+    this.stableLogLength = 0;
+    this.complete = false;
+    if (restart) this.startFetching();
+    this.onChange.next();
+  }
+
   stopFetching() {
+    this.fetchingRequested = false;
+    this.fetchGeneration++;
     if (this.pollTailTimeout !== undefined) {
       window.clearTimeout(this.pollTailTimeout);
+      this.pollTailTimeout = undefined;
     }
+    this.responseRPC?.cancel();
+    this.responseRPC = undefined;
     this.responseSubscription?.unsubscribe();
     this.responseSubscription = undefined;
 
@@ -62,7 +89,7 @@ export default class InvocationLogsModel {
   }
 
   isFetching(): boolean {
-    return Boolean(this.responseSubscription);
+    return Boolean(this.responseSubscription || (this.stream && !this.complete));
   }
 
   isComplete(): boolean {
@@ -71,8 +98,9 @@ export default class InvocationLogsModel {
 
   private streamLogs() {
     let chunkId = "";
+    const generation = this.fetchGeneration;
     this.stream = streamWithRetry(
-      rpcService.service.getEventLog,
+      this.service.getEventLog,
       () => {
         return new eventlog.GetEventLogChunkRequest({
           invocationId: this.invocationId,
@@ -83,31 +111,40 @@ export default class InvocationLogsModel {
       },
       {
         next: (response) => {
+          if (generation !== this.fetchGeneration) return;
           this.handleResponse(response);
           // Save the response chunk ID - if the stream is retried then we'll
           // resume starting from this chunk.
           chunkId = response.nextChunkId;
         },
         error: (e) => {
+          if (generation !== this.fetchGeneration) return;
+          this.stream = undefined;
+          this.onChange.next();
           errorService.handleError(e, { ignoreErrorCodes: ["NotFound", "PermissionDenied", "Unauthenticated"] });
         },
-        complete: () => {},
+        complete: () => {
+          if (generation !== this.fetchGeneration) return;
+          this.stream = undefined;
+          this.onChange.next();
+        },
       }
     );
   }
 
   private fetchTail(chunkId = "") {
-    this.responseSubscription = from<Promise<eventlog.GetEventLogChunkResponse>>(
-      rpcService.service.getEventLogChunk(
-        new eventlog.GetEventLogChunkRequest({
-          invocationId: this.invocationId,
-          chunkId,
-          minLines: MIN_LINES,
-          type: this.logType,
-        })
-      )
-    ).subscribe({
+    const generation = this.fetchGeneration;
+    this.responseRPC = this.service.getEventLogChunk(
+      new eventlog.GetEventLogChunkRequest({
+        invocationId: this.invocationId,
+        chunkId,
+        minLines: MIN_LINES,
+        type: this.logType,
+      })
+    );
+    this.responseSubscription = from<Promise<eventlog.GetEventLogChunkResponse>>(this.responseRPC).subscribe({
       next: (response) => {
+        if (generation !== this.fetchGeneration) return;
         this.handleResponse(response);
         if (response.nextChunkId === "") {
           return;
@@ -122,8 +159,10 @@ export default class InvocationLogsModel {
         // chunk, and more may be available. Try fetching it immediately.
         this.fetchTail(response.nextChunkId);
       },
-      error: (e) =>
-        errorService.handleError(e, { ignoreErrorCodes: ["NotFound", "PermissionDenied", "Unauthenticated"] }),
+      error: (e) => {
+        if (generation !== this.fetchGeneration) return;
+        errorService.handleError(e, { ignoreErrorCodes: ["NotFound", "PermissionDenied", "Unauthenticated"] });
+      },
     });
   }
 
