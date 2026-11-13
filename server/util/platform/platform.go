@@ -63,6 +63,9 @@ const (
 
 	ContainerImagePropertyName = "container-image"
 	DockerPrefix               = "docker://"
+	// RegistryRegionPlaceholder is replaced in container-image names with the
+	// executor's executor.container_registry_region flag.
+	RegistryRegionPlaceholder = "{{region}}"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
@@ -990,10 +993,12 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 }
 
 // SanitizeImageRef returns ref if it's a valid image reference, with or
-// without the docker:// prefix, and "" otherwise. Invalid refs are dropped on
-// purpose: a valid ref can't carry credentials or a query string.
+// without the docker:// prefix, and "" otherwise. Dropping invalid refs strips
+// URL-style userinfo and query strings, but this isn't a credential scrubber:
+// "user:secret@sha256:<hex>" parses as a repo, tag and digest.
 func SanitizeImageRef(ref string) string {
 	name := strings.TrimPrefix(ref, DockerPrefix)
+	name = strings.ReplaceAll(name, RegistryRegionPlaceholder, "region")
 	if _, err := ctrname.ParseReference(name); err == nil {
 		return ref
 	}

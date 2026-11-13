@@ -604,6 +604,8 @@ func TestSanitizeImageRef(t *testing.T) {
 		{"Empty", "", ""},
 		{"TagAndDigest", "docker://gcr.io/img:v1@" + dig, "docker://gcr.io/img:v1@" + dig},
 		{"UppercaseRegistry", "docker://REGISTRY/team/image:v1", "docker://REGISTRY/team/image:v1"},
+		{"RegionTemplate", "docker://{{region}}.gcr.io/{{region}}-ubuntu:latest", "docker://{{region}}.gcr.io/{{region}}-ubuntu:latest"},
+		{"UnsupportedTemplate", "docker://{{zone}}.gcr.io/ubuntu:latest", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, SanitizeImageRef(tc.ref))
