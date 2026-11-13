@@ -779,6 +779,115 @@ func TestGetApiKeyImpersonation(t *testing.T) {
 	}
 }
 
+func TestApiKeyWritePermissions(t *testing.T) {
+	ctx := t.Context()
+	env := setupEnv(t)
+	adb := env.GetAuthDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin)
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	g, err := env.GetUserDB().GetGroupByID(adminCtx, groupID)
+	require.NoError(t, err)
+	g.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().UpdateGroup(adminCtx, g)
+	require.NoError(t, err)
+
+	createGroupKey := func(caps ...cappb.Capability) *tables.APIKey {
+		k, err := adb.CreateAPIKey(adminCtx, groupID, "", caps, 0 /*=expiresIn*/, true /*=visibleToDevelopers*/)
+		require.NoError(t, err)
+		return k
+	}
+	createUserKey := func(caps ...cappb.Capability) *tables.APIKey {
+		k, err := adb.CreateUserAPIKey(adminCtx, groupID, admin.UserID, "", caps, 0 /*=expiresIn*/)
+		require.NoError(t, err)
+		return k
+	}
+	orgAdminKey := createGroupKey(cappb.Capability_ORG_ADMIN)
+	userReadOnlyKey := createUserKey()
+	userWriteKey := createUserKey(cappb.Capability_CACHE_WRITE)
+
+	t.Run("create", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			caller  *tables.APIKey
+			allowed bool
+		}{
+			{"user read-only key", userReadOnlyKey, false},
+			{"user write key", userWriteKey, false},
+			{"org admin key", orgAdminKey, true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				callerCtx := auth.AuthContextFromAPIKey(ctx, tc.caller.Value)
+				_, err := env.GetBuildBuddyServer().CreateUserApiKey(callerCtx, &akpb.CreateApiKeyRequest{
+					RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+					UserId:         admin.UserID,
+				})
+				if !tc.allowed {
+					require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+					return
+				}
+				require.NoError(t, err)
+			})
+		}
+	})
+
+	for _, tc := range []struct {
+		name    string
+		caller  *tables.APIKey
+		self    bool
+		allowed bool
+	}{
+		{"user write key modifies itself", userWriteKey, true, true},
+		{"user read-only key modifies user write key", userReadOnlyKey, false, false},
+		{"user write key modifies user write key", userWriteKey, false, false},
+		{"org admin key modifies user write key", orgAdminKey, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			caller := tc.caller
+			target := createUserKey(cappb.Capability_CACHE_WRITE)
+			if tc.self {
+				caller = target
+			}
+			callerCtx := auth.AuthContextFromAPIKey(ctx, caller.Value)
+			checkErr := func(err error) {
+				if !tc.allowed {
+					require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+					return
+				}
+				require.NoError(t, err)
+			}
+
+			_, err := env.GetBuildBuddyServer().UpdateUserApiKey(callerCtx, &akpb.UpdateApiKeyRequest{
+				Id:         target.APIKeyID,
+				Label:      "updated",
+				Capability: []cappb.Capability{cappb.Capability_CACHE_WRITE},
+			})
+			checkErr(err)
+
+			_, err = env.GetBuildBuddyServer().DeleteUserApiKey(callerCtx, &akpb.DeleteApiKeyRequest{Id: target.APIKeyID})
+			checkErr(err)
+		})
+	}
+
+	// Users authenticated without an API key are unaffected.
+	target := createUserKey(cappb.Capability_CACHE_WRITE)
+	_, err = env.GetBuildBuddyServer().UpdateUserApiKey(adminCtx, &akpb.UpdateApiKeyRequest{Id: target.APIKeyID, Label: "updated"})
+	require.NoError(t, err)
+	_, err = env.GetBuildBuddyServer().DeleteUserApiKey(adminCtx, &akpb.DeleteApiKeyRequest{Id: target.APIKeyID})
+	require.NoError(t, err)
+}
+
 func TestGetAPIKeys(t *testing.T) {
 	for _, encrypt := range []bool{false, true} {
 		t.Run(fmt.Sprintf("encrypt_%t", encrypt), func(t *testing.T) {
