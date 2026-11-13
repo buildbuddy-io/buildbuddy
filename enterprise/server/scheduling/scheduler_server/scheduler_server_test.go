@@ -106,7 +106,6 @@ func (f *fakeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Action,
 func (f *fakeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
 }
 
-// fakeGitHubAppService returns the same GitHub app for every user.
 type fakeGitHubAppService struct {
 	interfaces.GitHubAppService
 	app *fakeGitHubApp
@@ -116,7 +115,6 @@ func (s *fakeGitHubAppService) GetGitHubAppForAuthenticatedUser(ctx context.Cont
 	return s.app, nil
 }
 
-// fakeGitHubApp returns a fixed result for repository token requests.
 type fakeGitHubApp struct {
 	interfaces.GitHubApp
 	token string
@@ -906,10 +904,9 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 	return req.GetTaskId()
 }
 
-// scheduleRemoteRunnerTask schedules a trusted remote runner task for group1.
-// The scheduler sets the task's REPO_TOKEN env override to a new GitHub token
-// when an executor leases the task.
-func scheduleRemoteRunnerTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
+// scheduleCIRunnerTask schedules a CI runner task for the given group, with
+// apiKey as its BUILDBUDDY_API_KEY env override.
+func scheduleCIRunnerTask(ctx context.Context, t *testing.T, env environment.Env, groupID, apiKey string, props map[string]string) string {
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: props})
 	task := &repb.ExecutionTask{}
 	err := proto.Unmarshal(req.GetSerializedTask(), task)
@@ -917,12 +914,12 @@ func scheduleRemoteRunnerTask(ctx context.Context, t *testing.T, env environment
 	task.Command.Arguments = []string{"./" + ci_runner_util.ExecutableName, "--pushed_repo_url=https://github.com/acme-inc/repo"}
 	task.PlatformOverrides = &repb.Platform{
 		Properties: []*repb.Platform_Property{
-			{Name: platform.EnvOverridesPropertyName, Value: ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=user1"},
+			{Name: platform.EnvOverridesPropertyName, Value: ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey},
 		},
 	}
 	req.SerializedTask, err = proto.Marshal(task)
 	require.NoError(t, err)
-	req.Metadata.TaskGroupId = "group1"
+	req.Metadata.TaskGroupId = groupID
 	_, err = env.GetSchedulerService().ScheduleTask(ctx, req)
 	require.NoError(t, err)
 	return req.GetTaskId()
@@ -1921,11 +1918,17 @@ func TestLeaseTask_RefreshToken(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			fp := newTestFlagProvider(t, map[string]memprovider.InMemoryFlag{})
+			expflag.SetFlagProvider(fp)
+			t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
 			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			env.SetExperimentFlagProvider(fp)
 			env.SetGitHubAppService(&fakeGitHubAppService{app: &fakeGitHubApp{token: "fresh-token", err: tc.tokenErr}})
 			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.supportsExperimentFlags = true
 			fe.Register()
-			taskID := scheduleRemoteRunnerTask(ctx, t, env, map[string]string{})
+			taskID := scheduleCIRunnerTask(ctx, t, env, "group1", "user1" /*=apiKey*/, map[string]string{})
 			fe.WaitForTask(taskID)
 
 			lease := fe.Claim(taskID)
@@ -1933,6 +1936,9 @@ func TestLeaseTask_RefreshToken(t *testing.T) {
 
 			envOverrides := strings.Split(lease.task.GetPlatformOverrides().GetProperties()[0].GetValue(), ",")
 			require.ElementsMatch(t, tc.wantEnvOverrides, envOverrides)
+			// The task should get experiment flags whether or not it gets a
+			// token.
+			require.NotEmpty(t, lease.task.GetExperimentFlags())
 		})
 	}
 }
@@ -1959,7 +1965,7 @@ func TestLeaseTask_RefreshToken_FailureFailsLease(t *testing.T) {
 			env.SetGitHubAppService(&fakeGitHubAppService{app: &fakeGitHubApp{err: status.InternalError("GitHub is down")}})
 			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 			fe.Register()
-			taskID := scheduleRemoteRunnerTask(ctx, t, env, tc.props)
+			taskID := scheduleCIRunnerTask(ctx, t, env, "group1", "user1" /*=apiKey*/, tc.props)
 			fe.WaitForTask(taskID)
 			fe.ResetTasks()
 
@@ -1986,7 +1992,7 @@ func TestLeaseReconnect_SkipsTokenRefresh(t *testing.T) {
 	env.SetGitHubAppService(&fakeGitHubAppService{app: app})
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
-	taskID := scheduleRemoteRunnerTask(ctx, t, env, map[string]string{})
+	taskID := scheduleCIRunnerTask(ctx, t, env, "group1", "user1" /*=apiKey*/, map[string]string{})
 	fe.WaitForTask(taskID)
 	lease := fe.Claim(taskID)
 

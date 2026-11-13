@@ -105,90 +105,82 @@ func TestRunnerTimeout(t *testing.T) {
 }
 
 func TestSetTaskRepositoryToken(t *testing.T) {
-	env := getEnv(t, "fresh-repo-token")
-	ctx := context.Background()
+	for _, tc := range []struct {
+		name              string
+		gitHubAppDisabled bool
+		repoLinked        bool
+		repoURL           string
+		apiKey            string
+		wantErr           bool
+		wantToken         string
+	}{
+		{
+			name:       "linked repo",
+			repoLinked: true,
+			repoURL:    repoURL,
+			apiKey:     "workflow-api-key",
+			wantToken:  "fresh-repo-token",
+		},
+		{
+			name:      "repo not linked",
+			repoURL:   repoURL,
+			apiKey:    "workflow-api-key",
+			wantToken: "original-repo-token",
+		},
+		{
+			name:              "GitHub app not configured",
+			gitHubAppDisabled: true,
+			repoURL:           repoURL,
+			apiKey:            "workflow-api-key",
+			wantToken:         "original-repo-token",
+		},
+		{
+			name:      "no repo",
+			apiKey:    "workflow-api-key",
+			wantToken: "original-repo-token",
+		},
+		{
+			name: "non-GitHub repo",
+			// The group's GitHub app installation would reject this URL with
+			// an error if the token were requested.
+			repoLinked: true,
+			repoURL:    "https://gitlab.com/acme-inc/repo",
+			apiKey:     "workflow-api-key",
+			wantToken:  "original-repo-token",
+		},
+		{
+			name:       "token request fails",
+			repoLinked: true,
+			repoURL:    repoURL,
+			// This API key fails authentication, so the token request fails.
+			apiKey:    "invalid-api-key",
+			wantErr:   true,
+			wantToken: "original-repo-token",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := getEnv(t, "fresh-repo-token")
+			ctx := t.Context()
+			if tc.gitHubAppDisabled {
+				env.SetGitHubAppService(nil)
+			}
+			if tc.repoLinked {
+				createLinkedRepo(t, ctx, env)
+			}
 
-	createLinkedRepo(t, ctx, env)
+			task := newRemoteRunnerTask(tc.repoURL, tc.apiKey, "original-repo-token")
+			err := SetTaskRepositoryToken(ctx, env, task, "group1")
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 
-	task := newRemoteRunnerTask(repoURL, "workflow-api-key", "stale-repo-token")
-	err := SetTaskRepositoryToken(ctx, env, task, "group1")
-	require.NoError(t, err)
-
-	envOverrides := envOverridesHeader(task)
-	require.Equal(t, "fresh-repo-token", envOverrides["REPO_TOKEN"])
-	require.Equal(t, "workflow-api-key", envOverrides[ci_runner_env.BuildBuddyAPIKeyEnvVarName])
-}
-
-func TestSetTaskRepositoryToken_NotLinked(t *testing.T) {
-	env := getEnv(t, "fresh-repo-token")
-	ctx := t.Context()
-
-	// Don't create a repo for the group ID, so there is no GitHub app
-	// installation to request a token from.
-
-	task := newRemoteRunnerTask("https://github.com/acme-inc/repo", "workflow-api-key", "stale-repo-token")
-	err := SetTaskRepositoryToken(ctx, env, task, "group1")
-	require.NoError(t, err)
-
-	envOverrides := envOverridesHeader(task)
-	require.Equal(t, "stale-repo-token", envOverrides["REPO_TOKEN"])
-}
-
-func TestSetTaskRepositoryToken_GitHubAppNotConfigured(t *testing.T) {
-	env := getEnv(t, "fresh-repo-token")
-	env.SetGitHubAppService(nil)
-	ctx := t.Context()
-
-	task := newRemoteRunnerTask(repoURL, "workflow-api-key", "stale-repo-token")
-	err := SetTaskRepositoryToken(ctx, env, task, "group1")
-	require.NoError(t, err)
-
-	envOverrides := envOverridesHeader(task)
-	require.Equal(t, "stale-repo-token", envOverrides["REPO_TOKEN"])
-}
-
-func TestSetTaskRepositoryToken_NoRepo(t *testing.T) {
-	env := getEnv(t, "fresh-repo-token")
-	ctx := t.Context()
-
-	task := newRemoteRunnerTask("" /*=repoURL*/, "workflow-api-key", "stale-repo-token")
-	err := SetTaskRepositoryToken(ctx, env, task, "group1")
-	require.NoError(t, err)
-
-	envOverrides := envOverridesHeader(task)
-	require.Equal(t, "stale-repo-token", envOverrides["REPO_TOKEN"])
-}
-
-func TestSetTaskRepositoryToken_NonGitHubRepo(t *testing.T) {
-	env := getEnv(t, "fresh-repo-token")
-	ctx := t.Context()
-
-	// Link a GitHub app installation to the group, so that the group
-	// authenticates with the GitHub app for its GitHub repos.
-	createLinkedRepo(t, ctx, env)
-
-	task := newRemoteRunnerTask("https://gitlab.com/acme-inc/repo", "workflow-api-key", "stale-repo-token")
-	err := SetTaskRepositoryToken(ctx, env, task, "group1")
-	require.NoError(t, err)
-
-	envOverrides := envOverridesHeader(task)
-	require.Equal(t, "stale-repo-token", envOverrides["REPO_TOKEN"])
-}
-
-func TestSetTaskRepositoryToken_Failure(t *testing.T) {
-	env := getEnv(t, "fresh-repo-token")
-	ctx := t.Context()
-
-	createLinkedRepo(t, ctx, env)
-
-	// Use an API key that fails authentication, so the token refresh fails.
-	task := newRemoteRunnerTask(repoURL, "invalid-api-key", "stale-repo-token")
-	err := SetTaskRepositoryToken(ctx, env, task, "group1")
-	require.Error(t, err)
-
-	envOverrides := envOverridesHeader(task)
-	// If token refresh fails, the existing token should be left unchanged.
-	require.Equal(t, "stale-repo-token", envOverrides["REPO_TOKEN"])
+			envOverrides := envOverridesHeader(task)
+			require.Equal(t, tc.wantToken, envOverrides["REPO_TOKEN"])
+			require.Equal(t, tc.apiKey, envOverrides[ci_runner_env.BuildBuddyAPIKeyEnvVarName])
+		})
+	}
 }
 
 func getEnv(t *testing.T, mockToken string) *testenv.TestEnv {
