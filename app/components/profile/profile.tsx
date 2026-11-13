@@ -122,14 +122,18 @@ export default class ProfileCard extends React.Component<Props, State> {
           </FilledButton>
           <span className="profile-card-muted">{selected?.description}</span>
         </div>
-        <div className="profile-card-muted profile-card-hint">Open downloaded profiles with:</div>
-        <div className="profile-card-command">
-          <code>{PPROF_COMMAND}</code>
-          <OutlinedButton className="profile-card-copy" onClick={() => copyCommand()}>
-            <Copy className="icon" />
-            Copy
-          </OutlinedButton>
-        </div>
+        {!isText(this.state.type) && (
+          <>
+            <div className="profile-card-muted profile-card-hint">Open downloaded profiles with:</div>
+            <div className="profile-card-command">
+              <code>{PPROF_COMMAND}</code>
+              <OutlinedButton className="profile-card-copy" onClick={() => copyCommand()}>
+                <Copy className="icon" />
+                Copy
+              </OutlinedButton>
+            </div>
+          </>
+        )}
       </div>
     );
   }
