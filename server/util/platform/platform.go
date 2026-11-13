@@ -639,27 +639,17 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 
 // RemoteHeaderOverrides returns the platform properties that should override
 // the command's platform properties.
+//
+// Each property is returned at most once, so that code which reads the first
+// value of a property agrees with code which reads the last value. If both
+// OverrideHeader and DeprecatedOverrideHeaderPrefix set a property, the
+// OverrideHeader value is returned. If a header sets a property more than once,
+// the last value is returned.
 func RemoteHeaderOverrides(ctx context.Context) ([]*repb.Platform_Property, error) {
-	props := []*repb.Platform_Property{}
+	overrides := &repb.Platform{}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return props, nil
-	}
-	// Read OverrideHeader values before DeprecatedOverrideHeaderPrefix headers,
-	// so that DeprecatedOverrideHeaderPrefix headers win when ParseProperties
-	// applies the overrides in order. Server code such as execution teeing sets
-	// props using DeprecatedOverrideHeaderPrefix and expects them to replace
-	// client values.
-	for _, override := range md.Get(OverrideHeader) {
-		name, value, ok := strings.Cut(override, "=")
-		if !ok {
-			// Don't include the header value, since it may contain a secret.
-			return nil, status.InvalidArgumentErrorf("%s header values must have the form NAME=VALUE", OverrideHeader)
-		}
-		props = append(props, &repb.Platform_Property{
-			Name:  name,
-			Value: value,
-		})
+		return overrides.Properties, nil
 	}
 	mdMap := map[string][]string(md)
 	for headerName, headerValues := range mdMap {
@@ -668,14 +658,21 @@ func RemoteHeaderOverrides(ctx context.Context) ([]*repb.Platform_Property, erro
 		}
 		propName := strings.TrimPrefix(headerName, DeprecatedOverrideHeaderPrefix)
 		for _, propValue := range headerValues {
-			props = append(props, &repb.Platform_Property{
-				Name:  propName,
-				Value: propValue,
-			})
+			SetValue(overrides, propName, propValue)
 		}
 	}
+	// Set OverrideHeader values last, so that they replace values that were set
+	// using DeprecatedOverrideHeaderPrefix.
+	for _, override := range md.Get(OverrideHeader) {
+		name, value, ok := strings.Cut(override, "=")
+		if !ok {
+			// Don't include the header value, since it may contain a secret.
+			return nil, status.InvalidArgumentErrorf("%s header values must have the form NAME=VALUE", OverrideHeader)
+		}
+		SetValue(overrides, name, value)
+	}
 
-	return props, nil
+	return overrides.Properties, nil
 }
 
 // WithRemoteHeaderOverride sets a remote header for an Execute request that

@@ -773,17 +773,10 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 		teeReq := proto.Clone(req).(*repb.ExecuteRequest)
 		teeReq.InstanceName = *teeInstanceNamePrefix + teeInstanceName
 
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return
-		}
-		md["x-buildbuddy-platform.pool"] = []string{teePool}
-		ctx = metadata.NewIncomingContext(ctx, md)
-
 		r := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 		newExecutionID := r.NewUploadString()
 
-		if _, err := s.dispatch(ctx, teeReq, action, newExecutionID, &dispatchOpts{teedRequest: true}); err != nil {
+		if _, err := s.dispatch(ctx, teeReq, action, newExecutionID, &dispatchOpts{teedRequest: true, teePool: teePool}); err != nil {
 			log.CtxWarningf(ctx, "Could not tee execution %q: %s", originalExecutionID, err)
 			return
 		}
@@ -830,6 +823,8 @@ func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRe
 type dispatchOpts struct {
 	recordActionMergingState bool
 	teedRequest              bool
+	// teePool is the pool that a teed request runs in.
+	teePool string
 }
 
 func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string, opts *dispatchOpts) (*interfaces.PoolInfo, error) {
@@ -890,6 +885,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 	executionTask.PlatformOverrides = &repb.Platform{
 		Properties: overrides,
+	}
+	// Run teed requests in the tee pool, replacing any pool that the client
+	// set using remote headers.
+	if opts.teedRequest {
+		platform.SetValue(executionTask.PlatformOverrides, "Pool", opts.teePool)
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser

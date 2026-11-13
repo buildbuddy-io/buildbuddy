@@ -619,14 +619,18 @@ func TestRemoteHeaderOverrides(t *testing.T) {
 		{
 			name: "both formats",
 			md: metadata.Pairs(
-				"x-buildbuddy-platform.pool", "server",
-				"x-buildbuddy-platform", "pool=client",
+				"x-buildbuddy-platform.pool", "prefixed",
+				"x-buildbuddy-platform", "pool=value-format",
 			),
-			// The prefixed header comes last so that it wins in ParseProperties.
-			wantProps: []*repb.Platform_Property{
-				{Name: "pool", Value: "client"},
-				{Name: "pool", Value: "server"},
-			},
+			wantProps: []*repb.Platform_Property{{Name: "pool", Value: "value-format"}},
+		},
+		{
+			name: "repeated property",
+			md: metadata.Pairs(
+				"x-buildbuddy-platform", "pool=first",
+				"x-buildbuddy-platform", "pool=last",
+			),
+			wantProps: []*repb.Platform_Property{{Name: "pool", Value: "last"}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
