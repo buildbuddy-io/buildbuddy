@@ -147,6 +147,18 @@ func TestSetTaskRepositoryToken_GitHubAppNotConfigured(t *testing.T) {
 	require.Equal(t, "stale-repo-token", envOverrides["REPO_TOKEN"])
 }
 
+func TestSetTaskRepositoryToken_NoRepo(t *testing.T) {
+	env := getEnv(t, "fresh-repo-token")
+	ctx := t.Context()
+
+	task := newRemoteRunnerTask("" /*=repoURL*/, "workflow-api-key", "stale-repo-token")
+	err := SetTaskRepositoryToken(ctx, env, task, "group1")
+	require.NoError(t, err)
+
+	envOverrides := envOverridesHeader(task)
+	require.Equal(t, "stale-repo-token", envOverrides["REPO_TOKEN"])
+}
+
 func TestSetTaskRepositoryToken_NonGitHubRepo(t *testing.T) {
 	env := getEnv(t, "fresh-repo-token")
 	ctx := t.Context()

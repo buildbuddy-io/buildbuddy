@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -906,8 +907,8 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 }
 
 // scheduleRemoteRunnerTask schedules a trusted remote runner task for group1.
-// The task's REPO_TOKEN env override starts as "stale-token", and the scheduler
-// replaces it with a new GitHub token when an executor leases the task.
+// The scheduler sets the task's REPO_TOKEN env override to a new GitHub token
+// when an executor leases the task.
 func scheduleRemoteRunnerTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: props})
 	task := &repb.ExecutionTask{}
@@ -916,7 +917,7 @@ func scheduleRemoteRunnerTask(ctx context.Context, t *testing.T, env environment
 	task.Command.Arguments = []string{"./" + ci_runner_util.ExecutableName, "--pushed_repo_url=https://github.com/acme-inc/repo"}
 	task.PlatformOverrides = &repb.Platform{
 		Properties: []*repb.Platform_Property{
-			{Name: platform.EnvOverridesPropertyName, Value: ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=user1,REPO_TOKEN=stale-token"},
+			{Name: platform.EnvOverridesPropertyName, Value: ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=user1"},
 		},
 	}
 	req.SerializedTask, err = proto.Marshal(task)
@@ -1906,19 +1907,17 @@ func TestLeaseTask_RefreshToken(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		// Error returned for the GitHub token request.
-		tokenErr      error
-		wantRepoToken string
+		tokenErr         error
+		wantEnvOverrides []string
 	}{
 		{
-			name:          "token refreshed",
-			wantRepoToken: "fresh-token",
+			name:             "token set",
+			wantEnvOverrides: []string{ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=user1", "REPO_TOKEN=fresh-token"},
 		},
 		{
-			name: "GitHub app not linked",
-			// NotFound means the group does not authenticate through the
-			// GitHub app, so the task keeps the token it was scheduled with.
-			tokenErr:      status.NotFoundError("GitHub app installation not found"),
-			wantRepoToken: "stale-token",
+			name:             "GitHub app not linked",
+			tokenErr:         status.NotFoundError("GitHub app installation not found"),
+			wantEnvOverrides: []string{ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=user1"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1932,8 +1931,8 @@ func TestLeaseTask_RefreshToken(t *testing.T) {
 			lease := fe.Claim(taskID)
 			defer lease.Finalize()
 
-			envOverrides := lease.task.GetPlatformOverrides().GetProperties()[0].GetValue()
-			require.Contains(t, envOverrides, "REPO_TOKEN="+tc.wantRepoToken)
+			envOverrides := strings.Split(lease.task.GetPlatformOverrides().GetProperties()[0].GetValue(), ",")
+			require.ElementsMatch(t, tc.wantEnvOverrides, envOverrides)
 		})
 	}
 }

@@ -223,8 +223,9 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 }
 
 // SetTaskRepositoryToken sets the GitHub repository token for a trusted remote runner task.
-// It leaves the task unchanged if the repo is not hosted on GitHub, the GitHub
-// App is not configured, or an installation is not linked to the org.
+// It leaves the task unchanged if the task has no repo or its repo is not
+// hosted on GitHub, the GitHub App is not configured, or an installation is
+// not linked to the org.
 // It mutates the original task.
 func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb.ExecutionTask, groupID string) error {
 	if !platform.IsCIRunnerCommand(task.GetCommand()) {
@@ -243,9 +244,10 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 		return nil
 	}
 
-	repoURL, err := remoteRunBaseRepoURL(task.GetCommand().GetArguments())
-	if err != nil {
-		return err
+	// Leave the task unchanged if the run does not use a git repo.
+	repoURL := remoteRunBaseRepoURL(task.GetCommand().GetArguments())
+	if repoURL == "" {
+		return nil
 	}
 	// Leave the task unchanged if the repo is not hosted on GitHub, because
 	// the GitHub app can only issue tokens for GitHub repos.
@@ -303,19 +305,17 @@ func envOverridesHeader(task *repb.ExecutionTask) map[string]string {
 	return overrides
 }
 
-func remoteRunBaseRepoURL(args []string) (string, error) {
+// remoteRunBaseRepoURL returns "" if the command does not specify a repo.
+func remoteRunBaseRepoURL(args []string) string {
 	pushedRepoURL, _ := commandArgValue(args, "--pushed_repo_url")
 	targetRepoURL, _ := commandArgValue(args, "--target_repo_url")
 	if targetRepoURL != "" && targetRepoURL != pushedRepoURL {
-		return targetRepoURL, nil
+		return targetRepoURL
 	}
 	if pushedRepoURL != "" {
-		return pushedRepoURL, nil
+		return pushedRepoURL
 	}
-	if targetRepoURL != "" {
-		return targetRepoURL, nil
-	}
-	return "", status.FailedPreconditionError("could not parse repo URL from command arguments")
+	return targetRepoURL
 }
 
 func commandArgValue(args []string, name string) (string, bool) {
