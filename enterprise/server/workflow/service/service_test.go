@@ -58,7 +58,6 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
