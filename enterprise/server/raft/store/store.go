@@ -236,9 +236,6 @@ func getPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
 			WriteStallBegin: mc.WriteStallBegin,
 			WriteStallEnd:   mc.WriteStallEnd,
 			DiskSlow:        mc.DiskSlow,
-			FormatUpgrade: func(fmv pebble.FormatMajorVersion) {
-				log.Infof("Raft store: pebble format upgrade to %s", fmv)
-			},
 		},
 	}
 	if *blockCacheSizeBytes > 0 {
