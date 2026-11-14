@@ -41,8 +41,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (

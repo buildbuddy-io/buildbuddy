@@ -13,6 +13,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/test/integration/remote_execution/rbeclient",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
@@ -28,7 +29,6 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
         "@com_github_prometheus_client_golang//prometheus/push",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/timestamppb",

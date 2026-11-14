@@ -30,8 +30,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (

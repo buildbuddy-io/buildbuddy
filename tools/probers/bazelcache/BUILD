@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/probers/bazelcache",
     visibility = ["//visibility:private"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
@@ -20,7 +21,6 @@ go_library(
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//stats",

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/rexec",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -16,7 +17,6 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
@@ -28,6 +28,7 @@ go_test(
     srcs = ["rexec_test.go"],
     deps = [
         ":rexec",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/real_environment",
@@ -36,7 +37,6 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

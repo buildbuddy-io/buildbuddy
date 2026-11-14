@@ -12,10 +12,10 @@ go_library(
         "//cli/login",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:bytestream_go_proto",
         "//proto:invocation_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
     ],
 )

@@ -20,11 +20,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const cacheDigestFunction = repb.DigestFunction_SHA256

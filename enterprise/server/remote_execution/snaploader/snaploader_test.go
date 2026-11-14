@@ -34,10 +34,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const maxFilecacheSizeBytes = 20_000_000

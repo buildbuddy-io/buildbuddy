@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:zip_go_proto",
         "//server/endpoint_urls/cache_api_url",
@@ -20,7 +21,6 @@ go_library(
         "//server/util/status",
         "//server/util/urlutil",
         "//server/util/ziputil",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],
 )

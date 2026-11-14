@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/batch_operator",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/cachetools",
@@ -18,7 +19,6 @@ go_library(
         "//server/util/rpcutil",
         "//server/util/status",
         "//server/util/usageutil",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_x_sync//errgroup",
     ],
 )
@@ -30,6 +30,7 @@ go_test(
     deps = [
         ":migration_operators",
         "//enterprise/server/batch_operator",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:routing_go_proto",
         "//server/interfaces",
@@ -39,7 +40,6 @@ go_test(
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
     ],
