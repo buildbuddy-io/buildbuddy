@@ -7,6 +7,7 @@ go_library(
     srcs = ["rbeclient.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient",
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/cache/dirtools",
         "//server/environment",
@@ -16,7 +17,6 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],

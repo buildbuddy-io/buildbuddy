@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//proto:buildbuddy_service_go_proto",
+        "//proto:bytestream_go_proto",
         "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -17,7 +18,6 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "@com_github_mattn_go_isatty//:go-isatty",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/protojson",
     ],

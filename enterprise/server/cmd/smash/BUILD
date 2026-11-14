@@ -7,6 +7,7 @@ go_library(
     srcs = ["smash.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/smash",
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
@@ -15,7 +16,6 @@ go_library(
         "@com_github_bojand_ghz//printer",
         "@com_github_bojand_ghz//runner",
         "@com_github_jhump_protoreflect//dynamic",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_x_sync//errgroup",
     ],

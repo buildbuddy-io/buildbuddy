@@ -24,9 +24,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ziputil"
 	"google.golang.org/grpc"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (

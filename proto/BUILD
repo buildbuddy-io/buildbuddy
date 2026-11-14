@@ -16,7 +16,6 @@ package(default_visibility = ["//visibility:public"])
 # gazelle:resolve proto google/api/annotations.proto @googleapis//google/api:annotations_proto
 # gazelle:resolve proto google/api/client.proto @googleapis//google/api:client_proto
 # gazelle:resolve proto google/api/field_behavior.proto @googleapis//google/api:field_behavior_proto
-# gazelle:resolve proto google/bytestream/bytestream.proto @googleapis//google/bytestream:bytestream_proto
 # gazelle:resolve proto google/longrunning/operations.proto @googleapis//google/longrunning:operations_proto
 # gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto
 # gazelle:resolve proto kythe/proto/analysis.proto @io_kythe//kythe/proto:analysis_proto
@@ -836,9 +835,9 @@ proto_library(
     name = "remote_execution_log_proto",
     srcs = ["remote_execution_log.proto"],
     deps = [
+        ":bytestream_proto",
         ":remote_execution_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@googleapis//google/bytestream:bytestream_proto",
         "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
     ],
@@ -1822,10 +1821,10 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log",
     proto = ":remote_execution_log_proto",
     deps = [
+        ":bytestream_go_proto",
         ":remote_execution_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )

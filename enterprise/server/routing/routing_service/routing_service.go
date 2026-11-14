@@ -12,7 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	bspb "google.golang.org/genproto/googleapis/bytestream"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 )
 
 const (

@@ -17,8 +17,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 // Result contains info about a completed attempt at uploading a file to the
