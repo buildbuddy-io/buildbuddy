@@ -275,6 +275,89 @@ as the key type.
 
 ### Azure AD / Entra
 
+Entra can sync users, groups, and group memberships with BuildBuddy through SCIM. Choose where to manage roles:
+
+- **Group-based roles (SCIM v2):** Entra syncs groups and their members. Assign roles to those groups in BuildBuddy's
+  **IAM Groups** settings.
+- **Legacy per-user roles:** Entra sends an application role on each user. Group objects are not synced to BuildBuddy.
+
+#### Group-based roles (SCIM v2)
+
+Before using this workflow, confirm that [**IAM Groups**](https://app.buildbuddy.io/settings/org/user-lists) is available in
+your BuildBuddy organization. If it is not, contact BuildBuddy support. Group-based application assignment requires
+[Microsoft Entra ID P1 or P2](https://learn.microsoft.com/en-us/entra/fundamentals/licensing).
+
+**Group-member removals:** Do not enable Entra's
+[`aadOptscim062020` compatibility flag](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/application-provisioning-config-problem-scim-compatibility#flags-to-alter-the-scim-behavior)
+with this workflow. The flag uses filtered removal paths such as `members[value eq "user-id"]`, which BuildBuddy does not
+currently support. BuildBuddy accepts removal requests with `path: "members"` and a `value` array of member IDs. Verify
+removals through scheduled provisioning before rolling out group-based roles. On-demand provisioning alone is not
+sufficient because Microsoft
+[notes that the flag does not apply to it](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/application-provisioning-config-problem-scim-compatibility#flags-to-alter-the-scim-behavior).
+
+1. In Entra, open the enterprise application used for BuildBuddy SAML login and navigate to **Provisioning**.
+
+1. Configure automatic provisioning with the following credentials:
+
+   - **Tenant URL:** `https://app.buildbuddy.io/scim/v2`
+   - **Secret Token:** The BuildBuddy **Org admin key** created above.
+
+   Use **Test Connection**, then save the configuration. In the new Entra provisioning experience, credentials are
+   configured under **Connectivity**.
+
+1. Under **Attribute mapping > Users**, retain only the following target attributes (the BuildBuddy side of each mapping):
+
+   - `userName`: Map from `mail` if the SAML `email` claim uses `user.mail`. These values must match; the provisioning UI
+     displays the source as `mail`, without the `user.` prefix.
+   - `active`: Retain the active-state expression.
+   - `name.givenName`: Map from `givenName`.
+   - `name.familyName`: Map from `surname`.
+
+   Remove any existing `SingleAppRoleAssignment([appRoleAssignments])` mapping. You will assign roles to the synced
+   groups in BuildBuddy instead.
+
+1. Enable the **Groups** object mapping and keep only these target mappings:
+
+   - `displayName`: Keep the default mapping and use this as the matching attribute.
+   - `members`: Keep the default mapping. Entra handles group membership synchronization automatically.
+
+   Save the mappings. Before starting provisioning, check that each Entra group you plan to sync has a unique name
+   and that none of those names are already used by an existing BuildBuddy IAM group.
+
+1. Set the provisioning scope to **Sync only assigned users and groups**. Assign the intended groups to the enterprise
+   application. To restrict sign-in to assigned users, also set **Properties > Assignment required?** to **Yes**.
+   Provisioning scope alone does not restrict sign-in. These assignments do not set the groups' roles in BuildBuddy.
+   Entra provisions direct group members, not members of nested groups. See
+   [Microsoft's assignment guidance](https://learn.microsoft.com/en-us/troubleshoot/entra/entra-id/app-integration/error-code-aadsts50105-user-not-assigned-role)
+   for details, including the Global Administrator exception to the sign-in assignment requirement.
+
+1. Start provisioning and check the provisioning logs for successful user, group, and membership synchronization.
+   Once the groups appear in BuildBuddy, open **Settings > IAM Groups** and use **Edit role** to assign each synced group
+   its intended role. Do not manually create same-named groups in place of syncing them.
+
+   New users provisioned through `/scim/v2` without an explicit role receive the Reader role. Assign the synced admin
+   group the Admin role and other groups the appropriate Developer, Writer, or Reader role in BuildBuddy.
+
+Before broad rollout, verify that a pilot user can sign in with the expected permissions. Add and remove the user from
+a group through scheduled provisioning. Keep the user in another assigned group during the removal test so you verify
+the role change without deprovisioning the user.
+
+**Migrating existing users:** Changing the Tenant URL or removing the per-user role mapping does not automatically
+remove roles assigned directly to users. BuildBuddy combines those permissions with IAM group permissions. A direct
+Developer or Admin role can therefore preserve access after removal from an IAM group. After confirming the synced
+group roles, review and reduce direct user roles to the intended baseline. Keep an administrator's access throughout
+the migration.
+
+For Entra's provisioning scope and group requirements, see
+[Microsoft's provisioning documentation](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/use-scim-to-provision-users-and-groups)
+and [group-based scoping limitations](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/how-provisioning-works#assignment-based-scoping).
+
+<details>
+<summary>Legacy per-user roles</summary>
+
+Use this workflow to keep role assignment in Entra rather than BuildBuddy IAM groups. It uses the legacy `/scim`
+endpoint, not `/scim/v2`.
+
 1. Within Entra, open the BuildBuddy application that was created for SAML integration.
 
 1. Go to the `Provisioning` page.
@@ -293,7 +376,8 @@ as the key type.
 
 1. After pressing `Save` in the previous step, you should see a new `Mappings` section. Under that section do the following:
 
-   1. Open `Provision Microsoft Entra ID Groups` and set `Enabled` to No as BuildBuddy does not support syncing groups. Save and return to the previous page.
+   1. Open `Provision Microsoft Entra ID Groups` and set `Enabled` to No. Group sync is not supported by the legacy `/scim`
+      endpoint. Save and return to the previous page.
 
    1. Open `Provision Microsoft Entra ID Users` and make the following changes:
 
@@ -328,6 +412,8 @@ as the key type.
       The display name should exactly match one of the values listed above and the value can be anything.
 
       When sending role information downstream, Entra only sends the role display name, ignoring the role value.
+
+</details>
 
 ## Organization membership requests
 
