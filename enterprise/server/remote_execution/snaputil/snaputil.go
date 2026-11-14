@@ -19,8 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/genproto/googleapis/bytestream"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -108,7 +108,7 @@ func (s ChunkSource) String() string {
 	}
 }
 
-func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
+func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bspb.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
 	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
 		return 0, status.UnimplementedError("Snapshot sharing not enabled")
 	}
@@ -163,7 +163,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	return ChunkSourceRemoteCache, nil
 }
 
-func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
+func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bspb.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
 	if err := digest.Validate(d, repb.DigestFunction_BLAKE3); err != nil {
 		return nil, err
 	}
@@ -190,7 +190,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 //
 // Returns the number of bytes written to the remote cache (including short-circuited or failed uploads).
 // groupID is the group that owns the snapshot and is only used for metrics.
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string, groupID string) (int64, error) {
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bspb.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string, groupID string) (int64, error) {
 	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
 		return 0, status.UnimplementedError("Snapshot sharing not enabled")
 	}
@@ -251,7 +251,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string, groupID string) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bspb.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string, groupID string) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {

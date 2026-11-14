@@ -74,10 +74,10 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (

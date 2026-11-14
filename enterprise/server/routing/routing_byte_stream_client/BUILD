@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//enterprise/server/batch_operator",
         "//enterprise/server/routing/migration_operators",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
@@ -20,7 +21,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/usageutil",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//status",
     ],

@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher",
     deps = [
         "//enterprise/server/oci/ocicache",
+        "//proto:bytestream_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
@@ -28,7 +29,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
@@ -40,6 +40,7 @@ go_test(
         "//enterprise/server/oci/ocicache",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testregistry",
+        "//proto:bytestream_go_proto",
         "//proto:capability_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
@@ -58,7 +59,6 @@ go_test(
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],
 )

@@ -26,10 +26,10 @@ import (
 	cligit "github.com/buildbuddy-io/buildbuddy/cli/util/git"
 	invocation_util "github.com/buildbuddy-io/buildbuddy/cli/util/invocation"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (

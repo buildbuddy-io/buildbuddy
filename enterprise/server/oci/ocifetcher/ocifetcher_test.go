@@ -33,13 +33,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func imageMetadata(t *testing.T, img ctr.Image) (digest string, size int64, mediaType string) {

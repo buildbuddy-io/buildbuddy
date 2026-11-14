@@ -19,10 +19,10 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (

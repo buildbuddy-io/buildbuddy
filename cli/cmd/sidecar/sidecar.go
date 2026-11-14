@@ -40,10 +40,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/sidecar"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (

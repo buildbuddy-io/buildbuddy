@@ -19,9 +19,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ropb "github.com/buildbuddy-io/buildbuddy/proto/routing"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type mockBSReadClient struct {

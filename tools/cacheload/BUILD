@@ -10,6 +10,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/cacheload",
     visibility = ["//visibility:private"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/metrics",
         "//server/real_environment",
@@ -25,7 +26,6 @@ go_library(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
         "@org_golang_x_sync//errgroup",

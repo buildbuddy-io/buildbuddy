@@ -27,8 +27,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type failingUploadCASClient struct {

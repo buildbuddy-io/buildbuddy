@@ -13,6 +13,7 @@ go_test(
     deps = [
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -28,7 +29,6 @@ go_test(
         "//server/util/log",
         "//server/util/prefix",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],
 )

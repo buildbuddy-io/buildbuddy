@@ -64,6 +64,7 @@ go_test(
         ":workspace",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/cachetools",
@@ -75,7 +76,6 @@ go_test(
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:cache_go_proto",
         "//proto:cache_service_go_proto",
         "//proto:capability_go_proto",
@@ -27,7 +28,6 @@ go_library(
         "//server/util/scratchspace",
         "//server/util/status",
         "//third_party/singleflight",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//codes",
@@ -42,6 +42,7 @@ go_test(
     deps = [
         ":fetch_server",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:bytestream_go_proto",
         "//proto:cache_go_proto",
         "//proto:cache_service_go_proto",
         "//proto:capability_go_proto",
@@ -67,7 +68,6 @@ go_test(
         "@com_github_rs_zerolog//log",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
