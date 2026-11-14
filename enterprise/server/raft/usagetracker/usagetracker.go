@@ -1,11 +1,11 @@
 package usagetracker
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"math"
-	"math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -19,8 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -30,7 +31,7 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
+	"golang.org/x/time/rate"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -40,21 +41,18 @@ import (
 var (
 	partitionUsageDeltaGossipThreshold = flag.Int("cache.raft.partition_usage_delta_bytes_threshold", 100e6, "Gossip partition usage information if it has changed by more than this amount since the last gossip.")
 	localSizeUpdatePeriod              = flag.Duration("cache.raft.local_size_update_period", 10*time.Second, "How often we update local size updates.")
-	samplesPerEviction                 = flag.Int("cache.raft.samples_per_eviction", 20, "How many records to sample on each eviction")
-	samplesPerBatch                    = flag.Int("cache.raft.samples_per_batch", 10000, "How many keys we read forward every time we get a random key.")
-	samplePoolSize                     = flag.Int("cache.raft.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
-	sampleBufferSize                   = flag.Int("cache.raft.sample_buffer_size", 100, "Buffer up to this many samples for eviction sampling")
-	deletesPerEviction                 = flag.Int("cache.raft.deletes_per_eviction", 5, "Maximum number keys to delete in one eviction attempt before resampling.")
 	evictionRateLimit                  = flag.Int("cache.raft.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
-	deleteBufferSize                   = flag.Int("cache.raft.delete_buffer_size", 20, "Buffer up to this many samples for eviction eviction")
 	minEvictionAge                     = flag.Duration("cache.raft.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
-	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_peroid", 5*time.Minute, "How often we refresh iterator in sampler")
-	samplerSleepDuration               = flag.Duration("cache.raft.sampler_sleep_duration", 1*time.Second, "How long the eviction sampler sleeps when it cannot find eligible entries to evict. Set to 0 to disable sleeping (intended for tests).")
-	evictionBatchSize                  = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
-	numDeleteWorkers                   = flag.Int("cache.raft.num_delete_worker", 4, "Number of deletes in parallel")
-	numGCSDeleteWorkers                = flag.Int("cache.raft.num_gcs_delete_worker", 32, "Number of parallel GCS blob deletion workers (per partition).")
-	gcsDeleteBufferSize                = flag.Int("cache.raft.gcs_delete_buffer_size", 10000, "Buffer up to this many GCS deletion requests")
-	gcsDeleteDrainTimeout              = flag.Duration("cache.raft.gcs_delete_drain_timeout", 10*time.Second, "Max time to spend draining buffered GCS deletes on shutdown.")
+	// The flag name predates the removal of the sampling-based evictor; it is
+	// kept so existing configs don't break.
+	idleSleepDuration         = flag.Duration("cache.raft.sampler_sleep_duration", 1*time.Second, "How long the eviction loop sleeps when the partition is below its eviction threshold or nothing is old enough to evict. Set to 0 to disable sleeping (intended for tests).")
+	evictionBatchSize         = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
+	numDeleteWorkers          = flag.Int("cache.raft.num_delete_worker", 4, "Number of deletes in parallel")
+	numGCSDeleteWorkers       = flag.Int("cache.raft.num_gcs_delete_worker", 32, "Number of parallel GCS blob deletion workers (per partition).")
+	gcsDeleteBufferSize       = flag.Int("cache.raft.gcs_delete_buffer_size", 10000, "Buffer up to this many GCS deletion requests")
+	gcsDeleteDrainTimeout     = flag.Duration("cache.raft.gcs_delete_drain_timeout", 10*time.Second, "Max time to spend draining buffered GCS deletes on shutdown.")
+	atimeIndexVerifyRateLimit = flag.Int("cache.raft.atime_index_verify_rate_limit", 1000, "Maximum records per second the background atime-index verifier reads (per partition). Non-positive disables the verifier.")
+	atimeIndexVerifyInterval  = flag.Duration("cache.raft.atime_index_verify_interval", 1*time.Hour, "How long the atime-index verifier sleeps between full passes over a partition's records.")
 )
 
 const (
@@ -71,10 +69,39 @@ const (
 	// based on data changes.
 	storePartitionUsageMaxAge = 5 * time.Minute
 
-	samplerSleepThreshold = float64(0.2)
-	evictFlushPeriod      = 10 * time.Second
-	metricsRefreshPeriod  = 30 * time.Second
+	metricsRefreshPeriod = 30 * time.Second
 )
+
+// backfillCommitSizeBytes is how large the atime-index backfill lets its write
+// batch grow before committing it: a partition can hold millions of records
+// (one small index write each), and pebble panics on batches over ~4GB. Var so
+// tests can exercise the chunking cheaply.
+var backfillCommitSizeBytes = 4 * 1024 * 1024
+
+// verifyChunkRecords is how many records a verify pass examines per snapshot
+// before taking a fresh one. The pass is rate-limited and can run for hours on
+// a large partition, and an open pebble snapshot (and the iterator on it)
+// keeps data on disk that compaction would otherwise drop -- retained disk
+// that EstimateDiskUsage (and so the partition usage gauge) does not count.
+// At the default verify rate, this keeps each snapshot around half a minute
+// old. Var so tests can exercise chunk boundaries cheaply.
+var verifyChunkRecords = 30_000
+
+// atimeIndexVersion identifies the atime-index key encoding. It is stored in
+// the backfill marker; incrementing it makes every store wipe and rebuild its
+// index on the next startup. The index is derived state, so a rebuild is
+// always safe -- bump this whenever the entry encoding changes.
+//
+// Rollout caution: the marker only records that a backfill completed, not
+// that the index has stayed complete since. Rolling back to a pre-index
+// binary and re-upgrading leaves records written during the rollback window
+// unindexed (and so invisible to eviction), because the marker still
+// matches. The background verifier (startAtimeIndexVerifier) detects and
+// repairs such records -- watch the repair metric spike -- but only at its
+// rate limit, taking up to a full verify interval plus a pass. If the
+// rollback window was large, delete the marker keys (or bump this version)
+// instead: the full-speed backfill rebuild runs before eviction starts.
+const atimeIndexVersion = byte(1)
 
 type Tracker struct {
 	gossipManager interfaces.GossipService
@@ -82,6 +109,7 @@ type Tracker struct {
 	partitions    []disk.Partition
 	sender        *sender.Sender
 	clock         clockwork.Clock
+	dbGetter      pebble.Leaser
 
 	mu            sync.Mutex
 	byPartition   map[string]*partitionUsage
@@ -97,17 +125,13 @@ type nodePartitionUsage struct {
 	lastUpdate time.Time
 }
 
-type evictionKey struct {
-	bytes           []byte
+// evictionCandidate is a coldest-first eviction candidate produced by the
+// atime-index sweep.
+type evictionCandidate struct {
+	keyBytes        []byte
 	storageMetadata *sgpb.StorageMetadata
-}
-
-func (k *evictionKey) ID() string {
-	return string(k.bytes)
-}
-
-func (k *evictionKey) String() string {
-	return string(k.bytes)
+	sizeBytes       int64
+	atime           time.Time
 }
 
 type metricSet struct {
@@ -119,9 +143,11 @@ type metricSet struct {
 	cacheLastEvictionAgeUsec prometheus.Gauge
 	cacheNumEvictions        prometheus.Counter
 	cacheBytesEvicted        prometheus.Counter
+	atimeIndexRepairs        prometheus.Counter
+	atimeIndexOrphansDropped prometheus.Counter
+	atimeIndexSweepSeek      prometheus.Observer
 
-	evictionSamplesChanSize prometheus.Gauge
-	evictionGCSChanSize     prometheus.Gauge
+	evictionGCSChanSize prometheus.Gauge
 }
 
 type partitionUsage struct {
@@ -131,15 +157,11 @@ type partitionUsage struct {
 	sender   *sender.Sender
 	clock    clockwork.Clock
 
-	mu  sync.RWMutex
-	lru *approxlru.LRU[*evictionKey]
+	mu sync.RWMutex
 	// Global view of usage, keyed by Node Host ID.
 	nodes map[string]*nodePartitionUsage
 
-	samples    chan *approxlru.Sample[*evictionKey]
-	deletes    chan *approxlru.Sample[*evictionKey]
 	gcsDeletes chan *sgpb.StorageMetadata_GCSMetadata
-	rng        *rand.Rand
 
 	eg       *errgroup.Group
 	egCancel context.CancelFunc
@@ -152,20 +174,25 @@ type partitionUsage struct {
 
 	sizeBytes int64
 
-	samplesPerBatch          int
-	samplerIterRefreshPeriod time.Duration
-	samplerSleepDuration     time.Duration
-	minEvictionAge           time.Duration
-	localSizeUpdatePeriod    time.Duration
-	evictionBatchSize        int
-	numDeleteWorkers         int
-	numGCSDeleteWorkers      int
-	fileStorer               filestore.Store
+	evictionRateLimit     int
+	idleSleepDuration     time.Duration
+	minEvictionAge        time.Duration
+	localSizeUpdatePeriod time.Duration
+	evictionBatchSize     int
+	numDeleteWorkers      int
+	numGCSDeleteWorkers   int
+	indexVerifyRateLimit  int
+	indexVerifyInterval   time.Duration
+	fileStorer            filestore.Store
+
+	// Closed once the one-shot atime-index backfill has run (successfully or
+	// not); gates the background index verifier.
+	backfillDone chan struct{}
 
 	metrics metricSet
 }
 
-func (pu *partitionUsage) LocalSizeBytes() int64 {
+func (pu *partitionUsage) localSizeBytes() int64 {
 	db, err := pu.dbGetter.DB()
 	if err != nil {
 		log.Warningf("unable to get local size bytes for partition %q: %s", pu.part.ID, err)
@@ -178,7 +205,15 @@ func (pu *partitionUsage) LocalSizeBytes() int64 {
 		log.Warningf("unable to get local size bytes for partition %q: %s", pu.part.ID, err)
 		return 0
 	}
-	return int64(sizeBytes)
+	// The atime index consumes the partition's disk budget too; count it so
+	// usage (and therefore eviction pressure) reflects the true footprint.
+	idxStart, idxEnd := keys.AtimeIndexPartitionRange(pu.part.ID)
+	idxSizeBytes, err := db.EstimateDiskUsage(idxStart, idxEnd)
+	if err != nil {
+		log.Warningf("unable to get atime index size bytes for partition %q: %s", pu.part.ID, err)
+		return 0
+	}
+	return int64(sizeBytes + idxSizeBytes)
 }
 
 func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
@@ -188,11 +223,10 @@ func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.Chan():
-			sizeBytes := pu.LocalSizeBytes()
+			sizeBytes := pu.localSizeBytes()
 			pu.mu.RLock()
 			pu.sizeBytes = sizeBytes
 			pu.mu.RUnlock()
-			pu.lru.UpdateLocalSizeBytes(sizeBytes)
 			pu.metrics.cachePartitionSizeBytes.Set(float64(sizeBytes))
 			pu.metrics.cachePartitionCapacityBytes.Set(float64(pu.part.MaxSizeBytes))
 		}
@@ -225,12 +259,12 @@ func (pu *partitionUsage) partitionKeyPrefix() string {
 	return filestore.PartitionDirectoryPrefix + pu.part.ID
 }
 
-// evictionKeyMeta is a key to evict with its eviction sample.
-type evictionKeyMeta = sender.KeyMeta[*approxlru.Sample[*evictionKey]]
+// evictionKeyMeta is a key to evict with its eviction candidate.
+type evictionKeyMeta = sender.KeyMeta[*evictionCandidate]
 
 // deleteBatchResult tracks the outcome of evictions on one range.
 type deleteBatchResult struct {
-	evicted   []*approxlru.Sample[*evictionKey]
+	evicted   []*evictionCandidate
 	numFailed int
 	lastErr   error
 }
@@ -241,13 +275,13 @@ type deleteBatchResult struct {
 // update metrics and enqueue GCS cleanup.
 func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*evictionKeyMeta) (*deleteBatchResult, error) {
 	batch := rbuilder.NewBatchBuilder()
-	samples := make([]*approxlru.Sample[*evictionKey], 0, len(keys))
+	candidates := make([]*evictionCandidate, 0, len(keys))
 	for _, k := range keys {
-		sample := k.Meta
-		samples = append(samples, sample)
+		candidate := k.Meta
+		candidates = append(candidates, candidate)
 		batch.Add(&rfpb.DeleteRequest{
 			Key:        k.Key,
-			MatchAtime: sample.Timestamp.UnixMicro(),
+			MatchAtime: candidate.atime.UnixMicro(),
 		})
 	}
 	batchCmd, err := batch.ToProto()
@@ -263,19 +297,21 @@ func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h 
 	}
 	parsed := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
 	res := &deleteBatchResult{}
-	for i, sample := range samples {
+	for i, candidate := range candidates {
 		if _, err := parsed.DeleteResponse(i); err != nil {
 			res.numFailed++
 			res.lastErr = err
 			continue
 		}
-		res.evicted = append(res.evicted, sample)
+		res.evicted = append(res.evicted, candidate)
 	}
 	return res, nil
 }
 
-func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evictionKeyMeta) {
-	if len(keys) == 0 {
+// sendDeleteRequests evicts a batch of candidates through raft. It returns
+// once every delete has concluded, successfully or not.
+func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, candidates []*evictionCandidate) {
+	if len(candidates) == 0 {
 		return
 	}
 	start := pu.clock.Now()
@@ -284,9 +320,20 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 		metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 	}()
 
+	keyMetas := make([]*evictionKeyMeta, len(candidates))
+	for i, c := range candidates {
+		keyMetas[i] = sender.NewKeyMeta(c.keyBytes, c)
+	}
+
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
 	// still returns success, so this path does not need sender-owned sessions.
-	rsps, err := pu.sender.RunMultiKey(ctx, keys, pu.deleteBatch)
+	//
+	// TODO(vanja): deleting an already-deleted record (e.g. one that another
+	// replica's node evicted first) is indistinguishable from a real eviction
+	// here, so it is double-counted in eviction metrics, the speculative usage
+	// decrement and GCS deletes. A not_found field on DeleteResponse (default
+	// false, for rollout safety) would let us tell them apart.
+	rsps, err := pu.sender.RunMultiKey(ctx, keyMetas, pu.deleteBatch)
 	failed := err != nil
 	if err != nil {
 		log.Warning(err.Error())
@@ -300,7 +347,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 		pu.updateEvictionMetrics(res.evicted)
 
 		for _, s := range res.evicted {
-			if gcsMD := s.Key.storageMetadata.GetGcsMetadata(); gcsMD != nil {
+			if gcsMD := s.storageMetadata.GetGcsMetadata(); gcsMD != nil {
 				select {
 				case pu.gcsDeletes <- gcsMD:
 				default:
@@ -313,77 +360,6 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 	if failed {
 		metrics.RaftEvictionErrorCount.Inc()
 	}
-}
-
-func (pu *partitionUsage) processEviction(ctx context.Context) {
-	batches := make(chan []*evictionKeyMeta, 1)
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		defer close(batches)
-		// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done
-		// so the batcher stops promptly on shutdown instead of blocking until
-		// pu.deletes drains. Returns false if ctx was cancelled (return then).
-		sendBatch := func(b []*evictionKeyMeta) bool {
-			select {
-			case batches <- b:
-				return true
-			case <-ctx.Done():
-				return false
-			}
-		}
-		var batch []*evictionKeyMeta
-		timer := time.NewTimer(evictFlushPeriod)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case sampleToDelete := <-pu.deletes:
-				batch = append(batch, sender.NewKeyMeta(sampleToDelete.Key.bytes, sampleToDelete))
-				if len(batch) >= pu.evictionBatchSize {
-					if !sendBatch(batch) {
-						return
-					}
-					batch = nil
-					timer.Reset(evictFlushPeriod)
-				}
-			case <-timer.C:
-				if len(batch) > 0 {
-					if !sendBatch(batch) {
-						return
-					}
-					batch = nil
-				}
-				timer.Reset(evictFlushPeriod)
-			}
-		}
-	})
-	wg.Go(func() {
-		sem := semaphore.NewWeighted(int64(pu.numDeleteWorkers))
-		// inner tracks the in-flight sendDeleteRequests goroutines — the only
-		// senders to pu.gcsDeletes. Wait for them, then close gcsDeletes so the
-		// GCS workers drain the remainder and exit.
-		var inner sync.WaitGroup
-		defer func() {
-			inner.Wait()
-			close(pu.gcsDeletes)
-		}()
-		for batch := range batches {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				// Context cancelled; the batcher has already (or will) close
-				// batches, so stop launching new deletes and return.
-				return
-			}
-			inner.Go(func() {
-				defer sem.Release(1)
-				pu.sendDeleteRequests(ctx, batch)
-			})
-		}
-	})
-	// Block until the batcher, the dispatcher, and every in-flight
-	// sendDeleteRequests goroutine have finished. By then the dispatcher has
-	// closed gcsDeletes (above), so the GCS workers can drain the remainder and
-	// exit; Stop just waits for that (see drainGCSDeletes).
-	wg.Wait()
 }
 
 func (pu *partitionUsage) processGCSDeletions(ctx context.Context) {
@@ -410,7 +386,7 @@ func (pu *partitionUsage) processGCSDeletions(ctx context.Context) {
 
 // drainGCSDeletes waits for the GCS-delete workers to flush the buffered
 // deletes, bounded by shutdownCtx (the shared drain budget). gcsDeletes is
-// closed by processEviction once the producers stop, so the workers drain
+// closed once the eviction loop (its only producer) stops, so the workers drain
 // what's buffered and exit; here we wait for that, then cancel — releasing
 // their context on success, or force-stopping them (abandoning whatever is
 // left) when the budget runs out first.
@@ -429,172 +405,482 @@ func (pu *partitionUsage) drainGCSDeletes(shutdownCtx context.Context) {
 	pu.gcsDeleteCancel()
 }
 
-func (pu *partitionUsage) startSampleGenerator(ctx context.Context) {
-	pu.generateSamplesForEviction(ctx)
-	close(pu.samples)
-}
-
-var digestRunes = []rune("abcdef1234567890")
-
-func (pu *partitionUsage) randomKey(n int) []byte {
-	var randKey strings.Builder
-	randKey.WriteString(pu.partitionKeyPrefix() + "/")
-	for range n {
-		randKey.WriteString(string(digestRunes[rand.Intn(len(digestRunes))]))
+func (pu *partitionUsage) startEviction(ctx context.Context) {
+	if err := pu.backfillAtimeIndex(ctx); err != nil && ctx.Err() == nil {
+		// Run eviction anyway: already-indexed records still get evicted, and
+		// the missing marker means the backfill is retried on next startup.
+		// Alert because until then, unindexed records are invisible to
+		// eviction (the verifier heals them only slowly, at its rate limit).
+		alert.UnexpectedEvent("raft_atime_index_backfill_failed", "partition %q: atime index backfill failed: %s", pu.part.ID, err)
 	}
-	return []byte(randKey.String())
+	if pu.backfillDone != nil {
+		close(pu.backfillDone)
+	}
+	// evictionLoop returns non-nil only on storage errors (db acquisition or
+	// iterator failures), which may be transient. A dead loop means the
+	// partition grows without bound, so alert and retry with backoff rather
+	// than giving up for the process lifetime.
+	for ctx.Err() == nil {
+		err := pu.evictionLoop(ctx, pu.sendDeleteRequests)
+		if err == nil {
+			return // context done
+		}
+		alert.UnexpectedEvent("raft_eviction_loop_failed", "partition %q: eviction loop failed (will retry): %s", pu.part.ID, err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-pu.clock.After(10 * time.Second):
+		}
+	}
 }
 
-// samplerSleep pauses the sampler for the configured sleep duration to avoid
-// busy-looping when there is nothing useful to sample. It returns false if the
+// backfillAtimeIndex builds the partition's atime index from already-stored
+// records the first time a store starts with indexing enabled; from then on
+// the replica apply path maintains the index and the completion marker skips
+// this scan. The backfill is idempotent and doesn't coordinate with concurrent
+// applies: an entry that goes stale mid-scan is an orphan the eviction sweep
+// cleans up.
+func (pu *partitionUsage) backfillAtimeIndex(ctx context.Context) error {
+	db, err := pu.dbGetter.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	markerKey := keys.AtimeIndexBackfillMarkerKey(pu.part.ID)
+	if val, closer, err := db.Get(markerKey); err == nil {
+		upToDate := len(val) == 1 && val[0] == atimeIndexVersion
+		closer.Close()
+		if upToDate {
+			return nil
+		}
+		log.Infof("partition %q: atime index version changed; rebuilding", pu.part.ID)
+	} else if err != pebble.ErrNotFound {
+		return err
+	}
+
+	// Drop any existing entries first: on a version bump they may use an old
+	// encoding the sweep can't reliably interpret, and on a crashed prior
+	// backfill this keeps the rebuild exact rather than additive.
+	idxStart, idxEnd := keys.AtimeIndexPartitionRange(pu.part.ID)
+	if err := db.DeleteRange(idxStart, idxEnd, pebble.NoSync); err != nil {
+		return err
+	}
+
+	start, end := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+
+	fileMetadata := sgpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
+
+	wb := db.NewBatch()
+	defer wb.Close()
+	count := 0
+	startTime := time.Now()
+	lastLog := startTime
+	for iter.First(); iter.Valid(); iter.Next() {
+		// Don't write the marker on cancellation: rescanning on the next
+		// startup is cheap and idempotent.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		fileMetadata.ResetVT()
+		if err := fileMetadata.UnmarshalVT(iter.Value()); err != nil {
+			log.Warningf("atime index backfill: skipping non-FileMetadata key %q: %s", iter.Key(), err)
+			continue
+		}
+		if err := wb.Set(keys.AtimeIndexKey(pu.part.ID, fileMetadata.GetLastAccessUsec(), iter.Key()), nil, nil); err != nil {
+			return err
+		}
+		count++
+		if wb.Len() >= backfillCommitSizeBytes {
+			if err := wb.Commit(pebble.NoSync); err != nil {
+				return err
+			}
+			wb.Reset()
+		}
+		if time.Since(lastLog) > 10*time.Second {
+			log.Infof("partition %q: atime index backfill: %d entries so far", pu.part.ID, count)
+			lastLog = time.Now()
+		}
+	}
+	// A mid-scan iterator error (I/O, block checksum) makes Valid() return
+	// false just like normal exhaustion. Writing the marker after a truncated
+	// scan would permanently strand the unscanned records outside the index,
+	// so fail -- without the marker, the next startup rescans.
+	if err := iter.Error(); err != nil {
+		return err
+	}
+	if err := wb.Commit(pebble.NoSync); err != nil {
+		return err
+	}
+	if err := db.Set(markerKey, []byte{atimeIndexVersion}, pebble.Sync); err != nil {
+		return err
+	}
+	log.Infof("partition %q: atime index backfill complete: %d entries in %s", pu.part.ID, count, time.Since(startTime))
+	return nil
+}
+
+// startAtimeIndexVerifier runs a slow, continuous reverse check of the atime
+// index: it scans every record in the partition and verifies that the record's
+// index entry exists, repairing (and counting) any that are missing.
+//
+// "Every record has an index entry" is the invariant eviction rests on: a
+// record without one is invisible to the sweep and can never be evicted. The
+// apply path maintains it batch-atomically in steady state, so the repair
+// metric staying at zero is continuous evidence that it holds -- a sustained
+// nonzero rate is the alert. The verifier also heals the known narrow gaps
+// (a crash inside the sweep's orphan-drop/restore window, records written by
+// a pre-index binary during a rollback) and any bug class not yet imagined.
+//
+// It needs no synchronization with concurrent applies: it checks records
+// against a snapshot (see verifyAtimeIndexPass), and a repair that races an
+// apply only produces a stale extra entry (an orphan the sweep drops lazily),
+// never a missing one.
+func (pu *partitionUsage) startAtimeIndexVerifier(ctx context.Context) {
+	if pu.indexVerifyRateLimit <= 0 {
+		return
+	}
+	// Wait for the one-shot backfill so a first pass over a fresh store doesn't
+	// redo the backfill's work one rate-limited record at a time. (If the
+	// backfill failed, the verifier doubles as a slow retry; the repairs it
+	// then reports are genuinely missing entries.)
+	select {
+	case <-ctx.Done():
+		return
+	case <-pu.backfillDone:
+	}
+	limiter := rate.NewLimiter(rate.Limit(pu.indexVerifyRateLimit), 1)
+	for ctx.Err() == nil {
+		// The pass logs its own summary (and each repair individually).
+		if _, err := pu.verifyAtimeIndexPass(ctx, limiter); err != nil {
+			log.Errorf("partition %q: atime index verify pass failed (will retry): %s", pu.part.ID, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-pu.clock.After(pu.indexVerifyInterval):
+		}
+	}
+}
+
+// verifyAtimeIndexPass makes one full pass over the partition's records,
+// checking that each record's index entry exists and repairing (and counting)
+// those that don't.
+//
+// A record and its entry are read from the same pebble snapshot. The apply
+// path always writes the two in one batch, so at any single instant either
+// both are visible or neither is: a record with no entry in a snapshot is a
+// real violation. Looking the entry up live instead would also report every
+// record whose atime an apply moved after the scan read it.
+//
+// The repair is a live write. If the record has moved or been deleted since
+// the snapshot, it creates an orphan, which the sweep drops.
+//
+// The pass works in chunks of verifyChunkRecords, each with its own snapshot,
+// so that no snapshot lives for hours (see verifyChunkRecords).
+func (pu *partitionUsage) verifyAtimeIndexPass(ctx context.Context, limiter *rate.Limiter) (int, error) {
+	db, err := pu.dbGetter.DB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	fileMetadata := sgpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
+
+	lower, upper := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
+	repaired := 0
+	scanned := 0
+	startTime := pu.clock.Now()
+	for lower != nil && ctx.Err() == nil {
+		nextLower, n, r, err := pu.verifyAtimeIndexChunk(ctx, db, limiter, lower, upper, fileMetadata)
+		scanned += n
+		repaired += r
+		if err != nil {
+			return repaired, err
+		}
+		lower = nextLower
+	}
+	log.Infof("partition %q: atime index verify pass: %d records scanned, %d entries repaired in %s", pu.part.ID, scanned, repaired, pu.clock.Since(startTime))
+	return repaired, nil
+}
+
+// verifyAtimeIndexChunk verifies up to verifyChunkRecords records in
+// [lower, upper), returning the lower bound to continue from (nil when the
+// span is exhausted or the context was cancelled) and the scanned/repaired
+// counts.
+func (pu *partitionUsage) verifyAtimeIndexChunk(ctx context.Context, db pebble.IPebbleDB, limiter *rate.Limiter, lower, upper []byte, fileMetadata *sgpb.FileMetadata) (nextLower []byte, scanned, repaired int, err error) {
+	// Records and index entries are both read from this snapshot, so they
+	// describe the same instant (see verifyAtimeIndexPass).
+	snap := db.NewSnapshot()
+	defer snap.Close()
+	iter, err := snap.NewIter(&pebble.IterOptions{LowerBound: lower, UpperBound: upper})
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer iter.Close()
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		if scanned >= verifyChunkRecords {
+			// Resume at this (unexamined) record with a fresh snapshot.
+			return bytes.Clone(iter.Key()), scanned, repaired, nil
+		}
+		scanned++
+		if err := limiter.Wait(ctx); err != nil {
+			return nil, scanned, repaired, nil // context cancelled
+		}
+		fileMetadata.ResetVT()
+		if err := fileMetadata.UnmarshalVT(iter.Value()); err != nil {
+			log.Warningf("atime index verify: skipping non-FileMetadata key %q: %s", iter.Key(), err)
+			continue
+		}
+		fileKey := iter.Key()
+		atimeUsec := fileMetadata.GetLastAccessUsec()
+		entryKey := keys.AtimeIndexKey(pu.part.ID, atimeUsec, fileKey)
+		_, closer, err := snap.Get(entryKey)
+		if err == nil {
+			closer.Close()
+			continue
+		}
+		if err != pebble.ErrNotFound {
+			log.Warningf("atime index verify: cannot check entry %q: %s", entryKey, err)
+			continue
+		}
+		if err := db.Set(entryKey, nil, pebble.NoSync); err != nil {
+			log.Warningf("atime index verify: failed to repair entry %q: %s", entryKey, err)
+			continue
+		}
+		repaired++
+		pu.metrics.atimeIndexRepairs.Inc()
+		log.Warningf("partition %q: repaired missing atime index entry for record %q (atime %d)", pu.part.ID, fileKey, atimeUsec)
+	}
+	if err := iter.Error(); err != nil {
+		return nil, scanned, repaired, err
+	}
+	return nil, scanned, repaired, nil
+}
+
+// idleSleep pauses the eviction loop for the configured sleep duration to
+// avoid busy-looping when there is nothing to evict. It returns false if the
 // context was cancelled.
-func (pu *partitionUsage) samplerSleep(ctx context.Context) bool {
-	if pu.samplerSleepDuration <= 0 {
+func (pu *partitionUsage) idleSleep(ctx context.Context) bool {
+	if pu.idleSleepDuration <= 0 {
 		return ctx.Err() == nil
 	}
 	select {
 	case <-ctx.Done():
 		return false
-	case <-pu.clock.After(pu.samplerSleepDuration):
+	case <-pu.clock.After(pu.idleSleepDuration):
 		return true
 	}
 }
 
-func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error {
+// maxAllowedSizeBytes is the size above which the partition is considered
+// full and eviction kicks in.
+func (pu *partitionUsage) maxAllowedSizeBytes() int64 {
+	return int64(EvictionCutoffThreshold * float64(pu.part.MaxSizeBytes))
+}
+
+// evictFunc deletes a batch of eviction candidates, returning once those
+// deletes have concluded. It may be called from several goroutines at once.
+type evictFunc func(ctx context.Context, batch []*evictionCandidate)
+
+// evictionLoop keeps the partition below its eviction threshold. While the
+// partition is over budget it sweeps the atime index coldest-first, evicting
+// what it finds; otherwise it sleeps. Every sweep starts from the coldest
+// entry: sweepIndex returns only after the deletes it dispatched have
+// concluded, so a new sweep never sees a record whose delete is in flight.
+func (pu *partitionUsage) evictionLoop(ctx context.Context, evict evictFunc) error {
 	db, err := pu.dbGetter.DB()
 	if err != nil {
-		log.Warningf("cannot generate samples for eviction: failed to get db: %s", err)
+		log.Warningf("partition %q: eviction loop failed to get db: %s", pu.part.ID, err)
 		return err
 	}
 	defer db.Close()
-	start, end := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
-	iterCreatedAt := time.Now()
-	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
-	if err != nil {
-		return err
-	}
-	// We update the iter variable later on, so we need to wrap the Close call
-	// in a func to operate on the correct iterator instance.
-	defer func() {
-		iter.Close()
-	}()
 
-	leftInBatch := pu.samplesPerBatch
+	evictionRate := rate.Limit(pu.evictionRateLimit)
+	if pu.evictionRateLimit <= 0 {
+		// A zero-rate limiter blocks Wait forever, silently disabling
+		// eviction; treat non-positive as unlimited instead.
+		evictionRate = rate.Inf
+	}
+	limiter := rate.NewLimiter(evictionRate, 1)
+
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
-	timer := pu.clock.NewTimer(0)
-	defer timer.Stop()
-
-	// Files are kept in random order (because they are keyed by digest), so
-	// instead of doing a new seek for every random sample we will seek once
-	// and just read forward, yielding digests until we've found enough.
-	for {
-		if ctx.Err() != nil {
-			return nil
+	for ctx.Err() == nil {
+		if pu.GlobalSizeBytes() <= pu.maxAllowedSizeBytes() {
+			if !pu.idleSleep(ctx) {
+				return nil
+			}
+			continue
 		}
-
-		// When we started to populate a cache, we cannot find any eligible
-		// entries to evict. We will sleep for some time to prevent from
-		// constantly generating samples in vain.
-		globalSize := pu.GlobalSizeBytes()
-		shouldSleep := globalSize <= int64(samplerSleepThreshold*float64(pu.part.MaxSizeBytes))
-		if shouldSleep {
-			if !pu.samplerSleep(ctx) {
+		exhausted, err := pu.sweepIndex(ctx, db, limiter, fileMetadata, evict)
+		if err != nil {
+			return err
+		}
+		if exhausted {
+			// Everything currently eligible has been evicted (or failed to
+			// be); sleep while more entries age past min_eviction_age.
+			if !pu.idleSleep(ctx) {
 				return nil
 			}
 		}
-
-		// Refresh the iterator once a while
-		if leftInBatch <= 0 || time.Since(iterCreatedAt) > pu.samplerIterRefreshPeriod {
-			leftInBatch = pu.samplesPerBatch
-			iterCreatedAt = time.Now()
-			// This iterator won't be positioned (Valid() will return false),
-			// so we will position it below.
-			newIter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
-			if err != nil {
-				return err
-			}
-			iter.Close()
-			iter = newIter
-		}
-		leftInBatch--
-		if !iter.Valid() {
-			// This happens when we create a new iterator or exhaust the
-			// existing one.
-			randomKey := pu.randomKey(64)
-			if valid := iter.SeekGE(randomKey); !valid {
-				// This is a probabilistic sleep. A partition with no rows on
-				// this node will always sleep. A partition with many rows is
-				// very unlikely to sleep. This ensures that we don't waste CPU
-				// cycles trying to find samples for a partition with no (or
-				// few) rows.
-				if !pu.samplerSleep(ctx) {
-					return nil
-				}
-				leftInBatch = 0 // Force creating a new iterator
-				continue
-			}
-		}
-		var key filestore.PebbleKey
-		if _, err := key.FromBytes(iter.Key()); err != nil {
-			log.Warningf("cannot generate sample for eviction, skipping: failed to read key: %s", err)
-			continue
-		}
-		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
-		err = fileMetadata.UnmarshalVT(iter.Value())
-		if err != nil {
-			log.Warningf("cannot generate sample for eviction, skipping: failed to read proto: %s", err)
-			continue
-		}
-
-		pu.maybeAddToSampleChan(ctx, iter, fileMetadata, timer)
-		iter.Next()
 	}
-}
-
-func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.Iterator, fileMetadata *sgpb.FileMetadata, timer clockwork.Timer) {
-	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-	age := pu.clock.Since(atime)
-	if age < pu.minEvictionAge {
-		return
-	}
-	sizeBytes := int64(proto.Size(fileMetadata)) + int64(len(iter.Key()))
-
-	keyBytes := make([]byte, len(iter.Key()))
-	copy(keyBytes, iter.Key())
-	sample := &approxlru.Sample[*evictionKey]{
-		Key: &evictionKey{
-			bytes:           keyBytes,
-			storageMetadata: fileMetadata.GetStorageMetadata(),
-		},
-		SizeBytes: sizeBytes,
-		Timestamp: atime,
-	}
-	timer.Reset(pu.samplerSleepDuration)
-	select {
-	case pu.samples <- sample:
-	case <-ctx.Done():
-		return
-	case <-timer.Chan():
-		// e.samples is full.
-	}
-}
-
-func (e *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
-	e.deletes <- sample
 	return nil
 }
 
-func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evictionKey]) error {
+// sweepIndex walks the partition's atime index from the coldest entry, handing
+// eviction candidates to evict in batches of evictionBatchSize (at most
+// numDeleteWorkers batches at once), until the partition drops below its
+// eviction threshold, entries become younger than min_eviction_age, or the
+// index is exhausted. It returns only after every batch it dispatched has
+// concluded. Orphaned entries -- the record is gone or its atime moved on
+// (crash windows, cleared or removed ranges) -- are deleted in place; the
+// index is node-local derived state, so those deletes don't go through raft.
+//
+// Returns whether the sweep exhausted the evictable entries (hit the age
+// boundary or the index end), in which case the caller should sleep before
+// sweeping again.
+func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, limiter *rate.Limiter, fileMetadata *sgpb.FileMetadata, evict evictFunc) (bool, error) {
+	// Wait for in-flight batches on every return path. This is deferred before
+	// the iterator is opened so that the iterator is closed first, rather than
+	// staying open while the last deletes finish.
+	var eg errgroup.Group
+	eg.SetLimit(max(1, pu.numDeleteWorkers))
+	defer eg.Wait()
+
+	start, end := keys.AtimeIndexPartitionRange(pu.part.ID)
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	if err != nil {
+		return false, err
+	}
+	defer iter.Close()
+
+	var batch []*evictionCandidate
+	// dispatch hands the current batch to a delete worker, blocking while all
+	// of them are busy.
+	dispatch := func() {
+		if len(batch) == 0 {
+			return
+		}
+		b := batch
+		batch = nil
+		eg.Go(func() error {
+			evict(ctx, b)
+			return nil
+		})
+	}
+
+	// Time the initial seek: evictions leave point tombstones at the index's
+	// cold front, and until compaction drops them this seek pays to skip them
+	// all. A growing tail on this metric is the signal that tombstone cleanup
+	// is falling behind the eviction rate.
+	seekStart := pu.clock.Now()
+	valid := iter.First()
+	pu.metrics.atimeIndexSweepSeek.Observe(float64(pu.clock.Since(seekStart).Microseconds()))
+
+	for ; valid; valid = iter.Next() {
+		if ctx.Err() != nil {
+			return false, nil
+		}
+		if pu.GlobalSizeBytes() <= pu.maxAllowedSizeBytes() {
+			// Below budget. Candidates collected but not yet dispatched are
+			// dropped: they no longer need to be evicted.
+			return false, nil
+		}
+		_, atimeUsec, fileKey, err := keys.ParseAtimeIndexKey(iter.Key())
+		if err != nil {
+			log.Warningf("dropping unparseable atime index entry %q: %s", iter.Key(), err)
+			if err := db.Delete(iter.Key(), pebble.NoSync); err != nil {
+				log.Warningf("failed to drop atime index entry %q: %s", iter.Key(), err)
+			}
+			continue
+		}
+		atime := time.UnixMicro(atimeUsec)
+		if pu.clock.Since(atime) < pu.minEvictionAge {
+			// Entries are atime-ordered: everything from here on is younger.
+			dispatch()
+			return true, nil
+		}
+		// Verify the entry against the stored record; drop orphans in place.
+		fileMetadata.ResetVT()
+		err = pebble.GetProto(db, fileKey, fileMetadata)
+		if err != nil && !status.IsNotFoundError(err) {
+			log.Warningf("cannot check eviction candidate, skipping %q: %s", fileKey, err)
+			continue
+		}
+		if status.IsNotFoundError(err) || fileMetadata.GetLastAccessUsec() != atimeUsec {
+			entryKey := bytes.Clone(iter.Key())
+			if err := db.Delete(entryKey, pebble.NoSync); err != nil {
+				log.Warningf("failed to drop orphaned atime index entry %q: %s", entryKey, err)
+				continue
+			}
+			// This delete is unsynchronized with the apply path, so it can
+			// race a concurrent re-write of the record at this exact atime
+			// and remove the entry that write just created. Fresh writes
+			// can't collide (they stamp a new atime, landing at a different
+			// index key); the writer that recreates entries at historical
+			// atimes is snapshot recovery, replaying records into a span
+			// clearRangeData just wiped (this iterator can still show the
+			// wiped entries). Re-check and restore: the reverse mistake --
+			// restoring an entry for a record deleted inside this window --
+			// only creates an orphan, which is safe. If we fail to restore the
+			// index, verifyAtimeIndexPass will fix it.
+			restored := false
+			fileMetadata.ResetVT()
+			if err := pebble.GetProto(db, fileKey, fileMetadata); err == nil && fileMetadata.GetLastAccessUsec() == atimeUsec {
+				if err := db.Set(entryKey, nil, pebble.NoSync); err != nil {
+					log.Warningf("failed to restore atime index entry %q: %s", entryKey, err)
+				} else {
+					restored = true
+				}
+			}
+			if !restored {
+				pu.metrics.atimeIndexOrphansDropped.Inc()
+			}
+			continue
+		}
+		if err := limiter.Wait(ctx); err != nil {
+			return false, nil // context cancelled
+		}
+		batch = append(batch, &evictionCandidate{
+			keyBytes: bytes.Clone(fileKey),
+			// Clone: fileMetadata is a pooled message reset on the next loop
+			// iteration, but the candidate lives until its batch has been
+			// deleted (and losing GcsMetadata there would orphan the blob).
+			storageMetadata: fileMetadata.GetStorageMetadata().CloneVT(),
+			// Include the index entry's bytes: LocalSizeBytes counts the
+			// index, so the speculative post-eviction decrement should too.
+			sizeBytes: int64(proto.Size(fileMetadata)) + int64(len(fileKey)) + int64(len(iter.Key())),
+			atime:     atime,
+		})
+		if len(batch) >= pu.evictionBatchSize {
+			dispatch()
+		}
+	}
+	if err := iter.Error(); err != nil {
+		return false, err
+	}
+	dispatch()
+	return true, nil
+}
+
+func (pu *partitionUsage) updateEvictionMetrics(candidates []*evictionCandidate) error {
 	sizeBytes := float64(0)
-	for _, sample := range samples {
-		age := time.Since(sample.Timestamp)
-		sizeBytes += float64(sample.SizeBytes)
+	for _, c := range candidates {
+		age := time.Since(c.atime)
+		sizeBytes += float64(c.sizeBytes)
 		pu.metrics.cacheEvictionAgeMsec.Observe(float64(age.Milliseconds()))
 		pu.metrics.cacheLastEvictionAgeUsec.Set(float64(age.Microseconds()))
 	}
-	pu.metrics.cacheNumEvictions.Add(float64(len(samples)))
+	pu.metrics.cacheNumEvictions.Add(float64(len(candidates)))
 	pu.metrics.cacheBytesEvicted.Add(sizeBytes)
 
 	pu.mu.Lock()
@@ -620,23 +906,10 @@ func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evi
 	return nil
 }
 
-func (pu *partitionUsage) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
-	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
-	for range k {
-		s, ok := <-pu.samples
-		if ok {
-			samples = append(samples, s)
-		}
-	}
-
-	return samples, nil
-}
-
 func (pu *partitionUsage) updateMetrics() {
 	pu.mu.Lock()
 	defer pu.mu.Unlock()
 
-	pu.metrics.evictionSamplesChanSize.Set(float64(len(pu.samples)))
 	pu.metrics.evictionGCSChanSize.Set(float64(len(pu.gcsDeletes)))
 }
 
@@ -647,6 +920,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 		partitions:    partitions,
 		byPartition:   make(map[string]*partitionUsage),
 		clock:         clock,
+		dbGetter:      dbGetter,
 		lastBroadcast: make(map[string]*sgpb.PartitionMetadata),
 
 		partitionUsageDeltaGossipThreshold: *partitionUsageDeltaGossipThreshold,
@@ -666,69 +940,143 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			cacheLastEvictionAgeUsec:    metrics.DiskCacheLastEvictionAgeUsec.With(lbls),
 			cacheNumEvictions:           metrics.DiskCacheNumEvictions.With(lbls),
 			cacheBytesEvicted:           metrics.DiskCacheBytesEvicted.With(lbls),
-			evictionSamplesChanSize:     metrics.RaftEvictionSamplesChanSize.With(partitionLabel),
 			evictionGCSChanSize:         metrics.RaftEvictionGCSChanSize.With(partitionLabel),
+			atimeIndexRepairs:           metrics.RaftAtimeIndexMissingEntriesRepaired.With(partitionLabel),
+			atimeIndexOrphansDropped:    metrics.RaftAtimeIndexOrphansDropped.With(partitionLabel),
+			atimeIndexSweepSeek:         metrics.RaftAtimeIndexSweepSeekDurationUsec.With(partitionLabel),
 		}
 		u := &partitionUsage{
-			part:                     p,
-			sender:                   sender,
-			clock:                    clock,
-			nodes:                    make(map[string]*nodePartitionUsage),
-			dbGetter:                 dbGetter,
-			samples:                  make(chan *approxlru.Sample[*evictionKey], *sampleBufferSize),
-			deletes:                  make(chan *approxlru.Sample[*evictionKey], *deleteBufferSize),
-			gcsDeletes:               make(chan *sgpb.StorageMetadata_GCSMetadata, *gcsDeleteBufferSize),
-			samplesPerBatch:          *samplesPerBatch,
-			samplerIterRefreshPeriod: *samplerIterRefreshPeriod,
-			samplerSleepDuration:     *samplerSleepDuration,
-			minEvictionAge:           *minEvictionAge,
-			localSizeUpdatePeriod:    *localSizeUpdatePeriod,
-			evictionBatchSize:        *evictionBatchSize,
-			numDeleteWorkers:         *numDeleteWorkers,
-			numGCSDeleteWorkers:      *numGCSDeleteWorkers,
-			fileStorer:               fileStorer,
-			metrics:                  metricSet,
+			part:                  p,
+			sender:                sender,
+			clock:                 clock,
+			nodes:                 make(map[string]*nodePartitionUsage),
+			dbGetter:              dbGetter,
+			gcsDeletes:            make(chan *sgpb.StorageMetadata_GCSMetadata, *gcsDeleteBufferSize),
+			evictionRateLimit:     *evictionRateLimit,
+			idleSleepDuration:     *idleSleepDuration,
+			minEvictionAge:        *minEvictionAge,
+			localSizeUpdatePeriod: *localSizeUpdatePeriod,
+			evictionBatchSize:     *evictionBatchSize,
+			numDeleteWorkers:      *numDeleteWorkers,
+			numGCSDeleteWorkers:   *numGCSDeleteWorkers,
+			indexVerifyRateLimit:  *atimeIndexVerifyRateLimit,
+			indexVerifyInterval:   *atimeIndexVerifyInterval,
+			fileStorer:            fileStorer,
+			backfillDone:          make(chan struct{}),
+			metrics:               metricSet,
 		}
 		ut.byPartition[p.ID] = u
-		maxSizeBytes := int64(EvictionCutoffThreshold * float64(p.MaxSizeBytes))
-		l, err := approxlru.New(&approxlru.Opts[*evictionKey]{
-			SamplePoolSize:              *samplePoolSize,
-			SamplesPerEviction:          *samplesPerEviction,
-			MaxSizeBytes:                maxSizeBytes,
-			DeletesPerEviction:          *deletesPerEviction,
-			RateLimit:                   float64(*evictionRateLimit),
-			EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(lbls),
-			EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(lbls),
-			Clock:                       clock,
-			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
-				return u.evict(ctx, sample)
-			},
-			OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*evictionKey], error) {
-				return u.sample(ctx, n)
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-		u.lru = l
 	}
 
 	gossipManager.AddListener(ut)
 	return ut, nil
 }
 
+// cleanupStaleAtimeIndexState removes the atime-index region and backfill
+// marker of partitions that are no longer configured. The partition-removal
+// flow (soft delete, then remove from the config) deletes records and their
+// index entries via RemoveData, but that derives entry keys from the records
+// it reads: orphaned entries -- which accumulate unswept while a partition is
+// soft-deleted -- and the backfill marker survive it, and no sweep ever runs
+// for the partition again. The index is node-local derived state, so wiping
+// it directly is safe and needs no coordination.
+func cleanupStaleAtimeIndexState(db pebble.IPebbleDB, configured set.Set[string]) error {
+	stale := make(set.Set[string])
+
+	// Enumerate distinct partition IDs in the index region, seeking from each
+	// partition's range end to the next (one seek per partition, no scan).
+	start, end := keys.Range(keys.AtimeIndexPrefix)
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	if err != nil {
+		return err
+	}
+	for valid := iter.First(); valid; {
+		part, _, _, err := keys.ParseAtimeIndexKey(iter.Key())
+		if err != nil {
+			log.Warningf("atime index cleanup: skipping unparseable key %q: %s", iter.Key(), err)
+			valid = iter.Next()
+			continue
+		}
+		if !configured.Contains(part) {
+			stale.Add(part)
+		}
+		_, partEnd := keys.AtimeIndexPartitionRange(part)
+		valid = iter.SeekGE(partEnd)
+	}
+	err = iter.Error()
+	iter.Close()
+	if err != nil {
+		return err
+	}
+
+	// Backfill markers can exist without entries (empty partitions), so
+	// enumerate them separately.
+	markerPrefix := keys.AtimeIndexBackfillMarkerKey("")
+	mStart, mEnd := keys.Range(markerPrefix)
+	iter, err = db.NewIter(&pebble.IterOptions{LowerBound: mStart, UpperBound: mEnd})
+	if err != nil {
+		return err
+	}
+	for valid := iter.First(); valid; valid = iter.Next() {
+		part := string(bytes.TrimPrefix(iter.Key(), markerPrefix))
+		if !configured.Contains(part) {
+			stale.Add(part)
+		}
+	}
+	err = iter.Error()
+	iter.Close()
+	if err != nil {
+		return err
+	}
+
+	for part := range stale {
+		idxStart, idxEnd := keys.AtimeIndexPartitionRange(part)
+		if err := db.DeleteRange(idxStart, idxEnd, pebble.NoSync); err != nil {
+			return err
+		}
+		if err := db.Delete(keys.AtimeIndexBackfillMarkerKey(part), pebble.NoSync); err != nil {
+			return err
+		}
+		log.Infof("removed atime index state of unconfigured partition %q", part)
+	}
+	return nil
+}
+
 func (ut *Tracker) Start() {
+	if db, err := ut.dbGetter.DB(); err != nil {
+		log.Errorf("atime index cleanup: failed to get db: %s", err)
+	} else {
+		configured := make(set.Set[string], len(ut.partitions))
+		for _, p := range ut.partitions {
+			// Soft-deleted partitions count as configured: their index state
+			// is removed by the hard-delete flow (RemoveData) and, for the
+			// residue, by this cleanup once they leave the config entirely.
+			configured.Add(p.ID)
+		}
+		if err := cleanupStaleAtimeIndexState(db, configured); err != nil {
+			// Non-fatal: the leftovers are inert and the cleanup reruns on
+			// the next startup.
+			log.Errorf("failed to clean up stale atime index state: %s", err)
+		}
+		db.Close()
+	}
+
 	for _, pu := range ut.byPartition {
 		ctx, cancelFunc := context.WithCancel(context.Background())
 		pu.egCancel = cancelFunc
 		eg, gctx := errgroup.WithContext(ctx)
 		pu.eg = eg
 		pu.eg.Go(func() error {
-			pu.startSampleGenerator(gctx)
+			pu.startEviction(gctx)
+			// The eviction loop is the only producer of GCS deletes, and its
+			// sweeps wait for the delete batches they dispatch, so nothing
+			// can send on gcsDeletes anymore. Closing it lets the GCS workers
+			// drain what's buffered and exit (see drainGCSDeletes).
+			close(pu.gcsDeletes)
 			return nil
 		})
 		pu.eg.Go(func() error {
-			pu.processEviction(gctx)
+			pu.startAtimeIndexVerifier(gctx)
 			return nil
 		})
 		// Run the GCS-delete workers under a separate errgroup/context so that
@@ -749,7 +1097,6 @@ func (ut *Tracker) Start() {
 			pu.updateLocalSizeBytes(gctx)
 			return nil
 		})
-		pu.lru.Start()
 	}
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -787,7 +1134,6 @@ func (ut *Tracker) Stop(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, p := range ut.byPartition {
 		wg.Go(func() {
-			p.lru.Stop()
 			if p.egCancel != nil {
 				p.egCancel()
 				waitErrgroup(drainCtx, p.eg)
@@ -889,12 +1235,6 @@ func (ut *Tracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 			continue
 		}
 		lpu.RemoteUpdate(nhid, pu)
-	}
-
-	// Propagate the updated usage to the LRU.
-	for _, u := range ut.byPartition {
-		sizeBytes := u.GlobalSizeBytes()
-		u.lru.UpdateGlobalSizeBytes(sizeBytes)
 	}
 }
 
@@ -1028,10 +1368,20 @@ func (ut *Tracker) TestingWaitForGC(ctx context.Context) error {
 			db.Flush()
 			start, end := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
 			db.Compact(start, end, false /*parallelize*/)
+			// LocalSizeBytes counts the atime index too; compact it so the
+			// estimate reflects settled sizes rather than tombstones.
+			idxStart, idxEnd := keys.AtimeIndexPartitionRange(pu.part.ID)
+			db.Compact(idxStart, idxEnd, false /*parallelize*/)
 			db.Close()
-			totalSizeBytes := pu.LocalSizeBytes()
-			pu.lru.UpdateSizeBytes(totalSizeBytes)
-			maxAllowedSize := int64(EvictionCutoffThreshold * float64(pu.part.MaxSizeBytes))
+			totalSizeBytes := pu.localSizeBytes()
+			// Tests run a single node with a possibly-frozen fake clock, so
+			// gossip may never refresh the global usage view; inject the local
+			// size directly so the eviction loop sees it.
+			pu.RemoteUpdate(ut.node.GetNhid(), &sgpb.PartitionMetadata{
+				PartitionId: pu.part.ID,
+				SizeBytes:   totalSizeBytes,
+			})
+			maxAllowedSize := pu.maxAllowedSizeBytes()
 			if lastSize[pu.part.ID].sizeBytes != totalSizeBytes {
 				lastSize[pu.part.ID] = watermark{
 					timestamp: time.Now(),
