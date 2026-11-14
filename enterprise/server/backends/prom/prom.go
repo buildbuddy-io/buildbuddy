@@ -598,7 +598,8 @@ func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames 
 		})
 	}
 
-	// Sum or bucket series with no matching count.
+	// Series left in either map had no matching count. A series can be in
+	// both maps, so count the union of the two to count it only once.
 	missingCount := len(bucketsByFingerprint)
 	for fingerprint := range sumByFingerprint {
 		if _, ok := bucketsByFingerprint[fingerprint]; !ok {
