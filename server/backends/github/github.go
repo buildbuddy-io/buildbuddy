@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -581,7 +582,14 @@ func (c *GithubClient) postStatus(url, token string, body []byte) error {
 	}
 
 	req.Header.Set("Authorization", "token "+token)
+	clock := c.env.GetClock()
+	start := clock.Now()
 	res, err := c.client.Do(req)
+	code := 0
+	if res != nil {
+		code = res.StatusCode
+	}
+	metrics.GitHubRESTAPIRequestDurationUsec.WithLabelValues("create_commit_status", strconv.Itoa(code)).Observe(float64(clock.Since(start).Microseconds()))
 	if err != nil {
 		return status.UnavailableErrorf("failed to send request: %s", err)
 	}

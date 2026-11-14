@@ -21,6 +21,7 @@ go_library(
         "//server/environment",
         "//server/http/interceptors",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
