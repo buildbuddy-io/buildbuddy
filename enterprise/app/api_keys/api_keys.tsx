@@ -16,15 +16,17 @@ import Dialog, {
 } from "../../../app/components/dialog/dialog";
 import TextInput from "../../../app/components/input/input";
 import Modal from "../../../app/components/modal/modal";
+import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import format from "../../../app/format/format";
 import rpcService, { CancelablePromise, UnaryRpcMethod } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { BuildBuddyError } from "../../../app/util/errors";
-import { timestampToDate } from "../../../app/util/proto";
+import { secondsToDuration, timestampToDate } from "../../../app/util/proto";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
+import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { withKey } from "../../../app/util/react";
 
 export interface ApiKeysComponentProps {
@@ -57,6 +59,24 @@ interface State {
   isDeleteModalSubmitting: boolean;
 }
 
+// Units for the "expires in" dropdown.
+const EXPIRES_IN_UNIT_SECONDS = {
+  minutes: 60,
+  hours: 60 * 60,
+  days: 24 * 60 * 60,
+};
+
+const MAX_EXPIRES_IN_SECONDS = 25 * 365 * 24 * 60 * 60; // 25 years
+
+type ExpiresIn = {
+  // Raw input text, converted to a duration on submit. Empty means "never".
+  input: string;
+  unit: keyof typeof EXPIRES_IN_UNIT_SECONDS;
+};
+
+// Must be defined before INITIAL_STATE, which uses it via newFormState().
+const DEFAULT_EXPIRES_IN: ExpiresIn = { input: "", unit: "days" };
+
 const INITIAL_STATE: State = {
   initialLoadError: null,
   getApiKeysResponse: null,
@@ -82,6 +102,7 @@ type FormState<T extends ApiKeyFields> = {
   isOpen: boolean;
   isSubmitting: boolean;
   request: T;
+  expiresIn: ExpiresIn;
 };
 
 export default class ApiKeysComponent extends React.Component<ApiKeysComponentProps, State> {
@@ -156,6 +177,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           capability: this.defaultCapabilities(),
           visibility: DEFAULT_VISIBILITY,
         }),
+        expiresIn: DEFAULT_EXPIRES_IN,
       },
     });
     setTimeout(() => {
@@ -164,6 +186,12 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
   private async onCloseCreateForm() {
     this.setState({ createForm: newFormState(api_key.CreateApiKeyRequest.create()) });
+  }
+  private onChangeCreateFormExpiresIn(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
+    this.setState((state) => ({
+      createForm: { ...state.createForm, expiresIn: { ...state.createForm.expiresIn, [name]: value } },
+    }));
   }
   private onChangeCreateForm(name: string, value: any) {
     this.setState((state) => ({
@@ -182,6 +210,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       const response = await this.props.create(
         new api_key.CreateApiKeyRequest({
           ...this.state.createForm.request,
+          expiresIn: expiresInToDuration(this.state.createForm.expiresIn),
         })
       );
       if (response.apiKey) {
@@ -214,6 +243,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           visibleToDevelopers: apiKey.visibleToDevelopers,
           visibility: [...apiKey.visibility],
         }),
+        expiresIn: DEFAULT_EXPIRES_IN,
       },
     });
     setTimeout(() => {
@@ -387,7 +417,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onSubmit,
     onChange,
     ref,
-    formState: { request, isOpen, isSubmitting },
+    formState: { request, isOpen, isSubmitting, expiresIn },
+    showExpiration,
   }: {
     title: string;
     submitLabel: string;
@@ -396,6 +427,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange: (name: string, value: any) => any;
     ref: React.RefObject<HTMLFormElement>;
     formState: FormState<T>;
+    // Disallow expiration time updates for existing keys.
+    showExpiration?: boolean;
   }) {
     return (
       <Modal isOpen={isOpen} onRequestClose={onRequestClose} shouldFocusAfterRender={false}>
@@ -552,6 +585,37 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   </div>
                 </fieldset>
               )}
+              {showExpiration && (
+                <fieldset className="form-section">
+                  <legend>Expiration</legend>
+                  <div className="field-container expires-in-row">
+                    <TextInput
+                      type="number"
+                      name="input"
+                      aria-label="Expires in"
+                      className="expires-in-input"
+                      placeholder="Never"
+                      min={1}
+                      max={Math.floor(MAX_EXPIRES_IN_SECONDS / EXPIRES_IN_UNIT_SECONDS[expiresIn.unit])}
+                      step={1}
+                      onChange={this.onChangeCreateFormExpiresIn.bind(this)}
+                      value={expiresIn.input}
+                    />
+                    <Select
+                      name="unit"
+                      aria-label="Expiration unit"
+                      onChange={this.onChangeCreateFormExpiresIn.bind(this)}
+                      value={expiresIn.unit}>
+                      {Object.keys(EXPIRES_IN_UNIT_SECONDS).map((unit) => (
+                        <Option key={unit} value={unit}>
+                          {unit}
+                        </Option>
+                      ))}
+                    </Select>
+                    <span className="field-description">Leave blank for permanent keys.</span>
+                  </div>
+                </fieldset>
+              )}
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
@@ -644,6 +708,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           onChange: this.onChangeCreateForm.bind(this),
           onSubmit: this.onSubmitCreateNewForm.bind(this),
           onRequestClose: this.onCloseCreateForm.bind(this),
+          showExpiration: true,
         })}
         {this.renderModal({
           title: "Edit API key",
@@ -860,11 +925,17 @@ function renderDetails(apiKey: api_key.ApiKey, apiKeyValueReadbackEnabled: boole
   );
 }
 
+function expiresInToDuration({ input, unit }: ExpiresIn): google_duration.protobuf.Duration | null {
+  if (!input) return null;
+  return google_duration.protobuf.Duration.create(secondsToDuration(Number(input) * EXPIRES_IN_UNIT_SECONDS[unit]));
+}
+
 function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
   return {
     isOpen: false,
     isSubmitting: false,
     request,
+    expiresIn: DEFAULT_EXPIRES_IN,
   };
 }
 
