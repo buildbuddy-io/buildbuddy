@@ -60,12 +60,15 @@ go_library(
 go_test(
     name = "vfs_server_test",
     size = "small",
-    srcs = ["vfs_server_test.go"],
+    srcs = [
+        "vfs_server_internal_test.go",
+        "vfs_server_test.go",
+    ],
+    embed = [":vfs_server"],
     target_compatible_with = [
         "@platforms//os:linux",
     ],
     deps = [
-        ":vfs_server",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/util/vfscommon",
