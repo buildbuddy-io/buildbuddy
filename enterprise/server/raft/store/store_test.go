@@ -88,6 +88,45 @@ func TestConfiguredClusters(t *testing.T) {
 	require.Equal(t, 2, s1.ConfiguredClusters())
 }
 
+func TestAutoRatchetPebbleFormat(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	key := []byte("auto-ratchet-test-key")
+
+	// Each DB handle is a lease; release it before Stop, which waits for
+	// all leases.
+	db := s1.DB()
+	require.Less(t, db.FormatMajorVersion(), pebble.FormatNewest)
+	require.NoError(t, db.Set(key, []byte("value"), pebble.Sync))
+	require.NoError(t, db.Close())
+	s1.Stop()
+
+	// Restart with auto ratchet enabled; the format should be upgraded.
+	flags.Set(t, "cache.raft.enable_auto_ratchet", true)
+	sf.RecreateStore(t, s1)
+	db = s1.DB()
+	require.Equal(t, pebble.FormatNewest, db.FormatMajorVersion())
+	requireValue(t, db, key, "value")
+	require.NoError(t, db.Close())
+	s1.Stop()
+
+	// Restart with auto ratchet disabled; the format must not downgrade.
+	flags.Set(t, "cache.raft.enable_auto_ratchet", false)
+	sf.RecreateStore(t, s1)
+	db = s1.DB()
+	require.Equal(t, pebble.FormatNewest, db.FormatMajorVersion())
+	requireValue(t, db, key, "value")
+	require.NoError(t, db.Close())
+}
+
+func requireValue(t *testing.T, db pebble.IPebbleDB, key []byte, want string) {
+	t.Helper()
+	val, closer, err := db.Get(key)
+	require.NoError(t, err)
+	defer closer.Close()
+	require.Equal(t, want, string(val))
+}
+
 func TestLeasedRange_LeaseInvalid(t *testing.T) {
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
