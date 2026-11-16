@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
@@ -97,7 +98,8 @@ type ociFetcherServer struct {
 	// Only one request fetches from upstream and writes to cache;
 	// other requests wait and then read from cache using the returned
 	// content length.
-	blobFetchGroup singleflight.Group[blobFetchKey, int64]
+	blobFetchGroup singleflight.Group[blobFetchKey, blobFetchResult]
+	blobFetchGen   atomic.Uint64
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -354,6 +356,15 @@ func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, stream ofpb.
 type blobFetchKey struct {
 	ocicache.BlobFetchKey
 	groupID string
+	// afterGen is the generation of the completed fetch a retrying caller saw
+	// miss, so the retry can't rejoin that fetch while it is still in the
+	// group's map.
+	afterGen uint64
+}
+
+type blobFetchResult struct {
+	contentLength int64
+	gen           uint64
 }
 
 // leaderStream is the singleflight leader's view of its own caller's stream.
@@ -419,40 +430,10 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 	}
 	for {
 		ls := &leaderStream{OCIFetcher_FetchBlobServer: stream}
-		contentLength, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
+		res, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 			ls.markLeader()
-
-			// Cached metadata proves the content-addressed blob exists; we only need
-			// to prove the caller may access the repo before serving it from cache.
-			metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
-			if err == nil {
-				if err := s.proveBlobAccess(ctx, digestRef, creds); err != nil {
-					return 0, err
-				}
-				contentLength := metadata.GetContentLength()
-				cacheWriter := &grpcStreamWriter{stream: ls}
-				err := ocicache.FetchBlobFromCache(ctx, cacheWriter, s.bsClient, hash, contentLength)
-				if err == nil {
-					return contentLength, nil
-				}
-				// Only recover if no bytes were streamed. Once bytes have been sent,
-				// falling back would corrupt the response by replaying from offset 0.
-				if cacheWriter.bytesWritten > 0 || ls.sendFailed() {
-					ls.fail(err)
-					return contentLength, nil
-				}
-				log.CtxWarningf(ctx, "Blob metadata was cached but reading blob %q from cache failed before streaming bytes; falling back to registry: %s", digestRef, err)
-			} else if !status.IsNotFoundError(err) {
-				log.CtxWarningf(ctx, "Error looking up blob metadata in cache; falling back to registry: %s", err)
-			}
-
-			// Cache miss: fetch from the registry, which proves access and writes
-			// the blob through to the cache.
-			size, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, ls)
-			if err == nil {
-				s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
-			}
-			return size, err
+			size, err := s.leadBlobFetch(ctx, ls, digestRef, hash, creds)
+			return blobFetchResult{contentLength: size, gen: s.blobFetchGen.Add(1)}, err
 		})
 
 		isLeader, leaderErr := ls.detach()
@@ -468,13 +449,49 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 			return err
 		}
 		w := &grpcStreamWriter{stream: stream}
-		err = ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, contentLength)
+		err = ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, res.contentLength)
 		if err == nil || w.bytesWritten > 0 || ctx.Err() != nil {
 			recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 			return err
 		}
 		log.CtxInfof(ctx, "Reading blob %q from cache after a shared fetch failed before streaming bytes; retrying the fetch: %s", digestRef, err)
+		key.afterGen = res.gen
 	}
+}
+
+func (s *ociFetcherServer) leadBlobFetch(ctx context.Context, ls *leaderStream, digestRef ctrname.Digest, hash ctr.Hash, creds *rgpb.Credentials) (int64, error) {
+	repo := digestRef.Context()
+	// Cached metadata proves the content-addressed blob exists; we only need
+	// to prove the caller may access the repo before serving it from cache.
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
+	if err == nil {
+		if err := s.proveBlobAccess(ctx, digestRef, creds); err != nil {
+			return 0, err
+		}
+		contentLength := metadata.GetContentLength()
+		cacheWriter := &grpcStreamWriter{stream: ls}
+		err := ocicache.FetchBlobFromCache(ctx, cacheWriter, s.bsClient, hash, contentLength)
+		if err == nil {
+			return contentLength, nil
+		}
+		// Only recover if no bytes were streamed. Once bytes have been sent,
+		// falling back would corrupt the response by replaying from offset 0.
+		if cacheWriter.bytesWritten > 0 || ls.sendFailed() {
+			ls.fail(err)
+			return contentLength, nil
+		}
+		log.CtxWarningf(ctx, "Blob metadata was cached but reading blob %q from cache failed before streaming bytes; falling back to registry: %s", digestRef, err)
+	} else if !status.IsNotFoundError(err) {
+		log.CtxWarningf(ctx, "Error looking up blob metadata in cache; falling back to registry: %s", err)
+	}
+
+	// Cache miss: fetch from the registry, which proves access and writes
+	// the blob through to the cache.
+	size, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, ls)
+	if err == nil {
+		s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
+	}
+	return size, err
 }
 
 func recordFetchBlobMetrics(role string, err error, duration time.Duration) {

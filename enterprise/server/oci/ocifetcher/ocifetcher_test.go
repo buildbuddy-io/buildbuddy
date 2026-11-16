@@ -2374,15 +2374,19 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	require.LessOrEqual(t, counter.Snapshot()[blobPath], numRequests)
 }
 
-// TestFetchBlobSingleflightCacheReadMisses validates that when the cache
-// accepts writes but never serves the blob back, every caller still receives
-// the blob and upstream fetches stay deduplicated.
 func TestFetchBlobSingleflightCacheReadMisses(t *testing.T) {
 	const numRequests = 10
 
 	blocker := newBlockingInterceptor()
+	var blobData []byte
 	var inFlight, maxInFlight atomic.Int32
 	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		if !blocker.intercept(w, r) {
+			return false
+		}
+		if !blocker.enabled.Load() || r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/blobs/") {
+			return true
+		}
 		n := inFlight.Add(1)
 		defer inFlight.Add(-1)
 		for {
@@ -2391,7 +2395,12 @@ func TestFetchBlobSingleflightCacheReadMisses(t *testing.T) {
 				break
 			}
 		}
-		return blocker.intercept(w, r)
+		// Serve the body here so the in-flight window covers the whole
+		// transfer, held open long enough for overlapping fetches to show.
+		w.Write(blobData[:len(blobData)-1])
+		time.Sleep(20 * time.Millisecond)
+		w.Write(blobData[len(blobData)-1:])
+		return false
 	})
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
 
@@ -2413,8 +2422,8 @@ func TestFetchBlobSingleflightCacheReadMisses(t *testing.T) {
 		Ref: imageName + "@" + digest.String(),
 	}
 
+	blobData = expectedData
 	counter.Reset()
-	maxInFlight.Store(0)
 	blocker.enable()
 	go func() {
 		require.Eventually(t, func() bool {
@@ -2439,8 +2448,6 @@ func TestFetchBlobSingleflightCacheReadMisses(t *testing.T) {
 	require.LessOrEqual(t, counter.Snapshot()[blobPath], numRequests)
 }
 
-// TestFetchBlobSingleflightSeparatesCacheGroups validates that callers in
-// different groups don't share a fetch, so each group's cache gets the blob.
 func TestFetchBlobSingleflightSeparatesCacheGroups(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
