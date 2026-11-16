@@ -77,7 +77,7 @@ var (
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
 	publicMirrorCacheAPIKey   = flag.String("ociregistry.public_mirror_cache_api_key", "", "API key used to authenticate OCI registry cache reads and writes.", flag.Secret)
 	registryDomain            = flag.String("ociregistry.domain", "", "The domain on which the registry is hosted.")
-	serverSideAuth            = expflag.Bool("ociregistry.server_side_auth", false, "If true, the OCI mirror handles upstream registry auth itself and only fetches and caches public images, instead of forwarding client credentials.")
+	serverSideAuth            = expflag.Bool("ociregistry.server_side_auth", false, "Whether the server handles upstream registry auth itself")
 	mirrorConfigs             = flag.Slice("ociregistry.mirrors", []Mirror{}, "List of repositories to mirror.")
 )
 
