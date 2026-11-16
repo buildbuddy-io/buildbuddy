@@ -48,7 +48,6 @@ func main() {
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
-	config.ReloadOnSIGHUP()
 
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)

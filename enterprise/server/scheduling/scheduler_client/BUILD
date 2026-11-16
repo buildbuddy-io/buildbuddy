@@ -11,7 +11,6 @@ go_library(
         "//enterprise/server/remote_execution/executorplatform",
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//proto:scheduler_go_proto",
-        "//server/config",
         "//server/environment",
         "//server/interfaces",
         "//server/resources",
