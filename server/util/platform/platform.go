@@ -478,6 +478,9 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		}
 		envOverrides = append(envOverrides, string(b))
 	}
+	if err := validateEnvAssignments(EnvOverridesPropertyName, envOverrides); err != nil {
+		return nil, err
+	}
 
 	secretEnvOverrides := stringListProp(m, SecretEnvOverridesPropertyName)
 	for _, prop := range stringListProp(m, SecretEnvOverridesBase64PropertyName) {
@@ -486,6 +489,9 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 			return nil, status.InvalidArgumentErrorf("decode secret env override as base64: %s", err)
 		}
 		secretEnvOverrides = append(secretEnvOverrides, string(b))
+	}
+	if err := validateEnvAssignments(SecretEnvOverridesPropertyName, secretEnvOverrides); err != nil {
+		return nil, err
 	}
 
 	timeout, err := durationProp(m, DefaultTimeoutPropertyName, 0*time.Second)
@@ -622,6 +628,15 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
 		RunUnder:                  stringProp(m, RunUnderPropertyName, ""),
 	}, nil
+}
+
+func validateEnvAssignments(propertyName string, assignments []string) error {
+	for _, assignment := range assignments {
+		if _, _, ok := strings.Cut(assignment, "="); !ok {
+			return status.InvalidArgumentErrorf("%q entries must be NAME=VALUE assignments", propertyName)
+		}
+	}
+	return nil
 }
 
 // RemoteHeaderOverrides returns the platform properties that should override
