@@ -3344,7 +3344,9 @@ func TestDispatch_SkipsSnapshotSavesWithoutACWrite(t *testing.T) {
 			require.Len(t, sched.scheduleReqs, 1)
 			task := &repb.ExecutionTask{}
 			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
-			assert.Equal(t, tc.wantSkip, platform.FindEffectiveValue(task, platform.SkipLocalSnapshotSavePropertyName))
+			// Only remote snapshot saves require AC write; local saves are
+			// left as requested by the user.
+			assert.Equal(t, "false", platform.FindEffectiveValue(task, platform.SkipLocalSnapshotSavePropertyName))
 			assert.Equal(t, tc.wantSkip, platform.FindEffectiveValue(task, platform.SkipRemoteSnapshotSavePropertyName))
 		})
 	}

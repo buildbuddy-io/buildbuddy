@@ -106,7 +106,6 @@ go_test(
         "//server/usage/sku",
         "//server/util/authutil",
         "//server/util/bazel_request",
-        "//server/util/capabilities",
         "//server/util/clientip",
         "//server/util/db",
         "//server/util/perms",
