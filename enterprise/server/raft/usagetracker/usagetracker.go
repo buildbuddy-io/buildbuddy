@@ -110,7 +110,6 @@ func (k *evictionKey) String() string {
 	return string(k.bytes)
 }
 
-// evictionCandidate is a record chosen for eviction.
 type evictionCandidate struct {
 	keyBytes        []byte
 	storageMetadata *sgpb.StorageMetadata
@@ -282,8 +281,8 @@ func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h 
 	return res, nil
 }
 
-func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, candidates []*evictionCandidate) {
-	if len(candidates) == 0 {
+func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evictionKeyMeta) {
+	if len(keys) == 0 {
 		return
 	}
 	start := pu.clock.Now()
@@ -292,14 +291,9 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, candidates []*
 		metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 	}()
 
-	keyMetas := make([]*evictionKeyMeta, len(candidates))
-	for i, c := range candidates {
-		keyMetas[i] = sender.NewKeyMeta(c.keyBytes, c)
-	}
-
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
 	// still returns success, so this path does not need sender-owned sessions.
-	rsps, err := pu.sender.RunMultiKey(ctx, keyMetas, pu.deleteBatch)
+	rsps, err := pu.sender.RunMultiKey(ctx, keys, pu.deleteBatch)
 	failed := err != nil
 	if err != nil {
 		log.Warning(err.Error())
@@ -329,14 +323,14 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, candidates []*
 }
 
 func (pu *partitionUsage) processEviction(ctx context.Context) {
-	batches := make(chan []*evictionCandidate, 1)
+	batches := make(chan []*evictionKeyMeta, 1)
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		defer close(batches)
 		// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done
 		// so the batcher stops promptly on shutdown instead of blocking until
 		// pu.deletes drains. Returns false if ctx was cancelled (return then).
-		sendBatch := func(b []*evictionCandidate) bool {
+		sendBatch := func(b []*evictionKeyMeta) bool {
 			select {
 			case batches <- b:
 				return true
@@ -344,14 +338,14 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				return false
 			}
 		}
-		var batch []*evictionCandidate
+		var batch []*evictionKeyMeta
 		timer := time.NewTimer(evictFlushPeriod)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case candidate := <-pu.deletes:
-				batch = append(batch, candidate)
+				batch = append(batch, sender.NewKeyMeta(candidate.keyBytes, candidate))
 				if len(batch) >= pu.evictionBatchSize {
 					if !sendBatch(batch) {
 						return
