@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -29,6 +30,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/prometheus/client_golang/prometheus"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
@@ -77,6 +80,8 @@ var (
 	mirrorConfigs             = flag.Slice("ociregistry.mirrors", []Mirror{}, "List of repositories to mirror.")
 )
 
+var serverSideAuth = expflag.Bool("ociregistry.server_side_auth", false, "If true, the OCI mirror handles upstream registry auth itself and only fetches and caches public images, instead of forwarding client credentials.")
+
 var (
 	errNotFound = status.NotFoundError("not found")
 )
@@ -90,6 +95,8 @@ type manifestResolveResult struct {
 	contentType   string
 }
 
+type serverSideAuthKey struct{}
+
 type registry struct {
 	env     environment.Env
 	client  *http.Client
@@ -102,7 +109,9 @@ type registry struct {
 	tagDigestGroup singleflight.Group[string, manifestResolveResult]
 	// fetchGroup deduplicates concurrent upstream GET requests for the same
 	// digest.
-	fetchGroup singleflight.Group[string, struct{}]
+	fetchGroup             singleflight.Group[string, struct{}]
+	upstreamTransports     lru.LRU[http.RoundTripper]
+	upstreamTransportGroup singleflight.Group[string, http.RoundTripper]
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -130,10 +139,20 @@ func New(env environment.Env) (*registry, error) {
 	if err != nil {
 		return nil, status.InternalErrorf("could not create tag digest cache: %s", err)
 	}
+	upstreamTransports, err := lru.New[http.RoundTripper](&lru.Config[http.RoundTripper]{
+		Name:       "ociregistry_upstream_transports",
+		MaxSize:    1000,
+		SizeFn:     func(http.RoundTripper) int64 { return 1 },
+		ThreadSafe: true,
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("could not create upstream transport cache: %s", err)
+	}
 	r := &registry{
-		env:            env,
-		client:         client,
-		tagDigestCache: tagDigestCache,
+		upstreamTransports: upstreamTransports,
+		env:                env,
+		client:             client,
+		tagDigestCache:     tagDigestCache,
 	}
 	if *registryDomain != "" {
 		r.mirrors = *mirrorConfigs
@@ -203,6 +222,12 @@ func (r *registry) cacheContext(ctx context.Context) (context.Context, error) {
 // This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	serverSideAuthEnabled := serverSideAuth.Get(ctx)
+	ctx = context.WithValue(ctx, serverSideAuthKey{}, serverSideAuthEnabled)
+	if serverSideAuthEnabled {
+		req = req.Clone(ctx)
+		req.Header.Del(headerAuthorization)
+	}
 	ctx, err := r.cacheContext(ctx)
 	if err != nil {
 		log.CtxErrorf(ctx, "Could not authenticate OCI registry cache access: %s", err)
@@ -331,7 +356,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	// If the request is not for the DockerHub mirror, for now just return
 	// an OK response which tells the client that no auth is required. For now,
 	// we are only mirroring repositories that don't require auth.
-	if remoteRegistry != ctrname.DefaultRegistry {
+	if serverSideAuthEnabled, _ := ctx.Value(serverSideAuthKey{}).(bool); serverSideAuthEnabled || remoteRegistry != ctrname.DefaultRegistry {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("{}"))
 		return
@@ -390,10 +415,39 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method string, accep
 	for _, acceptHeader := range acceptHeaders {
 		upreq.Header.Add(headerAccept, acceptHeader)
 	}
+	if serverSideAuthEnabled, _ := ctx.Value(serverSideAuthKey{}).(bool); serverSideAuthEnabled {
+		rt, err := r.upstreamTransport(ctx, ref.Context())
+		if err != nil {
+			return nil, err
+		}
+		client := *r.client
+		client.Transport = rt
+		return client.Do(upreq.WithContext(ctx))
+	}
 	if authorizationHeader != "" {
 		upreq.Header.Set(headerAuthorization, authorizationHeader)
 	}
 	return r.client.Do(upreq.WithContext(ctx))
+}
+
+func (r *registry) upstreamTransport(ctx context.Context, repo ctrname.Repository) (http.RoundTripper, error) {
+	key := repo.Name()
+	if rt, ok := r.upstreamTransports.Get(key); ok {
+		return rt, nil
+	}
+	rt, _, err := r.upstreamTransportGroup.Do(ctx, key, func(ctx context.Context) (http.RoundTripper, error) {
+		if rt, ok := r.upstreamTransports.Get(key); ok {
+			return rt, nil
+		}
+		rt, err := transport.NewWithContext(ctx, repo.Registry, authn.Anonymous, r.client.Transport, []string{repo.Scope(transport.PullScope)})
+		if err != nil {
+			log.CtxInfof(ctx, "Could not set up server-side auth transport for upstream %q: %s", key, err)
+			return nil, status.UnavailableErrorf("could not authenticate to upstream registry %q", repo.RegistryStr())
+		}
+		r.upstreamTransports.Add(key, rt)
+		return rt, nil
+	})
+	return rt, err
 }
 
 func parseDockerContentDigestHeader(value string) (*ctr.Hash, error) {
@@ -514,7 +568,8 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	// We can only dedupe upstream requests when no auth is involved.
 	dedupFetches := inreq.Header.Get(headerAuthorization) == ""
 	if dedupFetches {
-		fetchKey := resolvedRef.String()
+		serverSideAuthEnabled, _ := ctx.Value(serverSideAuthKey{}).(bool)
+		fetchKey := fmt.Sprintf("%t:%s", serverSideAuthEnabled, resolvedRef.String())
 		_, _, err = r.fetchGroup.Do(ctx, fetchKey, func(ctx context.Context) (struct{}, error) {
 			return struct{}{}, r.fetchAndCache(ctx, inreq, bsClient, acClient, ociResourceType, resolvedRef, hash, ref)
 		})
@@ -618,7 +673,8 @@ func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, 
 	// Only use the tag->digest cache for unauthenticated requests, since
 	// different auth tokens may have different access to manifests.
 	useTagDigestCache := inreq.Header.Get(headerAuthorization) == ""
-	cacheKey := tagDigestCacheKey(ref, inreq.Header.Values(headerAccept))
+	serverSideAuthEnabled, _ := ctx.Value(serverSideAuthKey{}).(bool)
+	cacheKey := fmt.Sprintf("%t:%s", serverSideAuthEnabled, tagDigestCacheKey(ref, inreq.Header.Values(headerAccept)))
 
 	if useTagDigestCache {
 		if cached, ok := r.tagDigestCache.Get(cacheKey); ok {
