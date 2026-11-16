@@ -26,7 +26,8 @@ const (
 // Key range contants
 const (
 	// Anything written between \x01 and \x02 is a localstore only key so
-	// will not be replicated.
+	// will not be replicated. The atime index (keys.AtimeIndexPrefix) also
+	// lives here.
 	localPrefixByte = '\x01'
 	localMaxByte    = '\x02'
 

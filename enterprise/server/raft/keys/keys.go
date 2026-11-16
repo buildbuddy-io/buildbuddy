@@ -2,11 +2,13 @@ package keys
 
 import (
 	"bytes"
+	"encoding/binary"
 	"math"
 	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -49,6 +51,48 @@ func IsLocalKey(key Key) bool {
 // range identified by the given key prefix.
 func Range(key []byte) ([]byte, []byte) {
 	return MakeKey(key, MinByte), MakeKey(key, MaxByte)
+}
+
+// AtimeIndexPrefix is the keyspace of the node-local atime index: one entry
+// per file record, sorted by (partition, atime). It is in the unreplicated
+// local region, outside every replica's prefix, so it is never part of a
+// range. Nothing writes to it yet.
+var AtimeIndexPrefix = []byte{'\x01', 'a', 't', 'i', 'd', 'x', '/'}
+
+// AtimeIndexKey returns AtimeIndexPrefix + partitionID + '/' + atimeUsec
+// (8 bytes, big-endian, so byte order is time order) + '/' + fileKey.
+func AtimeIndexKey(partitionID string, atimeUsec int64, fileKey []byte) []byte {
+	if atimeUsec < 0 {
+		// As a uint64, a negative atime would sort last. Sort it first.
+		atimeUsec = 0
+	}
+	k := make([]byte, 0, len(AtimeIndexPrefix)+len(partitionID)+1+8+1+len(fileKey))
+	k = append(k, AtimeIndexPrefix...)
+	k = append(k, partitionID...)
+	k = append(k, '/')
+	k = binary.BigEndian.AppendUint64(k, uint64(atimeUsec))
+	k = append(k, '/')
+	k = append(k, fileKey...)
+	return k
+}
+
+// ParseAtimeIndexKey is the inverse of AtimeIndexKey. The partition ID must
+// not contain '/'.
+func ParseAtimeIndexKey(key []byte) (partitionID string, atimeUsec int64, fileKey []byte, err error) {
+	rest, ok := bytes.CutPrefix(key, AtimeIndexPrefix)
+	if !ok {
+		return "", 0, nil, status.InvalidArgumentErrorf("not an atime index key: %q", key)
+	}
+	part, rest, ok := bytes.Cut(rest, []byte{'/'})
+	if !ok || len(rest) < 9 || rest[8] != '/' {
+		return "", 0, nil, status.InvalidArgumentErrorf("malformed atime index key: %q", key)
+	}
+	return string(part), int64(binary.BigEndian.Uint64(rest[:8])), rest[9:], nil
+}
+
+// AtimeIndexPartitionRange returns the bounds of a partition's index entries.
+func AtimeIndexPartitionRange(partitionID string) ([]byte, []byte) {
+	return Range(MakeKey(AtimeIndexPrefix, []byte(partitionID), []byte{'/'}))
 }
 
 // PartitionIDFromRangeStart parses the partition ID out of a range descriptor's

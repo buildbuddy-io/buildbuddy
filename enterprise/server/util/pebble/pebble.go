@@ -95,6 +95,10 @@ type Iterator interface {
 	// caller should not modify the contents of the returned slice, and its
 	// contents may change on the next call to Next.
 	Value() []byte
+
+	// Error returns any accumulated error. Check it after a scan: an error
+	// ends iteration the same way exhaustion does.
+	Error() error
 }
 
 type Reader interface {
@@ -237,6 +241,10 @@ func (i *instrumentedIter) SeekLT(key []byte) bool {
 	t := i.db.iterSeekLTMetrics.Track()
 	defer t.Done()
 	return i.iter.SeekLT(key)
+}
+
+func (i *instrumentedIter) Error() error {
+	return i.iter.Error()
 }
 
 func (i *instrumentedIter) Key() []byte {
