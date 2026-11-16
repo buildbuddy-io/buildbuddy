@@ -11,7 +11,7 @@ RUN \
     apt-get update && \
     apt-get install -y \
     # Necessary for firecracker
-    e2fsprogs \
+    e2fsprogs erofs-utils \
     # FUSE support, used by vbd and vfs packages.
     # TODO: probably not needed since we use DirectMountStrict now?
     fuse \
