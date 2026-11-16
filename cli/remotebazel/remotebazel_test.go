@@ -628,7 +628,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			unpushedLocalCommit: true,
 			expectedBranch:      "master",
 			expectedCommit:      originalMasterHeadCommit,
-			expectedPatches:     []string{"local_only_commited_file.txt"},
+			expectedPatches:     []string{"local_only_committed_file.txt"},
 		},
 		{
 			name:            "Detached HEAD without additional commits",
@@ -662,7 +662,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		resetRepoRootPathForTest(t)
 
 		if tc.unpushedLocalCommit {
-			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_only_commited_file.txt": "exit 0"})
+			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_only_committed_file.txt": "exit 0"})
 		} else if tc.localBranchExistsRemotely {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
 		} else {
