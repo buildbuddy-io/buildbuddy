@@ -206,6 +206,8 @@ actions:
     user: buildbuddy
     steps:
       - run: |
+          # PRs from the Gerrit merge bot were already reviewed in Gerrit.
+          case "$GIT_BRANCH" in gerrit/*) exit 0 ;; esac
           enterprise/tools/agents/setup-gh.sh
           tools/agents/claude/setup.sh
           bb agent review --effort=high
