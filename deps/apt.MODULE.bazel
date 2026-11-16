@@ -1,8 +1,4 @@
 bazel_dep(name = "rules_img", version = "0.3.19")
-bazel_dep(name = "rules_img_tool", version = "0.3.19")
-
-register_toolchains("@rules_img_tool//toolchain:all")
-
 bazel_dep(name = "rules_distroless", version = "0.9.4")
 archive_override(
     module_name = "rules_distroless",
