@@ -223,6 +223,13 @@ type APIKeyAuthenticator interface {
 	AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context
 }
 
+// JWTAuthenticator is an optional capability for authenticators that can
+// authenticate a JWT attached directly to a context, without inspecting gRPC
+// peer information or metadata.
+type JWTAuthenticator interface {
+	AuthenticatedJWTContext(ctx context.Context) context.Context
+}
+
 type Authenticator interface {
 	InstallationAuthenticator
 	UserAuthenticator

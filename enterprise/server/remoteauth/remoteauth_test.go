@@ -24,7 +24,8 @@ import (
 )
 
 type fakeAuthService struct {
-	lastAuthRequest *authpb.AuthenticateRequest
+	lastAuthRequest  *authpb.AuthenticateRequest
+	lastAuthMetadata metadata.MD
 
 	nextHS256Jwt map[string]string
 	nextES256Jwt map[string]string
@@ -43,6 +44,7 @@ func (a *fakeAuthService) Reset() *fakeAuthService {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.lastAuthRequest = nil
+	a.lastAuthMetadata = nil
 	a.nextHS256Jwt = map[string]string{}
 	a.nextES256Jwt = map[string]string{}
 	a.nextErr = map[string]error{}
@@ -89,6 +91,7 @@ func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.Authenti
 	defer a.mu.Unlock()
 	a.authenticateCalls++
 	a.lastAuthRequest = req
+	a.lastAuthMetadata, _ = metadata.FromIncomingContext(ctx)
 	sub := req.GetSubdomain()
 	if a.nextErr[sub] != nil {
 		err := a.nextErr[sub]
@@ -124,6 +127,12 @@ func (a *fakeAuthService) getLastAuthRequest() *authpb.AuthenticateRequest {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.lastAuthRequest
+}
+
+func (a *fakeAuthService) getLastAuthMetadata() metadata.MD {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lastAuthMetadata.Copy()
 }
 
 func (a *fakeAuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
@@ -199,6 +208,124 @@ func validES256Jwt(t *testing.T, uid string) string {
 	require.NoError(t, err)
 	require.NotEqual(t, "", tokenString)
 	return tokenString
+}
+
+func TestAuthenticatedJWTContext(t *testing.T) {
+	authenticator, _ := setupES256(t)
+	jwtAuthenticator, ok := authenticator.(interfaces.JWTAuthenticator)
+	require.True(t, ok)
+	tokenString := validES256Jwt(t, "foo")
+
+	// The context JWT takes precedence over existing claims, and gRPC metadata
+	// is deliberately ignored by this entry point.
+	ctx := claims.AuthContext(t.Context(), &claims.Claims{UserID: "previous-user"})
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(
+		authutil.ContextTokenStringKey, "invalid",
+		authutil.APIKeyHeader, "also-ignored",
+	))
+	authCtx := jwtAuthenticator.AuthenticatedJWTContext(ctx)
+	user, err := authenticator.AuthenticatedUser(authCtx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", user.GetUserID())
+	require.Equal(t, tokenString, authenticator.TrustedJWTFromAuthContext(authCtx))
+
+	// A JWT that exists only in gRPC metadata is not accepted.
+	ctx = metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ContextTokenStringKey, tokenString))
+	authCtx = jwtAuthenticator.AuthenticatedJWTContext(ctx)
+	user, err = authenticator.AuthenticatedUser(authCtx)
+	require.True(t, authutil.IsAnonymousUserError(err))
+	require.Nil(t, user)
+}
+
+func TestAuthenticatedJWTContext_HS256IgnoresMetadata(t *testing.T) {
+	authenticator, fakeAuth := setupES256(t)
+	tokenString := validJwt(t, "foo")
+	remoteJWT := validES256Jwt(t, "foo")
+	fakeAuth.setNextJwt(t, "", remoteJWT)
+
+	ctx := claims.AuthContext(t.Context(), &claims.Claims{UserID: "previous-user"})
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(
+		authutil.ContextTokenStringKey, "incoming-jwt",
+		authutil.APIKeyHeader, "incoming-api-key",
+	))
+	outgoingMD := metadata.Pairs(
+		authutil.ContextTokenStringKey, "outgoing-jwt",
+		authutil.APIKeyHeader, "outgoing-api-key",
+		"x-test-header", "preserved",
+	)
+	ctx = metadata.NewOutgoingContext(ctx, outgoingMD)
+	jwtAuthenticator := authenticator.(interfaces.JWTAuthenticator)
+	authCtx := jwtAuthenticator.AuthenticatedJWTContext(ctx)
+	user, err := authenticator.AuthenticatedUser(authCtx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", user.GetUserID())
+	require.Equal(t, remoteJWT, authenticator.TrustedJWTFromAuthContext(authCtx))
+
+	// Only the context JWT should reach the remote auth service.
+	md := fakeAuth.getLastAuthMetadata()
+	require.Empty(t, md.Get(authutil.APIKeyHeader))
+	require.Equal(t, []string{tokenString}, md.Get(authutil.ContextTokenStringKey))
+
+	// Isolating credentials for the auth RPC must preserve the caller's metadata.
+	md, ok := metadata.FromOutgoingContext(authCtx)
+	require.True(t, ok)
+	require.Equal(t, outgoingMD, md)
+
+	// Cached exchanges return the same validated token and identity.
+	authCtx = jwtAuthenticator.AuthenticatedJWTContext(ctx)
+	user, err = authenticator.AuthenticatedUser(authCtx)
+	require.NoError(t, err)
+	require.Equal(t, remoteJWT, authenticator.TrustedJWTFromAuthContext(authCtx))
+	require.Equal(t, "foo", user.GetUserID())
+	require.Equal(t, 1, fakeAuth.getAuthenticateCalls())
+}
+
+func TestAuthenticatedJWTContext_HS256WhenES256Disabled(t *testing.T) {
+	flags.Set(t, "auth.remote.use_es256_jwts", false)
+	authenticator, fakeAuth := setup(t)
+	tokenString := validJwt(t, "foo")
+
+	ctx := context.WithValue(t.Context(), authutil.ContextTokenStringKey, tokenString)
+	authCtx := authenticator.(interfaces.JWTAuthenticator).AuthenticatedJWTContext(ctx)
+	user, err := authenticator.AuthenticatedUser(authCtx)
+	require.NoError(t, err)
+	require.Equal(t, tokenString, authenticator.TrustedJWTFromAuthContext(authCtx))
+	require.Equal(t, "foo", user.GetUserID())
+	require.Zero(t, fakeAuth.getAuthenticateCalls())
+}
+
+func TestAuthenticatedJWTContext_FailureClearsPreviousClaims(t *testing.T) {
+	authenticator, fakeAuth := setupES256(t)
+	expiredJWT, err := claims.AssembleJWT(&claims.Claims{
+		UserID:    "foo",
+		ExpiresAt: time.Now().Add(-time.Hour).Unix(),
+	}, jwt.SigningMethodES256)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name      string
+		token     string
+		remoteErr error
+	}{
+		{name: "missing"},
+		{name: "invalid", token: "invalid"},
+		{name: "expired", token: expiredJWT},
+		{name: "remote rejection", token: validJwt(t, "foo"), remoteErr: status.UnauthenticatedError("JWT rejected")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.remoteErr != nil {
+				fakeAuth.setNextErr(t, "", tc.remoteErr)
+			}
+			ctx := claims.AuthContext(t.Context(), &claims.Claims{UserID: "previous-user"})
+			ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tc.token)
+			authCtx := authenticator.(interfaces.JWTAuthenticator).AuthenticatedJWTContext(ctx)
+			user, err := authenticator.AuthenticatedUser(authCtx)
+			require.Error(t, err)
+			require.Nil(t, user)
+		})
+	}
 }
 
 func TestAuthenticatedGRPCContext(t *testing.T) {

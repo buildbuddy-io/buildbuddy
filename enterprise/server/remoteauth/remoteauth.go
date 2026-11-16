@@ -263,6 +263,25 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 	return false
 }
 
+// AuthenticatedJWTContext authenticates a JWT attached directly to the
+// context, without inspecting gRPC metadata.
+func (a *RemoteAuthenticator) AuthenticatedJWTContext(ctx context.Context) context.Context {
+	// Failed validation must not leave claims from an earlier authentication.
+	ctx = claims.AuthContext(ctx, nil)
+	jwt, _ := ctx.Value(authutil.ContextTokenStringKey).(string)
+	if jwt == "" {
+		return authutil.AuthContextWithError(ctx, authutil.AnonymousUserError("context is missing credentials"))
+	}
+	c, err := a.jwtIsValid(ctx, jwt)
+	if err != nil {
+		if a.shouldReauthenticateHS256JWT(jwt) {
+			return a.reauthenticateHS256JWT(ctx, jwt)
+		}
+		return authutil.AuthContextWithError(ctx, err)
+	}
+	return authContext(ctx, jwt, c)
+}
+
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
 	// If a JWT was provided, check if it's valid and use it if so.
 	jwt, c, err := a.getValidJwtFromContext(ctx)
@@ -272,7 +291,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 		// executor. This fallback path exists to support cases where those JWTs
 		// are signed by the app using HS256.
 		// TODO(go/b/4539): sign all JWTs with ES256.
-		if a.shouldReauthenticateHS256JWT(ctx, jwt) {
+		if getLastMetadataValue(ctx, authutil.APIKeyHeader) == "" && a.shouldReauthenticateHS256JWT(jwt) {
 			return a.reauthenticateHS256JWT(ctx, jwt)
 		}
 		return authutil.AuthContextWithError(ctx, err)
@@ -366,11 +385,8 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 	return *resp.Jwt, nil
 }
 
-func (a *RemoteAuthenticator) shouldReauthenticateHS256JWT(ctx context.Context, incomingJWT string) bool {
+func (a *RemoteAuthenticator) shouldReauthenticateHS256JWT(incomingJWT string) bool {
 	if incomingJWT == "" {
-		return false
-	}
-	if getLastMetadataValue(ctx, authutil.APIKeyHeader) != "" {
 		return false
 	}
 	if !*useES256SignedJWTs {
@@ -391,7 +407,10 @@ func (a *RemoteAuthenticator) reauthenticateHS256JWT(ctx context.Context, jwt st
 		}
 		a.hs256Cache.Remove(jwt)
 	}
-	remoteJWT, c, err := a.authenticateAndValidate(ctx)
+	// Authenticate only this JWT, without forwarding other outgoing credentials.
+	rpcCtx := metadata.NewOutgoingContext(ctx, nil)
+	rpcCtx = context.WithValue(rpcCtx, authutil.ContextTokenStringKey, jwt)
+	remoteJWT, c, err := a.authenticateAndValidate(rpcCtx)
 	if err == nil {
 		a.hs256Cache.Add(jwt, remoteJWT)
 		return authContext(ctx, remoteJWT, c)
