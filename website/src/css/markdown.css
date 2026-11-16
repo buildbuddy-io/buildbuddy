@@ -1,4 +1,4 @@
-.markdown a {
+.markdown a:not(.react-tweet-theme *) {
   color: #000;
   background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(84,110,122 ,0.5)" /></svg>');
   background-size: 1px 1px;
@@ -9,13 +9,13 @@
   padding-bottom: 1px;
 }
 
-.markdown a:hover {
+.markdown a:not(.react-tweet-theme *):hover {
   background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(3,169,244 ,0.9)" /></svg>');
   background-position: 0 calc(1em + 1px);
   background-size: 1px 2px;
 }
 
-html[data-theme="dark"] .markdown a {
+html[data-theme="dark"] .markdown a:not(.react-tweet-theme *) {
   color: #aef0ff;
 }
 

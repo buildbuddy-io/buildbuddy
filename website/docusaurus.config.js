@@ -67,7 +67,19 @@ const bazelBinPlugin = function (context, options) {
   return {
     name: "docusaurus-bazel-bin-resolver-plugin",
 
-    configureWebpack() {
+    configureWebpack(config, isServer) {
+      if (!isServer && config.optimization?.minimizer) {
+        config.optimization.minimizer = config.optimization.minimizer.map((plugin) => {
+          if (plugin?.constructor?.name === "CssMinimizerPlugin") {
+            // Instantiate a fresh plugin using the default minifier (cssnano)
+            // and disable parallel worker threads for Bazel sandbox stability
+            return new plugin.constructor({
+              parallel: false,
+            });
+          }
+          return plugin;
+        });
+      }
       return {
         resolve: { plugins: [new BazelBinResolverPlugin()] },
       };
@@ -403,6 +415,7 @@ module.exports = {
             require.resolve("./src/css/general.css"),
             require.resolve("./src/css/markdown.css"),
             require.resolve("./src/css/nav.css"),
+            require.resolve("react-tweet/theme.css"),
           ],
         },
       },
