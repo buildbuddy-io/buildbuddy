@@ -743,6 +743,10 @@ type ExecutorOptions struct {
 	// Optional connection for the executor to use for CAS/AC/ByteStream.
 	// Defaults to the app proxy connection if unset.
 	CacheConn grpc.ClientConnInterface
+	// Optional app to pin the executor to. If set, the executor's scheduler,
+	// execution and capabilities clients connect to this app directly instead
+	// of the random app proxy.
+	PinnedApp *BuildBuddyServer
 	// Optional interceptor for command execution results.
 	RunInterceptor
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
@@ -787,6 +791,29 @@ func (e *Executor) ShutdownTaskScheduler() {
 // QueueLength returns the current number of tasks in the executor's queue.
 func (e *Executor) QueueLength() int {
 	return e.taskScheduler.QueueLength()
+}
+
+// ID returns the ID that the executor registers with the scheduler.
+func (e *Executor) ID() string {
+	return e.id
+}
+
+// WaitForTaskReservationsRecorded waits until the scheduler has recorded, for
+// proactive cancellation, that each of the executors received a reservation
+// for the task. Recording happens after the reservation is sent to the
+// executor, so this also means that the executors have received it.
+func (r *Env) WaitForTaskReservationsRecorded(taskID string, executors ...*Executor) {
+	var app *BuildBuddyServer
+	for app = range r.buildBuddyServers {
+		break // All apps share the same Redis.
+	}
+	require.EventuallyWithT(r.t, func(c *assert.CollectT) {
+		ids, err := app.schedulerServer.ExecutorsWithTaskReservation(context.Background(), taskID)
+		require.NoError(c, err)
+		for _, e := range executors {
+			assert.Contains(c, ids, e.ID())
+		}
+	}, defaultWaitTimeout, 10*time.Millisecond)
 }
 
 func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
@@ -905,6 +932,12 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
 
 	clientConn := r.appProxyConn
+	if options.PinnedApp != nil {
+		pinnedConn, err := grpc_client.DialSimpleWithoutPooling(options.PinnedApp.GRPCAddress())
+		require.NoError(t, err)
+		t.Cleanup(func() { pinnedConn.Close() })
+		clientConn = pinnedConn
+	}
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
