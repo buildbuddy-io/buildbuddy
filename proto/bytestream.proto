@@ -14,6 +14,8 @@
 
 syntax = "proto3";
 
+import "proto/capability.proto";
+
 package google.bytestream;
 
 option go_package = "bytestream";
@@ -111,6 +113,9 @@ message ReadRequest {
   // error occurred, the stream includes all data from the `read_offset` to the
   // end of the resource.
   int64 read_limit = 3;
+
+  // The set of cache capabilities the client has.
+  capability.CacheCapabilities cache_capabilities = 4;
 }
 
 // Response object for ByteStream.Read.
