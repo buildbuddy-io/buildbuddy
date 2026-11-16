@@ -2274,8 +2274,8 @@ func TestFetchBlobSingleflightLeaderFailsUpstream(t *testing.T) {
 	}
 }
 
-// TestFetchBlobSingleflightLeaderSendFails ensures a leader Send failure causes all
-// callers to fail and the next request either hits cache or refetches successfully.
+// TestFetchBlobSingleflightLeaderSendFails ensures a leader Send failure fails
+// only the leader, while waiters still receive the blob.
 func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
 	const numRequests = 10
 
@@ -2326,20 +2326,21 @@ func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
 	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
 	require.Equal(t, 1, counter.Snapshot()[blobPath], "singleflight should deduplicate to 1 HTTP request")
 
+	failures := 0
 	for i, r := range results {
-		require.Error(t, r.err, "request %d should fail (leader failed before writing to cache)", i)
+		if streams[i].isFirstSender {
+			failures++
+			require.Error(t, r.err, "leader request %d should fail", i)
+		} else {
+			require.NoError(t, r.err, "waiter request %d should succeed", i)
+			require.Equal(t, expectedData, r.data, "waiter request %d should have correct data", i)
+		}
 	}
-
-	counter.Reset()
-	stream := &mockFetchBlobServer{ctx: context.Background()}
-	err = server.FetchBlob(req, stream)
-	require.NoError(t, err, "subsequent fetch should succeed")
-	require.Equal(t, expectedData, stream.collectData())
-	require.LessOrEqual(t, counter.Snapshot()[blobPath], 1, "subsequent fetch should be served from cache or a single upstream retry")
+	require.Equal(t, 1, failures)
 }
 
-// TestFetchBlobSingleflightCacheSetupFailure validates that when caching setup fails,
-// the leader streams data but followers miss the cache and return NotFound after waiting.
+// TestFetchBlobSingleflightCacheSetupFailure validates that when caching setup
+// fails, every caller still receives the blob without concurrent upstream fetches.
 func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	reg, counter := setupRegistry(t, nil, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
@@ -2353,10 +2354,7 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	require.NoError(t, err)
 	expectedData := layerData(t, layer)
 
-	bsClient := failingByteStreamClient{}
-	acClient := notFoundActionCacheClient{}
-	server := newTestServerWithCache(t, bsClient, acClient)
-
+	server := newTestServerWithCache(t, failingByteStreamClient{}, notFoundActionCacheClient{})
 	req := &ofpb.FetchBlobRequest{
 		Ref: imageName + "@" + digest.String(),
 	}
@@ -2368,19 +2366,141 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 		},
 	)
 
-	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
-	require.Equal(t, 1, counter.Snapshot()[blobPath], "requests should be deduped even when caching fails")
-
-	successes := 0
 	for i, r := range results {
-		if r.err == nil {
-			successes++
-			require.Equal(t, expectedData, r.data, "request %d should stream data", i)
-		} else {
-			require.True(t, status.IsNotFoundError(r.err) || status.IsFailedPreconditionError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
-		}
+		require.NoError(t, r.err, "request %d should succeed", i)
+		require.Equal(t, expectedData, r.data, "request %d should have correct data", i)
 	}
-	require.Equal(t, 1, successes, "only the leader should succeed when caching fails")
+	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
+	require.LessOrEqual(t, counter.Snapshot()[blobPath], numRequests)
+}
+
+// TestFetchBlobSingleflightCacheReadMisses validates that when the cache
+// accepts writes but never serves the blob back, every caller still receives
+// the blob and upstream fetches stay deduplicated.
+func TestFetchBlobSingleflightCacheReadMisses(t *testing.T) {
+	const numRequests = 10
+
+	blocker := newBlockingInterceptor()
+	var inFlight, maxInFlight atomic.Int32
+	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
+		n := inFlight.Add(1)
+		defer inFlight.Add(-1)
+		for {
+			m := maxInFlight.Load()
+			if n <= m || maxInFlight.CompareAndSwap(m, n) {
+				break
+			}
+		}
+		return blocker.intercept(w, r)
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, missingBlobByteStreamClient{
+		ByteStreamClient: bsClient,
+		missingHash:      digest.Hex,
+	}, acClient)
+	req := &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	}
+
+	counter.Reset()
+	maxInFlight.Store(0)
+	blocker.enable()
+	go func() {
+		require.Eventually(t, func() bool {
+			return blocker.requestCount.Load() >= 1
+		}, 5*time.Second, 10*time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
+		blocker.release()
+	}()
+
+	results := runConcurrentFetchBlob(t, server, req, numRequests,
+		func(idx int) *concurrentMockFetchBlobServer {
+			return &concurrentMockFetchBlobServer{ctx: context.Background()}
+		},
+	)
+
+	for i, r := range results {
+		require.NoError(t, r.err, "request %d should succeed", i)
+		require.Equal(t, expectedData, r.data, "request %d should have correct data", i)
+	}
+	require.Equal(t, int32(1), maxInFlight.Load(), "upstream requests should never run concurrently")
+	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
+	require.LessOrEqual(t, counter.Snapshot()[blobPath], numRequests)
+}
+
+// TestFetchBlobSingleflightSeparatesCacheGroups validates that callers in
+// different groups don't share a fetch, so each group's cache gets the blob.
+func TestFetchBlobSingleflightSeparatesCacheGroups(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	te.SetAuthenticator(ta)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	bsClient, acClient := te.GetByteStreamClient(), te.GetActionCacheClient()
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	blocker := newBlockingInterceptor()
+	reg, _ := setupRegistry(t, nil, blocker.intercept)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+	digestRef, err := ctrname.NewDigest(imageName + "@" + digest.String())
+	require.NoError(t, err)
+	req := &ofpb.FetchBlobRequest{Ref: digestRef.String()}
+
+	users := []string{"US1", "US2"}
+	ctxs := make([]context.Context, len(users))
+	for i, u := range users {
+		ctxs[i], err = ta.WithAuthenticatedUser(context.Background(), u)
+		require.NoError(t, err)
+	}
+
+	blocker.enable()
+	results := make([]*fetchResult, len(users))
+	var wg sync.WaitGroup
+	for i := range users {
+		wg.Go(func() {
+			stream := &concurrentMockFetchBlobServer{ctx: ctxs[i]}
+			err := server.FetchBlob(req, stream)
+			results[i] = &fetchResult{idx: i, data: stream.collectData(), err: err}
+		})
+	}
+	require.Eventually(t, func() bool {
+		return blocker.requestCount.Load() >= 2
+	}, 5*time.Second, 10*time.Millisecond, "expected each group to fetch from upstream")
+	blocker.release()
+	wg.Wait()
+
+	for i, r := range results {
+		require.NoError(t, r.err, "request %d should succeed", i)
+		require.Equal(t, expectedData, r.data, "request %d should have correct data", i)
+	}
+	for i, ctx := range ctxs {
+		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, digestRef.Context(), digest)
+		require.NoError(t, err, "group %d should have blob metadata cached", i)
+		var buf bytes.Buffer
+		err = ocicache.FetchBlobFromCache(ctx, &buf, bsClient, digest, metadata.GetContentLength())
+		require.NoError(t, err, "group %d should have blob cached", i)
+		require.Equal(t, expectedData, buf.Bytes())
+	}
 }
 
 // TestFetchBlobSingleflightDifferentCredentials validates requests with different
