@@ -399,14 +399,12 @@ func trimStatus(statusMessage string) string {
 
 func (s *ExecutionServer) applySnapshotSaveRestrictions(ctx context.Context, overrides *repb.Platform) {
 	// Saving a snapshot writes its manifest to the action cache, so callers
-	// without AC write permission must not be able to save snapshots, either
-	// remotely or locally on the executor.
+	// without AC write permission are unable to save snapshots.
 	canWriteAC, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), capability.Capability_CACHE_WRITE)
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to check AC write capability; disabling snapshot saves: %s", err)
 	}
 	if err != nil || !canWriteAC {
-		platform.SetValue(overrides, platform.SkipLocalSnapshotSavePropertyName, "true")
 		platform.SetValue(overrides, platform.SkipRemoteSnapshotSavePropertyName, "true")
 		return
 	}
