@@ -110,6 +110,14 @@ func (k *evictionKey) String() string {
 	return string(k.bytes)
 }
 
+// evictionCandidate is a record chosen for eviction.
+type evictionCandidate struct {
+	keyBytes        []byte
+	storageMetadata *sgpb.StorageMetadata
+	sizeBytes       int64
+	atime           time.Time
+}
+
 type metricSet struct {
 	cachePartitionSizeBytes     prometheus.Gauge
 	cachePartitionCapacityBytes prometheus.Gauge
@@ -137,7 +145,7 @@ type partitionUsage struct {
 	nodes map[string]*nodePartitionUsage
 
 	samples    chan *approxlru.Sample[*evictionKey]
-	deletes    chan *approxlru.Sample[*evictionKey]
+	deletes    chan *evictionCandidate
 	gcsDeletes chan *sgpb.StorageMetadata_GCSMetadata
 	rng        *rand.Rand
 
@@ -225,12 +233,12 @@ func (pu *partitionUsage) partitionKeyPrefix() string {
 	return filestore.PartitionDirectoryPrefix + pu.part.ID
 }
 
-// evictionKeyMeta is a key to evict with its eviction sample.
-type evictionKeyMeta = sender.KeyMeta[*approxlru.Sample[*evictionKey]]
+// evictionKeyMeta is a key to evict with its eviction candidate.
+type evictionKeyMeta = sender.KeyMeta[*evictionCandidate]
 
 // deleteBatchResult tracks the outcome of evictions on one range.
 type deleteBatchResult struct {
-	evicted   []*approxlru.Sample[*evictionKey]
+	evicted   []*evictionCandidate
 	numFailed int
 	lastErr   error
 }
@@ -241,13 +249,13 @@ type deleteBatchResult struct {
 // update metrics and enqueue GCS cleanup.
 func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*evictionKeyMeta) (*deleteBatchResult, error) {
 	batch := rbuilder.NewBatchBuilder()
-	samples := make([]*approxlru.Sample[*evictionKey], 0, len(keys))
+	candidates := make([]*evictionCandidate, 0, len(keys))
 	for _, k := range keys {
-		sample := k.Meta
-		samples = append(samples, sample)
+		candidate := k.Meta
+		candidates = append(candidates, candidate)
 		batch.Add(&rfpb.DeleteRequest{
 			Key:        k.Key,
-			MatchAtime: sample.Timestamp.UnixMicro(),
+			MatchAtime: candidate.atime.UnixMicro(),
 		})
 	}
 	batchCmd, err := batch.ToProto()
@@ -263,19 +271,19 @@ func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h 
 	}
 	parsed := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
 	res := &deleteBatchResult{}
-	for i, sample := range samples {
+	for i, candidate := range candidates {
 		if _, err := parsed.DeleteResponse(i); err != nil {
 			res.numFailed++
 			res.lastErr = err
 			continue
 		}
-		res.evicted = append(res.evicted, sample)
+		res.evicted = append(res.evicted, candidate)
 	}
 	return res, nil
 }
 
-func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evictionKeyMeta) {
-	if len(keys) == 0 {
+func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, candidates []*evictionCandidate) {
+	if len(candidates) == 0 {
 		return
 	}
 	start := pu.clock.Now()
@@ -284,9 +292,14 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 		metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 	}()
 
+	keyMetas := make([]*evictionKeyMeta, len(candidates))
+	for i, c := range candidates {
+		keyMetas[i] = sender.NewKeyMeta(c.keyBytes, c)
+	}
+
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
 	// still returns success, so this path does not need sender-owned sessions.
-	rsps, err := pu.sender.RunMultiKey(ctx, keys, pu.deleteBatch)
+	rsps, err := pu.sender.RunMultiKey(ctx, keyMetas, pu.deleteBatch)
 	failed := err != nil
 	if err != nil {
 		log.Warning(err.Error())
@@ -299,8 +312,8 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 
 		pu.updateEvictionMetrics(res.evicted)
 
-		for _, s := range res.evicted {
-			if gcsMD := s.Key.storageMetadata.GetGcsMetadata(); gcsMD != nil {
+		for _, c := range res.evicted {
+			if gcsMD := c.storageMetadata.GetGcsMetadata(); gcsMD != nil {
 				select {
 				case pu.gcsDeletes <- gcsMD:
 				default:
@@ -316,14 +329,14 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 }
 
 func (pu *partitionUsage) processEviction(ctx context.Context) {
-	batches := make(chan []*evictionKeyMeta, 1)
+	batches := make(chan []*evictionCandidate, 1)
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		defer close(batches)
 		// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done
 		// so the batcher stops promptly on shutdown instead of blocking until
 		// pu.deletes drains. Returns false if ctx was cancelled (return then).
-		sendBatch := func(b []*evictionKeyMeta) bool {
+		sendBatch := func(b []*evictionCandidate) bool {
 			select {
 			case batches <- b:
 				return true
@@ -331,14 +344,14 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				return false
 			}
 		}
-		var batch []*evictionKeyMeta
+		var batch []*evictionCandidate
 		timer := time.NewTimer(evictFlushPeriod)
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case sampleToDelete := <-pu.deletes:
-				batch = append(batch, sender.NewKeyMeta(sampleToDelete.Key.bytes, sampleToDelete))
+			case candidate := <-pu.deletes:
+				batch = append(batch, candidate)
 				if len(batch) >= pu.evictionBatchSize {
 					if !sendBatch(batch) {
 						return
@@ -582,19 +595,24 @@ func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.
 }
 
 func (e *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
-	e.deletes <- sample
+	e.deletes <- &evictionCandidate{
+		keyBytes:        sample.Key.bytes,
+		storageMetadata: sample.Key.storageMetadata,
+		sizeBytes:       sample.SizeBytes,
+		atime:           sample.Timestamp,
+	}
 	return nil
 }
 
-func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evictionKey]) error {
+func (pu *partitionUsage) updateEvictionMetrics(candidates []*evictionCandidate) error {
 	sizeBytes := float64(0)
-	for _, sample := range samples {
-		age := time.Since(sample.Timestamp)
-		sizeBytes += float64(sample.SizeBytes)
+	for _, c := range candidates {
+		age := time.Since(c.atime)
+		sizeBytes += float64(c.sizeBytes)
 		pu.metrics.cacheEvictionAgeMsec.Observe(float64(age.Milliseconds()))
 		pu.metrics.cacheLastEvictionAgeUsec.Set(float64(age.Microseconds()))
 	}
-	pu.metrics.cacheNumEvictions.Add(float64(len(samples)))
+	pu.metrics.cacheNumEvictions.Add(float64(len(candidates)))
 	pu.metrics.cacheBytesEvicted.Add(sizeBytes)
 
 	pu.mu.Lock()
@@ -676,7 +694,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			nodes:                    make(map[string]*nodePartitionUsage),
 			dbGetter:                 dbGetter,
 			samples:                  make(chan *approxlru.Sample[*evictionKey], *sampleBufferSize),
-			deletes:                  make(chan *approxlru.Sample[*evictionKey], *deleteBufferSize),
+			deletes:                  make(chan *evictionCandidate, *deleteBufferSize),
 			gcsDeletes:               make(chan *sgpb.StorageMetadata_GCSMetadata, *gcsDeleteBufferSize),
 			samplesPerBatch:          *samplesPerBatch,
 			samplerIterRefreshPeriod: *samplerIterRefreshPeriod,
