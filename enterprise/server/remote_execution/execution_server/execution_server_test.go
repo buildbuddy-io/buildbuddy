@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/exptest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
@@ -357,6 +358,8 @@ func TestDispatch_ValidateRunnerSize(t *testing.T) {
 		maxCPU         float64
 		maxMemoryBytes int64
 		props          map[string]string
+		mnemonic       string
+		actionName     string
 		wantErr        bool
 	}{
 		{
@@ -416,22 +419,126 @@ func TestDispatch_ValidateRunnerSize(t *testing.T) {
 			maxMemoryBytes: -1,
 			wantErr:        true,
 		},
+		{
+			name:           "matching workflow",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "64GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Expensive benchmarks",
+		},
+		{
+			name:           "other workflow cpu",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "16GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Other workflow",
+			wantErr:        true,
+		},
+		{
+			name:           "other workflow memory",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "8", "EstimatedMemory": "64GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Other workflow",
+			wantErr:        true,
+		},
+		{
+			name:           "workflow missing name",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "64GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			wantErr:        true,
+		},
+		{
+			name:           "ordinary action",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "64GB"},
+			mnemonic:       "TestRunner",
+			actionName:     "Expensive benchmarks",
+			wantErr:        true,
+		},
+		{
+			name:           "remote bazel",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "64GB"},
+			mnemonic:       "RemoteBazelRun",
+			actionName:     "Expensive benchmarks",
+			wantErr:        true,
+		},
+		{
+			name:           "workflow cpu exceeds limit",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "17", "EstimatedMemory": "64GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Expensive benchmarks",
+			wantErr:        true,
+		},
+		{
+			name:           "workflow memory exceeds limit",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "65GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Expensive benchmarks",
+			wantErr:        true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "remote_execution.runner.max_cpu", tc.maxCPU)
 			flags.Set(t, "remote_execution.runner.max_memory_bytes", tc.maxMemoryBytes)
 			env, _, _ := setupEnv(t)
+			if tc.mnemonic != "" {
+				exptest.Setup(t, env)
+				evaluator := func(flag memprovider.InMemoryFlag, attrs openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
+					variant := flag.DefaultVariant
+					if attrs["workflow_action_name"] == "Expensive benchmarks" {
+						variant = "workflow"
+					}
+					return flag.Variants[variant], openfeature.ProviderResolutionDetail{Variant: variant}
+				}
+				provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+					"remote_execution.runner.max_cpu": {
+						State:            memprovider.Enabled,
+						DefaultVariant:   "default",
+						Variants:         map[string]any{"default": tc.maxCPU, "workflow": float64(16)},
+						ContextEvaluator: &evaluator,
+					},
+					"remote_execution.runner.max_memory_bytes": {
+						State:            memprovider.Enabled,
+						DefaultVariant:   "default",
+						Variants:         map[string]any{"default": int(tc.maxMemoryBytes), "workflow": 64 * tasksize.GiB},
+						ContextEvaluator: &evaluator,
+					},
+				})
+				require.NoError(t, openfeature.SetProviderAndWait(provider))
+			}
 			s := env.GetRemoteExecutionService()
 			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
 			require.NoError(t, err)
 			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 			require.NoError(t, err)
 
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{ActionMnemonic: tc.mnemonic})
+			cmd := &repb.Command{Arguments: []string{"test"}}
+			if tc.actionName != "" {
+				cmd.EnvironmentVariables = []*repb.Command_EnvironmentVariable{{
+					Name:  ci_runner_env.BuildBuddyActionNameEnvVarName,
+					Value: tc.actionName,
+				}}
+			}
+
 			action := &repb.Action{Platform: &repb.Platform{}}
 			for name, value := range tc.props {
 				action.Platform.Properties = append(action.Platform.Properties, &repb.Platform_Property{Name: name, Value: value})
 			}
-			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			arn := uploadActionWithCommand(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action, cmd)
 			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
 
 			sched := env.GetSchedulerService().(*schedulerServerMock)
