@@ -74,12 +74,6 @@ func EnsureDependencies() error {
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
-//
-// If disableJournal is true, the image has no journal. This saves the writes
-// that mke2fs makes to initialize the journal, and the journal writes made
-// while the image is mounted. Without a journal, a crash while the image is
-// mounted can leave the filesystem inconsistent, so only disable it for images
-// that are discarded after a crash.
 func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64, disableJournal bool) error {
 	if err := checkImageOutputPath(outputFile); err != nil {
 		return err
@@ -141,7 +135,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 }
 
 // MakeEmptyImage creates a new empty ext4 disk image of the specified size
-// and writes it to outputFile. See DirectoryToImage for disableJournal.
+// and writes it to outputFile.
 func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64, disableJournal bool) error {
 	if err := checkImageOutputPath(outputFile); err != nil {
 		return err
