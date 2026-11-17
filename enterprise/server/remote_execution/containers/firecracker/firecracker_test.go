@@ -4091,6 +4091,40 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 	}
 }
 
+func TestFirecrackerRun_InputSymlinkOutOfWorkspace(t *testing.T) {
+	ctx := t.Context()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	outsideDir := testfs.MakeDirAll(t, rootDir, "outside")
+	err := os.Symlink(outsideDir, filepath.Join(workDir, "link"))
+	require.NoError(t, err)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{OutputPaths: []string{"link"}},
+	}
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "rm link && mkdir link && echo output > link/output.txt"}}
+
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+
+	assert.Error(t, res.Error)
+	outsideEntries, err := os.ReadDir(outsideDir)
+	require.NoError(t, err)
+	assert.Empty(t, outsideEntries)
+}
+
 func TestFirecrackerVMNotRecycledIfWorkspaceDeviceStillBusy(t *testing.T) {
 	skipUnsupportedImage(t, imageWithDockerInstalled)
 	ctx := context.Background()

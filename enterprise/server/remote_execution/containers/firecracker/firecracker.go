@@ -2274,20 +2274,34 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 		return err
 	}
 
+	root, err := os.OpenRoot(c.actionWorkingDir)
+	if err != nil {
+		return fmt.Errorf("open action working dir: %w", err)
+	}
+	defer root.Close()
+
 	walkErr := fs.WalkDir(os.DirFS(wsDir), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		targetLocation := filepath.Join(c.actionWorkingDir, path)
-		alreadyExists, err := disk.FileExists(ctx, targetLocation)
+		_, err = root.Lstat(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		alreadyExists := err == nil
+		if alreadyExists {
+			return nil
+		}
+		if d.IsDir() {
+			return root.Mkdir(path, 0755)
+		}
+		dir, err := root.Open(filepath.Dir(path))
 		if err != nil {
 			return err
 		}
-		if !alreadyExists {
-			if d.IsDir() {
-				return disk.EnsureDirectoryExists(filepath.Join(c.actionWorkingDir, path))
-			}
-			return os.Rename(filepath.Join(wsDir, path), targetLocation)
+		defer dir.Close()
+		if err := unix.Renameat(unix.AT_FDCWD, filepath.Join(wsDir, path), int(dir.Fd()), d.Name()); err != nil {
+			return fmt.Errorf("move %q to action working dir: %w", path, err)
 		}
 		return nil
 	})
