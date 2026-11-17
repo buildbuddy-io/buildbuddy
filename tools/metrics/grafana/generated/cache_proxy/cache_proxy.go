@@ -105,10 +105,12 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Min(0).
 			ShowPoints(common.VisibilityModeNever).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (job) (up{`+proxyFilter+`})`, "{{job}} up").RefId("A")).
-			WithTarget(dash.PromQuery(`sum(kube_pod_status_ready{`+podFilter+`, condition="true"})`, "Ready").RefId("B")).
-			WithTarget(dash.PromQuery(`max(envoy_cluster_membership_healthy{`+envoyFilter+`})`, "healthy in Envoy").RefId("D")).
-			WithTarget(dash.PromQuery(`sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{cloud=~"${cloud}", region=~"${region}", horizontalpodautoscaler=~"cache-proxy.*autoscaler"})`, "{{horizontalpodautoscaler}} target").RefId("C"))).
+			WithTarget(dash.PromQuery(`sum by (cloud, region, job) (up{`+proxyFilter+`})`, "{{cloud}}/{{region}} {{job}} up").RefId("A")).
+			// kube-state-metrics series carry job="kube-state-metrics", so borrow
+			// the cache-proxy job from the pod's own up series.
+			WithTarget(dash.PromQuery(`sum by (cloud, region, job) (kube_pod_status_ready{`+podFilter+`, pod=~".*cache-proxy.*", condition="true"} * on (cloud, region, pod) group_left(job) label_replace(group by (cloud, region, pod_name, job) (up{`+proxyFilter+`}), "pod", "$1", "pod_name", "(.*)"))`, "{{cloud}}/{{region}} {{job}} ready").RefId("B")).
+			WithTarget(dash.PromQuery(`max by (cloud, region) (envoy_cluster_membership_healthy{`+envoyFilter+`})`, "{{cloud}}/{{region}} healthy in Envoy").RefId("D")).
+			WithTarget(dash.PromQuery(`sum by (cloud, region, horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{cloud=~"${cloud}", region=~"${region}", horizontalpodautoscaler=~"cache-proxy.*autoscaler"})`, "{{cloud}}/{{region}} {{horizontalpodautoscaler}} target").RefId("C"))).
 		WithPanel(ts("Cache-proxy nodes cordoned or NotReady", dash.UnitShort).
 			Description("Nodes hosting a cache-proxy pod that are cordoned or not Ready.").
 			Height(7).
