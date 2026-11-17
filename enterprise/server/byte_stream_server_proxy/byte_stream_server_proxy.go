@@ -211,7 +211,7 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 	ctx = authutil.ContextWithCachedAuthHeaders(ctx, s.authenticator)
 
 	if proxy_util.SkipRemote(ctx) {
-		if err := s.readLocalOnly(req, stream); err != nil {
+		if err := s.readLocalOnly(ctx, rn, req, stream); err != nil {
 			log.CtxInfof(ctx, "Error reading local: %v", err)
 			return readMetrics{
 				cacheStatus: metrics.MissStatusLabel,
@@ -392,7 +392,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 			defer writeCancel()
 
 			rawStream := &rawWriteStream{
-				ctx:          writeCtx,
+				ctx:          proxy_util.SetSkipRemoteAtimeUpdate(writeCtx),
 				resourceName: rn.NewUploadString(),
 				data:         data,
 			}
@@ -718,9 +718,17 @@ func flushToClient(ctx context.Context, remoteReadStream bspb.ByteStream_ReadCli
 	}
 }
 
-func (s *ByteStreamServerProxy) readLocalOnly(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	return s.local.Read(req, stream)
+func (s *ByteStreamServerProxy) readLocalOnly(ctx context.Context, rn *digest.CASResourceName, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	return s.local.ReadCASResource(proxy_util.SetSkipRemoteAtimeUpdate(ctx), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 }
+
+// localWriteStream overrides the context seen by the local ByteStreamServer.
+type localWriteStream struct {
+	bspb.ByteStream_WriteServer
+	ctx context.Context
+}
+
+func (s *localWriteStream) Context() context.Context { return s.ctx }
 
 func writeRequest(resourceName string, data []byte, offset int64, finishWrite bool) *bspb.WriteRequest {
 	return &bspb.WriteRequest{
@@ -793,7 +801,7 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 	}
 
 	readThrough := &readThroughCacheStream{
-		ctx:      ctx,
+		ctx:      proxy_util.SetSkipRemoteAtimeUpdate(ctx),
 		remote:   remoteReadStream,
 		client:   stream,
 		uploadRN: rn.NewUploadString(),
@@ -976,7 +984,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	if remoteOnlyForEncryption {
 		err = s.writeRemoteOnly(ctx, stream)
 	} else if proxy_util.SkipRemote(ctx) {
-		err = s.writeLocalOnly(stream)
+		err = s.writeLocalOnly(ctx, stream)
 	} else {
 		err = s.dualWrite(ctx, stream)
 	}
@@ -1010,8 +1018,11 @@ func (s *ByteStreamServerProxy) writeRemoteOnly(ctx context.Context, stream bspb
 	return stream.SendAndClose(resp)
 }
 
-func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServer) error {
-	return s.local.Write(stream)
+func (s *ByteStreamServerProxy) writeLocalOnly(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
+	return s.local.Write(&localWriteStream{
+		ByteStream_WriteServer: stream,
+		ctx:                    proxy_util.SetSkipRemoteAtimeUpdate(ctx),
+	})
 }
 
 func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context) bool {
@@ -1115,7 +1126,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	if err != nil {
 		return err
 	}
-	localCtx := stream.Context()
+	localCtx := proxy_util.SetSkipRemoteAtimeUpdate(stream.Context())
 	if skipValidation {
 		localCtx = byte_stream_server.ContextWithSkipWriteValidation(localCtx)
 	}
@@ -1371,7 +1382,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		if !remoteOnly {
 			localWriteCtx, localWriteSpn := tracing.StartNamedSpan(chunkCtx, "localChunkWrite")
 			rawStream := &rawWriteStream{
-				ctx:          localWriteCtx,
+				ctx:          proxy_util.SetSkipRemoteAtimeUpdate(localWriteCtx),
 				resourceName: chunkRN.NewUploadString(),
 				data:         compressedData,
 			}
