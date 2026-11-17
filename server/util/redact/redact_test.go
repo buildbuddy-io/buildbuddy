@@ -792,6 +792,26 @@ func TestRedactMetadata_Progress_StripsURLSecrets(t *testing.T) {
 	assert.Contains(t, progress.Stdout, "<REDACTED>@example.com/repo.git")
 	assert.NotContains(t, progress.Stderr, "STDERR_TOKEN")
 	assert.Contains(t, progress.Stderr, "<REDACTED>@example.com/archive.tar.gz")
+
+	for _, input := range []string{
+		"ERROR: downloading https://repo.example.com/guava.jar: failed to fetch @maven//:guava\n",
+		"ERROR: https://host:8080 unavailable; contact user@example.com\n",
+		"ERROR: failed to fetch @maven//:guava; contact user@example.com\n",
+		"https://host\tfailed: contact user@example.com\n",
+		"https://host:8080\tcontact user@example.com\n",
+		"https://host/path:part@example.com\n",
+		"https://host:8080/path@example.com\n",
+	} {
+		t.Run(input, func(t *testing.T) {
+			progress := &bespb.Progress{Stdout: input, Stderr: input}
+			err := redactor.RedactMetadata(&bespb.BuildEvent{
+				Payload: &bespb.BuildEvent_Progress{Progress: progress},
+			})
+			require.NoError(t, err)
+			assert.Equal(t, input, progress.Stdout)
+			assert.Equal(t, input, progress.Stderr)
+		})
+	}
 }
 
 func TestRedactAPIKey(t *testing.T) {
