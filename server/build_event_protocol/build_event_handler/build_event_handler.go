@@ -191,6 +191,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 	}
 
 	return &EventChannel{
+		iid:            iid,
 		env:            b.env,
 		statsRecorder:  b.statsRecorder,
 		ctx:            ctx,
@@ -834,6 +835,7 @@ type EventChannel struct {
 	requestedTerminalColumns         int
 	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
+	iid                              string
 	onClose                          func()
 	registered                       bool
 	stopRedisRefresher               func()
@@ -1030,6 +1032,11 @@ func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamReques
 }
 
 func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
+	// Check this even on a voided channel, since the server still forwards
+	// accepted events to any configured proxies.
+	if iid := event.GetOrderedBuildEvent().GetStreamId().GetInvocationId(); iid != e.iid {
+		return status.InvalidArgumentErrorf("event for invocation %q sent on the stream for invocation %q", iid, e.iid)
+	}
 	if e.isVoid {
 		return nil
 	}
