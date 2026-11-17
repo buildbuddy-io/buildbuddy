@@ -367,7 +367,11 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 		return err
 	}
-	err = ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, contentLength)
+	cacheWriter := &grpcStreamWriter{stream: stream}
+	err = ocicache.FetchBlobFromCache(ctx, cacheWriter, s.bsClient, hash, contentLength)
+	if err != nil && cacheWriter.bytesWritten == 0 && ctx.Err() == nil {
+		_, err = s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream)
+	}
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
 }
