@@ -19,6 +19,7 @@ typedef unsigned long long __u64;
 #define BPF_MAP_TYPE_PERCPU_ARRAY 6
 #define BPF_MAP_TYPE_RINGBUF 27
 #define BPF_NOEXIST 1
+#define EEXIST 17
 #define BPF_F_NO_PREALLOC 1
 
 static void *(*bpf_map_lookup_elem)(void *map, const void *key) = (void *)1;
@@ -70,12 +71,13 @@ struct event {
 };
 
 // Cgroup IDs whose processes (including those in descendant cgroups) are
-// recorded. Managed from userspace.
+// recorded, mapped to the number of opens that could not be reported.
+// Managed from userspace.
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, 4096);
   __type(key, __u64);
-  __type(value, __u8);
+  __type(value, __u64);
 } tracked SEC(".maps");
 
 // Keys already reported, so that each path is sent to userspace once per
@@ -111,23 +113,26 @@ int file_open(__u64 *ctx) {
   }
 
   __u64 cgroup_id = 0;
+  __u64 *dropped = 0;
   for (int level = 1; level < MAX_CGROUP_DEPTH; level++) {
     __u64 id = bpf_get_current_ancestor_cgroup_id(level);
     if (id == 0) {
       break;
     }
-    if (bpf_map_lookup_elem(&tracked, &id)) {
+    dropped = bpf_map_lookup_elem(&tracked, &id);
+    if (dropped) {
       cgroup_id = id;
       break;
     }
   }
-  if (cgroup_id == 0) {
+  if (!dropped) {
     return 0;
   }
 
   __u32 zero = 0;
   struct event *e = bpf_map_lookup_elem(&scratch, &zero);
   if (!e) {
+    __sync_fetch_and_add(dropped, 1);
     return 0;
   }
   e->key.cgroup_id = cgroup_id;
@@ -135,14 +140,18 @@ int file_open(__u64 *ctx) {
   e->key.ino = file->f_inode->i_ino;
 
   __u8 one = 1;
-  // Skip if already reported, or if the map is full (rather than reporting
-  // every open).
-  if (bpf_map_update_elem(&seen, &e->key, &one, BPF_NOEXIST) != 0) {
+  long err = bpf_map_update_elem(&seen, &e->key, &one, BPF_NOEXIST);
+  if (err == -EEXIST) {
+    return 0;  // Already reported.
+  }
+  if (err != 0) {
+    __sync_fetch_and_add(dropped, 1);  // Map full.
     return 0;
   }
   long n = bpf_d_path(&file->f_path, e->path, sizeof(e->path));
   if (n <= 0 || n > PATH_MAX) {
     bpf_map_delete_elem(&seen, &e->key);
+    __sync_fetch_and_add(dropped, 1);
     return 0;
   }
   e->path_len = n;
@@ -153,6 +162,7 @@ int file_open(__u64 *ctx) {
   if (bpf_ringbuf_output(&events, e, size, 0) != 0) {
     // Ring buffer full: forget the key so a later open can report it.
     bpf_map_delete_elem(&seen, &e->key);
+    __sync_fetch_and_add(dropped, 1);
   }
   return 0;
 }

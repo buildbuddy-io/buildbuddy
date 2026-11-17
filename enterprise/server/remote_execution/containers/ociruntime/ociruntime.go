@@ -1096,9 +1096,14 @@ func (c *ociContainer) startFileAccessRecording(ctx context.Context) func() []st
 		return func() []string { return nil }
 	}
 	return func() []string {
-		paths, err := rec.Stop()
+		paths, dropped, err := rec.Stop()
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to stop file access recording: %s", err)
+			return nil
+		}
+		if dropped > 0 {
+			log.CtxWarningf(ctx, "Discarding file access recording: %d opens were not recorded", dropped)
+			return nil
 		}
 		var relPaths []string
 		for _, p := range paths {

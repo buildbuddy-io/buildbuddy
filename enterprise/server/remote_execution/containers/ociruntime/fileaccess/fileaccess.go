@@ -184,7 +184,7 @@ func (t *Tracker) Start(cgroupPath string) (*Recording, error) {
 	t.mu.Lock()
 	t.recordings[r.cgroupID] = r
 	t.mu.Unlock()
-	if err := t.objs.Tracked.Put(r.cgroupID, uint8(1)); err != nil {
+	if err := t.objs.Tracked.Put(r.cgroupID, uint64(0)); err != nil {
 		t.mu.Lock()
 		delete(t.recordings, r.cgroupID)
 		t.mu.Unlock()
@@ -195,9 +195,14 @@ func (t *Tracker) Start(cgroupPath string) (*Recording, error) {
 
 // Stop ends the recording and returns the paths of the regular files that were
 // opened for reading, as seen from the root directory of the opening process.
-func (r *Recording) Stop() ([]string, error) {
+// If dropped is non-zero, that many opens could not be recorded (for example
+// because a buffer was full) and paths is incomplete.
+func (r *Recording) Stop() (paths []string, dropped uint64, err error) {
 	t := r.tracker
 	var errs []error
+	if err := t.objs.Tracked.Lookup(r.cgroupID, &dropped); err != nil {
+		errs = append(errs, fmt.Errorf("read dropped count: %w", err))
+	}
 	if err := t.objs.Tracked.Delete(r.cgroupID); err != nil {
 		errs = append(errs, fmt.Errorf("untrack cgroup: %w", err))
 	}
@@ -207,7 +212,7 @@ func (r *Recording) Stop() ([]string, error) {
 
 	t.mu.Lock()
 	delete(t.recordings, r.cgroupID)
-	keys, paths := r.keys, r.paths
+	keys, pathSet := r.keys, r.paths
 	r.keys, r.paths = nil, nil
 	t.mu.Unlock()
 
@@ -216,9 +221,9 @@ func (r *Recording) Stop() ([]string, error) {
 			errs = append(errs, fmt.Errorf("delete seen keys: %w", err))
 		}
 	}
-	out := make([]string, 0, len(paths))
-	for p := range paths {
-		out = append(out, p)
+	paths = make([]string, 0, len(pathSet))
+	for p := range pathSet {
+		paths = append(paths, p)
 	}
-	return out, errors.Join(errs...)
+	return paths, dropped, errors.Join(errs...)
 }
