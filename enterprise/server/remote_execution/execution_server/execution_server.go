@@ -396,12 +396,16 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
+func isWorkflowExecution(mnemonic string) bool {
+	return mnemonic == "BuildBuddyWorkflowRun" || mnemonic == "RemoteBazelRun"
+}
+
 func (s *ExecutionServer) applySnapshotSaveQuota(ctx context.Context, overrides *repb.Platform) {
 	qm := s.env.GetQuotaManager()
 	if qm == nil {
 		return
 	}
-	force := enableWorkflowsQuota.Get(ctx)
+	force := isWorkflowExecution(bazel_request.GetRequestMetadata(ctx).GetActionMnemonic()) && enableWorkflowsQuota.Get(ctx)
 	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes), 0, force); err != nil {
 		platform.SetValue(overrides, platform.SkipLocalSnapshotSavePropertyName, "true")
 	}
@@ -415,7 +419,7 @@ func (s *ExecutionServer) recordSnapshotSaveQuota(ctx context.Context, fcStats *
 	if qm == nil || fcStats.GetSnapshotSavedBytes() <= 0 {
 		return
 	}
-	force := enableWorkflowsQuota.Get(ctx)
+	force := isWorkflowExecution(bazel_request.GetRequestMetadata(ctx).GetActionMnemonic()) && enableWorkflowsQuota.Get(ctx)
 	bytesWritten := fcStats.GetSnapshotSavedBytes()
 	var namespaces []string
 	if fcStats.GetSnapshotSavedLocally() {
