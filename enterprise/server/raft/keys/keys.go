@@ -56,7 +56,7 @@ func Range(key []byte) ([]byte, []byte) {
 // AtimeIndexPrefix is the keyspace of the node-local atime index: one entry
 // per file record, sorted by (partition, atime). It is in the unreplicated
 // local region, outside every replica's prefix, so it is never part of a
-// range. Nothing writes to it yet.
+// range.
 var AtimeIndexPrefix = []byte{'\x01', 'a', 't', 'i', 'd', 'x', '/'}
 
 // AtimeIndexKey returns AtimeIndexPrefix + partitionID + '/' + atimeUsec

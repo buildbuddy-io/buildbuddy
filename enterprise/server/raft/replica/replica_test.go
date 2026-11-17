@@ -3378,3 +3378,150 @@ func TestUpdateATimeGCSCustomTime(t *testing.T) {
 		require.Equal(t, int64(5_000_000), gotMd.GetStorageMetadata().GetGcsMetadata().GetLastCustomTimeUsec(), "custom time should be recorded even when the atime is stale")
 	}
 }
+
+// writeRecordViaSet applies a SetRequest for the record and returns its key.
+func writeRecordViaSet(t *testing.T, em *entryMaker, repl *testutil.TestingReplica, fileRecord *sgpb.FileRecord, atimeUsec int64) []byte {
+	fs := filestore.New()
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(t, err)
+
+	md := &sgpb.FileMetadata{
+		FileRecord: fileRecord,
+		StorageMetadata: &sgpb.StorageMetadata{
+			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{Data: []byte("x")},
+		},
+		StoredSizeBytes: 1,
+		LastAccessUsec:  atimeUsec,
+	}
+	applyBatch(t, em, repl, rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+		Key:          fileMetadataKey,
+		FileMetadata: md,
+	}))
+	return fileMetadataKey
+}
+
+func applyBatch(t *testing.T, em *entryMaker, repl *testutil.TestingReplica, batch *rbuilder.BatchBuilder) {
+	rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(batch)})
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+}
+
+// readAtimeIndex returns the partition's atime-index entries as atime->fileKey.
+func readAtimeIndex(t *testing.T, repl *testutil.TestingReplica, partitionID string) map[int64]string {
+	start, end := keys.AtimeIndexPartitionRange(partitionID)
+	iter, err := repl.DB().NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	require.NoError(t, err)
+	defer iter.Close()
+	entries := map[int64]string{}
+	for valid := iter.First(); valid; valid = iter.Next() {
+		_, atime, fileKey, err := keys.ParseAtimeIndexKey(iter.Key())
+		require.NoError(t, err)
+		entries[atime] = string(fileKey)
+	}
+	return entries
+}
+
+func TestAtimeIndexMaintenance(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+	t.Cleanup(func() {
+		require.NoError(t, repl.Close())
+	})
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	// Set adds an entry.
+	fr, _ := randomRecord(t, defaultPartition, 100)
+	t0 := int64(1_000_000)
+	fileMetadataKey := writeRecordViaSet(t, em, repl, fr, t0)
+	require.Equal(t, map[int64]string{t0: string(fileMetadataKey)}, readAtimeIndex(t, repl, defaultPartition))
+
+	// An overwriting Set moves the entry.
+	t1 := t0 + 1_000_000
+	writeRecordViaSet(t, em, repl, fr, t1)
+	require.Equal(t, map[int64]string{t1: string(fileMetadataKey)}, readAtimeIndex(t, repl, defaultPartition))
+
+	// UpdateAtime moves the entry.
+	t2 := t1 + 5_000_000
+	applyBatch(t, em, repl, rbuilder.NewBatchBuilder().Add(&rfpb.UpdateAtimeRequest{
+		Key:            fileMetadataKey,
+		AccessTimeUsec: t2,
+	}))
+	require.Equal(t, map[int64]string{t2: string(fileMetadataKey)}, readAtimeIndex(t, repl, defaultPartition))
+
+	// A backwards UpdateAtime changes nothing.
+	applyBatch(t, em, repl, rbuilder.NewBatchBuilder().Add(&rfpb.UpdateAtimeRequest{
+		Key:            fileMetadataKey,
+		AccessTimeUsec: t1,
+	}))
+	require.Equal(t, map[int64]string{t2: string(fileMetadataKey)}, readAtimeIndex(t, repl, defaultPartition))
+
+	// Delete removes the entry.
+	applyBatch(t, em, repl, rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
+		Key: fileMetadataKey,
+	}))
+	require.Empty(t, readAtimeIndex(t, repl, defaultPartition))
+}
+
+// The atime index is not part of a snapshot. Recovering from one indexes the
+// snapshot's records and drops the entries of the records it replaces.
+func TestAtimeIndexSnapshotRestore(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+	t.Cleanup(func() {
+		require.NoError(t, repl.Close())
+	})
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	fr, _ := randomRecord(t, defaultPartition, 100)
+	t0, t1, t2 := int64(1_000_000), int64(2_000_000), int64(3_000_000)
+	fileMetadataKey := writeRecordViaSet(t, em, repl, fr, t2)
+
+	snapI, err := repl.PrepareSnapshot()
+	require.NoError(t, err)
+
+	snapFile, err := os.CreateTemp(testfs.MakeTempDir(t), "snapfile-*")
+	require.NoError(t, err)
+	defer snapFile.Close()
+
+	err = repl.SaveSnapshot(snapI, snapFile, nil /*=quitChan*/)
+	require.NoError(t, err)
+	_, err = snapFile.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+
+	repl2 := testutil.NewTestingReplica(t, 2, 2)
+	require.NotNil(t, repl2)
+	t.Cleanup(func() {
+		require.NoError(t, repl2.Close())
+	})
+	_, err = repl2.Open(stopc)
+	require.NoError(t, err)
+
+	// The recovering replica holds an older copy of the snapshot's record,
+	// and a record that the snapshot doesn't contain.
+	em2 := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em2, repl2.Replica)
+	writeRecordViaSet(t, em2, repl2, fr, t0)
+	staleRecord, _ := randomRecord(t, defaultPartition, 100)
+	staleKey := writeRecordViaSet(t, em2, repl2, staleRecord, t1)
+	require.Equal(t, map[int64]string{
+		t0: string(fileMetadataKey),
+		t1: string(staleKey),
+	}, readAtimeIndex(t, repl2, defaultPartition))
+
+	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
+	require.NoError(t, err)
+
+	require.Equal(t, map[int64]string{t2: string(fileMetadataKey)}, readAtimeIndex(t, repl2, defaultPartition))
+}

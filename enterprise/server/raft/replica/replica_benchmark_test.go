@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
@@ -110,6 +111,21 @@ func reportWriteAmp(b *testing.B, db pebble.IPebbleDB, before pebbleWriteStats, 
 	b.ReportMetric(float64(after.compactedBytes-before.compactedBytes)/float64(ops), "compact-B/op")
 }
 
+// reportIndexEntries reports the number of atime-index entries, and how many
+// of them are in excess of one per record.
+func reportIndexEntries(b *testing.B, db pebble.IPebbleDB, nRecords int) {
+	start, end := keys.AtimeIndexPartitionRange(defaultPartition)
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	require.NoError(b, err)
+	defer iter.Close()
+	entries := 0
+	for valid := iter.First(); valid; valid = iter.Next() {
+		entries++
+	}
+	b.ReportMetric(float64(entries), "idx-entries")
+	b.ReportMetric(float64(max(entries-nRecords, 0)), "idx-orphans")
+}
+
 // BenchmarkSetApply measures applying SetRequests. It cycles through a fixed
 // pool of records, so most applies are overwrites.
 func BenchmarkSetApply(b *testing.B) {
@@ -137,6 +153,7 @@ func BenchmarkSetApply(b *testing.B) {
 	require.NoError(b, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 
 	reportWriteAmp(b, db, before, i)
+	reportIndexEntries(b, db, n)
 }
 
 // BenchmarkUpdateAtimeApply measures applying UpdateAtimeRequests.
@@ -177,4 +194,5 @@ func BenchmarkUpdateAtimeApply(b *testing.B) {
 	require.NoError(b, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 
 	reportWriteAmp(b, db, before, i)
+	reportIndexEntries(b, db, n)
 }

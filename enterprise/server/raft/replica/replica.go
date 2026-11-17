@@ -713,19 +713,13 @@ func (sm *Replica) clearInMemoryReplicaState() {
 	sm.lastAppliedIndex = 0
 }
 
-// clearRangeData clears data in range [start, end).
-func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) error {
-	wb := db.NewBatch()
-	defer wb.Close()
-	if rd.GetStart() != nil && rd.GetEnd() != nil {
-		if err := wb.DeleteRange(rd.GetStart(), rd.GetEnd(), nil /*ignored write options*/); err != nil {
-			return err
-		}
+// clearRangeData clears data in range [start, end), along with the cleared
+// records' atime-index entries.
+func (sm *Replica) clearRangeData(db pebble.IPebbleDB, rd *rfpb.RangeDescriptor) error {
+	if rd.GetStart() == nil || rd.GetEnd() == nil {
+		return nil
 	}
-	if err := wb.Commit(pebble.Sync); err != nil {
-		return err
-	}
-	return nil
+	return DeleteRangeDataAndAtimeIndexEntries(db, rd.GetStart(), rd.GetEnd(), pebble.Sync)
 }
 
 // clearReplica clears in-memory replica state, and local range data on the disk.
@@ -795,8 +789,8 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 
 // checkNotFileRecordKey refuses generic KV writes to file-record keys. File
 // records must be written through SetRequest (and mutated via UpdateAtime /
-// Delete): those paths validate the key and value, and state derived from
-// record writes relies on them being the only writers of record keyspace.
+// Delete): those paths validate the key and value, and the atime index relies
+// on them being the only writers of record keyspace.
 func (sm *Replica) checkNotFileRecordKey(key []byte) error {
 	if keys.PartitionIDFromRangeStart(key) != "" {
 		return status.InvalidArgumentErrorf("[%s] cannot direct write file-record key %q; use SetRequest instead", sm.name(), key)
@@ -1182,6 +1176,87 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 	}, nil
 }
 
+func addAtimeIndex(wb pebble.Batch, fileKey []byte, atimeUsec int64) error {
+	partID := keys.PartitionIDFromRangeStart(fileKey)
+	if partID == "" {
+		return nil
+	}
+	return fatal(wb.Set(keys.AtimeIndexKey(partID, atimeUsec, fileKey), nil, nil /*ignored write options*/))
+}
+
+func deleteAtimeIndex(wb pebble.Batch, fileKey []byte, atimeUsec int64) error {
+	partID := keys.PartitionIDFromRangeStart(fileKey)
+	if partID == "" {
+		return nil
+	}
+	return fatal(wb.Delete(keys.AtimeIndexKey(partID, atimeUsec, fileKey), nil /*ignored write options*/))
+}
+
+// recordAtimeUsec returns the atime of a serialized FileMetadata.
+func recordAtimeUsec(buf []byte) (int64, error) {
+	var md sgpb.FileMetadataRaftFindView
+	if err := md.UnmarshalWire(buf); err != nil {
+		return 0, err
+	}
+	return md.LastAccessUsec, nil
+}
+
+// atimeIndexCleanupCommitSizeBytes bounds the batches of
+// DeleteRangeDataAndAtimeIndexEntries. Var so tests can force several chunks.
+var atimeIndexCleanupCommitSizeBytes = 4 * 1024 * 1024
+
+// DeleteRangeDataAndAtimeIndexEntries deletes the records in [start, end) and
+// their atime-index entries. Nothing may write to the span while it runs.
+func DeleteRangeDataAndAtimeIndexEntries(db pebble.IPebbleDB, start, end []byte, opts *pebble.WriteOptions) error {
+	// The iterator reads a consistent view, so deleting behind it is safe.
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	wb := db.NewBatch()
+	defer wb.Close()
+
+	chunkStart := start
+	commitChunk := func(chunkEnd []byte) error {
+		if err := wb.DeleteRange(chunkStart, chunkEnd, nil /*ignored write options*/); err != nil {
+			return err
+		}
+		if err := wb.Commit(opts); err != nil {
+			return err
+		}
+		wb.Reset()
+		chunkStart = chunkEnd
+		return nil
+	}
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		// Keys outside a partition (e.g. the meta range) have no entry.
+		partID := keys.PartitionIDFromRangeStart(iter.Key())
+		if partID == "" {
+			continue
+		}
+		atimeUsec, err := recordAtimeUsec(iter.Value())
+		if err != nil {
+			log.Warningf("skipping atime index cleanup for non-FileMetadata key %q: %s", iter.Key(), err)
+			continue
+		}
+		if err := wb.Delete(keys.AtimeIndexKey(partID, atimeUsec, iter.Key()), nil /*ignored write options*/); err != nil {
+			return err
+		}
+		if wb.Len() >= atimeIndexCleanupCommitSizeBytes {
+			if err := commitChunk(keys.Key(iter.Key()).Next()); err != nil {
+				return err
+			}
+		}
+	}
+	// Don't delete the rest of the span if the scan was cut short.
+	if err := iter.Error(); err != nil {
+		return err
+	}
+	return commitChunk(end)
+}
+
 func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse, error) {
 	// Check that key is a valid PebbleKey.
 	var pk filestore.PebbleKey
@@ -1195,11 +1270,37 @@ func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse
 	if req.GetFileMetadata().GetFileRecord() == nil {
 		log.Warningf("incoming FileMetadata has no FileRecord for key %q: %+v", req.GetKey(), req.GetFileMetadata())
 	}
+	// Read the atime of the record being overwritten, if any, to move its
+	// index entry. wb is an indexed batch, so this sees earlier writes in the
+	// same batch.
+	hasPrev := false
+	var prevAtimeUsec int64
+	prevBuf, closer, err := wb.Get(req.GetKey())
+	if err == nil {
+		prevAtimeUsec, err = recordAtimeUsec(prevBuf)
+		closer.Close()
+		if err != nil {
+			return nil, status.InternalErrorf("[%s] failed to decode stored FileMetadata for key %q: %w", sm.name(), req.GetKey(), err)
+		}
+		hasPrev = true
+	} else if err != pebble.ErrNotFound {
+		return nil, fatal(err)
+	}
+
 	buf, err := proto.Marshal(req.GetFileMetadata())
 	if err != nil {
 		return nil, err
 	}
 	if err := sm.rangeCheckedSet(wb, req.GetKey(), buf); err != nil {
+		return nil, err
+	}
+	newAtimeUsec := req.GetFileMetadata().GetLastAccessUsec()
+	if hasPrev && prevAtimeUsec != newAtimeUsec {
+		if err := deleteAtimeIndex(wb, req.GetKey(), prevAtimeUsec); err != nil {
+			return nil, err
+		}
+	}
+	if err := addAtimeIndex(wb, req.GetKey(), newAtimeUsec); err != nil {
 		return nil, err
 	}
 	return &rfpb.SetResponse{}, nil
@@ -1229,6 +1330,9 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 	}
 	if err := wb.Delete(req.GetKey(), nil /*ignored write options*/); err != nil {
 		return nil, fatal(err)
+	}
+	if err := deleteAtimeIndex(wb, req.GetKey(), fileMetadata.GetLastAccessUsec()); err != nil {
+		return nil, err
 	}
 	return &rfpb.DeleteResponse{}, nil
 }
@@ -1292,6 +1396,7 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 		return nil, status.InternalErrorf("[%s] failed to decode stored FileMetadata for key %q: %w", sm.name(), req.GetKey(), err)
 	}
 	updated := false
+	prevAtimeUsec := fileMetadata.GetLastAccessUsec()
 
 	// Atime should always move forward. If the new one is behind, or is the same
 	// value a retry already applied, don't attempt to add it.
@@ -1320,6 +1425,15 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 	}
 	if err := sm.rangeCheckedSet(wb, req.GetKey(), buf); err != nil {
 		return nil, err
+	}
+	// Move the index entry, unless only the custom time changed.
+	if newAtimeUsec := fileMetadata.GetLastAccessUsec(); newAtimeUsec != prevAtimeUsec {
+		if err := deleteAtimeIndex(wb, req.GetKey(), prevAtimeUsec); err != nil {
+			return nil, err
+		}
+		if err := addAtimeIndex(wb, req.GetKey(), newAtimeUsec); err != nil {
+			return nil, err
+		}
 	}
 	return &rfpb.UpdateAtimeResponse{}, nil
 }
@@ -2122,7 +2236,7 @@ func flushBatch(wb pebble.Batch) error {
 
 // applySnapshotFromReader restores a snapshot in bounded batches. It writes
 // the applied index last so a crash triggers snapshot reapplication.
-func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
+func (sm *Replica) applySnapshotFromReader(r io.Reader, db pebble.IPebbleDB) error {
 	wb := db.NewBatch()
 	defer wb.Close()
 
@@ -2179,6 +2293,15 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		}
 		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
+		}
+		// The atime index is not part of the snapshot, so create and write it.
+		if keys.PartitionIDFromRangeStart(kv.Key) != "" {
+			atimeUsec, err := recordAtimeUsec(kv.Value)
+			if err != nil {
+				sm.log.Warningf("snapshot KV %q is not a FileMetadata, skipping its atime index entry: %s", kv.Key, err)
+			} else if err := addAtimeIndex(wb, kv.Key, atimeUsec); err != nil {
+				return err
+			}
 		}
 		if wb.Len() > snapshotBatchSizeBytes {
 			sm.log.Debugf("applySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
