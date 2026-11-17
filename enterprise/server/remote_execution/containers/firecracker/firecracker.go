@@ -1765,7 +1765,7 @@ func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploade
 func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string) error {
 	scratchDiskSizeBytes := ext4.MinDiskImageSizeBytes + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
 	scratchDiskSizeBytes = alignToMultiple(scratchDiskSizeBytes, int64(os.Getpagesize()))
-	if err := ext4.MakeEmptyImage(ctx, path, scratchDiskSizeBytes); err != nil {
+	if err := ext4.MakeEmptyImage(ctx, path, scratchDiskSizeBytes, execution_experiments.FirecrackerDisableExt4Journal.Get(ctx)); err != nil {
 		return err
 	}
 	if !snaputil.IsChunkedSnapshotSharingEnabled() {
@@ -1875,7 +1875,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	}
 	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + *workspaceDiskSlackSpaceMB*1e6
 	workspaceDiskSizeBytes = alignToMultiple(workspaceDiskSizeBytes, int64(os.Getpagesize()))
-	if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
+	if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes, execution_experiments.FirecrackerDisableExt4Journal.Get(ctx)); err != nil {
 		return status.WrapError(err, "failed to convert workspace dir to ext4 image")
 	}
 	return nil
@@ -2110,6 +2110,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		netnsPath = c.network.NamespacePath()
 	}
 	bootArgs := getBootArgs(c.vmConfig, c.genericSnapshot /*=deferRootfsMount*/)
+	// Add this here instead of in getBootArgs, because vmConfig.BootArgs is
+	// part of the snapshot key, and turning off the journal should not
+	// invalidate existing snapshots. Snapshots of VMs that booted with a
+	// journal keep using it, because resuming a VM does not remount its root.
+	if execution_experiments.FirecrackerDisableExt4Journal.Get(ctx) {
+		bootArgs += " -disable_ext4_journal"
+	}
 	guestKernelPath := c.executorConfig.GuestKernelImagePath
 	if c.shouldUpgradeGuestKernel() {
 		guestKernelPath = c.executorConfig.GuestKernelImagePath6_18
@@ -2777,6 +2784,7 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 		Entropy:                  entropy,
 		MountContainerRoot:       true,
 		ContainerRootSizeBytes:   rootSizeBytes,
+		DisableExt4Journal:       execution_experiments.FirecrackerDisableExt4Journal.Get(ctx),
 		MemoryLimitBytes:         c.guestMemoryLimitBytes,
 		ClearArpCache:            true,
 		UnixTimestampNanoseconds: time.Now().UnixNano(),

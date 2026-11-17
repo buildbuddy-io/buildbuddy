@@ -89,6 +89,16 @@ const (
 	fileCacheSize = 100_000_000_000 // 100GB
 
 	mib = 1 << 20
+
+	// printJournaledMounts prints the mount point of each read-write ext4
+	// filesystem in the guest that has a journal loaded. jbd2 lists each
+	// loaded journal as /proc/fs/jbd2/<device>-<inode>, and ext4 keeps its
+	// journal in inode 8.
+	printJournaledMounts = `
+		awk '$3 == "ext4" && $4 ~ /^rw/ {print $1, $2}' /proc/mounts | while read -r dev dir; do
+			if [ -e "/proc/fs/jbd2/${dev#/dev/}-8" ]; then echo "$dir"; fi
+		done
+	`
 )
 
 var (
@@ -1286,6 +1296,106 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 
 	err = c.Pause(ctx)
 	require.NoError(t, err)
+}
+
+func TestFirecrackerDisableExt4Journal(t *testing.T) {
+	for _, testCase := range []struct {
+		name                string
+		disableJournal      bool
+		wantJournaledMounts string
+	}{
+		{name: "journal", disableJournal: false, wantJournaledMounts: "/\n/workspace\n"},
+		{name: "no journal", disableJournal: true, wantJournaledMounts: ""},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := t.Context()
+			flags.Set(t, "executor.firecracker_disable_ext4_journal", testCase.disableJournal)
+			env := getTestEnv(ctx, t, envOpts{})
+			workDir := testfs.MakeTempDir(t)
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			require.NoError(t, err)
+
+			// Run handles the full lifecycle, so there's no need to call Remove.
+			res := c.Run(ctx, &repb.Command{Arguments: []string{"sh", "-ec", printJournaledMounts}}, workDir, oci.Credentials{})
+			require.NoError(t, res.Error)
+			require.Equal(t, 0, res.ExitCode, "%s", res.Stderr)
+			assert.Equal(t, testCase.wantJournaledMounts, string(res.Stdout))
+		})
+	}
+}
+
+func TestFirecrackerDisableExt4Journal_SnapshotKeepsJournal(t *testing.T) {
+	ctx := t.Context()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	cfg := getExecutorConfig(t)
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+	}
+	newContainer := func(workDir string) *firecracker.FirecrackerContainer {
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         minMemSizeMB,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: cfg,
+		}
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			assert.NoError(t, c.Remove(context.Background()))
+		})
+		return c
+	}
+	cmd := &repb.Command{Arguments: []string{"sh", "-ec", printJournaledMounts}}
+
+	// Save a snapshot of a VM that booted with the journal.
+	workDir := testfs.MakeDirAll(t, rootDir, "base")
+	baseVM := newContainer(workDir)
+	err := container.PullImageIfNecessary(ctx, env, baseVM, oci.Credentials{}, busyboxImage, false /*=useOCIFetcher*/)
+	require.NoError(t, err)
+	err = baseVM.Create(ctx, workDir)
+	require.NoError(t, err)
+	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "/\n/workspace\n", string(res.Stdout))
+	err = baseVM.Pause(ctx)
+	require.NoError(t, err)
+
+	// After the experiment turns on, a new VM should still resume the
+	// snapshot. Its root keeps the journal that it was mounted with at boot,
+	// but its new workspace image has no journal.
+	flags.Set(t, "executor.firecracker_disable_ext4_journal", true)
+	workDir = testfs.MakeDirAll(t, rootDir, "resumed")
+	resumedVM := newContainer(workDir)
+	err = resumedVM.Create(ctx, workDir)
+	require.NoError(t, err)
+	res = resumedVM.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
+	assert.Equal(t, "/\n", string(res.Stdout))
 }
 
 func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
@@ -5579,4 +5689,45 @@ func TestFirecrackerGenericSnapshotRebuild(t *testing.T) {
 		_, err = loader.GetSnapshot(genericSnapshotCtx, c.SnapshotKeySet(), &snaploader.GetSnapshotOptions{ReadPolicy: platform.ReadLocalSnapshotOnly})
 		return err == nil
 	}, time.Minute, 100*time.Millisecond)
+}
+
+func TestFirecrackerGenericSnapshot_DisableExt4Journal(t *testing.T) {
+	ctx := t.Context()
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	env := getTestEnv(ctx, t, envOpts{})
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	cfg := getExecutorConfig(t)
+	vmConfig := &fcpb.VMConfiguration{
+		NumCpus:           1,
+		MemSizeMb:         2500,
+		NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_LOCAL,
+		ScratchDiskSizeMb: 100,
+	}
+	// Build the snapshot before the experiment turns on, so that the test
+	// fails if the experiment changes the generic snapshot key.
+	err = firecracker.BuildGenericSnapshot(ctx, env, nil /*=experiments*/, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig.CloneVT()})
+	require.NoError(t, err)
+
+	// The guest mounts the container root after restoring a generic snapshot,
+	// so the experiment applies to it.
+	flags.Set(t, "executor.firecracker_disable_ext4_journal", true)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, firecracker.ContainerOpts{
+		ContainerImage:  busyboxImage,
+		ExecutorConfig:  cfg,
+		VMConfiguration: vmConfig.CloneVT(),
+		GenericSnapshot: true,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, c.Remove(context.Background()))
+	})
+	res := c.Run(ctx, &repb.Command{Arguments: []string{"sh", "-ec", printJournaledMounts}}, testfs.MakeTempDir(t), oci.Credentials{})
+	require.NoError(t, res.Error, "%s", res.AuxiliaryLogs)
+	require.Equal(t, 0, res.ExitCode, "%s", res.Stderr)
+	// Boot timings are cleared only for VMs restored from a snapshot.
+	assert.Zero(t, res.VMMetrics.GetVmExecInitDurationUsec())
+	assert.Equal(t, "", string(res.Stdout))
 }

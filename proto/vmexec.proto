@@ -165,6 +165,10 @@ message InitializeRequest {
 
   // If set, commands run after this request are limited to this much memory.
   int64 memory_limit_bytes = 6;
+
+  // If true, mount the container root without an ext4 journal. Only applies
+  // if mount_container_root is set.
+  bool disable_ext4_journal = 7;
 }
 
 message InitializeResponse {

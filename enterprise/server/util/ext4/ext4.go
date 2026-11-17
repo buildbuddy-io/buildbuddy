@@ -74,7 +74,13 @@ func EnsureDependencies() error {
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
-func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64) error {
+//
+// If disableJournal is true, the image has no journal. This saves the writes
+// that mke2fs makes to initialize the journal, and the journal writes made
+// while the image is mounted. Without a journal, a crash while the image is
+// mounted can leave the filesystem inconsistent, so only disable it for images
+// that are discarded after a crash.
+func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64, disableJournal bool) error {
 	if err := checkImageOutputPath(outputFile); err != nil {
 		return err
 	}
@@ -82,11 +88,15 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	features := "^64bit"
+	if disableJournal {
+		features += ",^has_journal"
+	}
 	args := []string{
 		mke2fsPath,
 		"-L", "''",
 		"-N", "0",
-		"-O", "^64bit",
+		"-O", features,
 		"-d", inputDir,
 		"-m", "5",
 		"-r", "1",
@@ -131,8 +141,8 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 }
 
 // MakeEmptyImage creates a new empty ext4 disk image of the specified size
-// and writes it to outputFile.
-func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) error {
+// and writes it to outputFile. See DirectoryToImage for disableJournal.
+func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64, disableJournal bool) error {
 	if err := checkImageOutputPath(outputFile); err != nil {
 		return err
 	}
@@ -140,11 +150,15 @@ func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) err
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	features := "^64bit"
+	if disableJournal {
+		features += ",^has_journal"
+	}
 	args := []string{
 		mke2fsPath,
 		"-L", "",
 		"-N", "0",
-		"-O", "^64bit",
+		"-O", features,
 		"-m", "5",
 		"-r", "1",
 		"-b", fmt.Sprintf("%d", blockSize),
@@ -222,7 +236,7 @@ func DirectoryToImageAutoSize(ctx context.Context, inputDir, outputFile string) 
 	}
 
 	imageSizeBytes := int64(float64(dirSizeBytes)*1.2) + MinDiskImageSizeBytes
-	return DirectoryToImage(ctx, inputDir, outputFile, imageSizeBytes)
+	return DirectoryToImage(ctx, inputDir, outputFile, imageSizeBytes, false /*=disableJournal*/)
 }
 
 // isDirEmpty returns a bool indicating if a directory contains no files, or

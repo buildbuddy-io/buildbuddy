@@ -351,7 +351,7 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 			}
 		}
 		x.rootMountAttempted = true
-		if err := mountContainerRoot(); err != nil {
+		if err := mountContainerRoot(req.GetDisableExt4Journal()); err != nil {
 			return nil, status.WrapError(err, "mount container root")
 		}
 	}
@@ -949,12 +949,25 @@ func reseedRNG(seed []byte) error {
 	return nil
 }
 
-func mountContainerRoot() error {
+// Ext4MountData returns the mount data for a read-write ext4 mount.
+//
+// If disableJournal is true, it returns "noload", which tells ext4 not to load
+// the journal. If the journal has nothing to replay, ext4 then runs the
+// filesystem as if it had been created without a journal. Otherwise, the mount
+// fails instead of skipping the replay.
+func Ext4MountData(disableJournal bool) string {
+	if disableJournal {
+		return "noload"
+	}
+	return ""
+}
+
+func mountContainerRoot(disableJournal bool) error {
 	const root = "/mnt"
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
-	if err := syscall.Mount(RootfsDevice, root, "ext4", syscall.MS_NOATIME, ""); err != nil {
+	if err := syscall.Mount(RootfsDevice, root, "ext4", syscall.MS_NOATIME, Ext4MountData(disableJournal)); err != nil {
 		return err
 	}
 	if err := ResizeExt4FS(RootfsDevice, root); err != nil {
