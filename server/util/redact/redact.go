@@ -55,8 +55,9 @@ var (
 	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
 	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
-	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:/@\s]+:)[^/@\s]*(@[^"\s<>{}|\\^[\]]+)`)
-	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
+	urlSecretRegex         = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@\r\n]+:)[^@\r\n]*(@[^"\s<>{}|\\^[\]]+)`)
+	progressURLSecretRegex = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:/@\s]+:)[^/@\s]*(@[^"\s<>{}|\\^[\]]+)`)
+	residualSecretRegex    = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
 	// specified as comma-separated KEY=VALUE pairs, e.g.:
@@ -693,8 +694,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
 		{
-			p.Progress.Stdout = stripURLSecrets(p.Progress.Stdout)
-			p.Progress.Stderr = stripURLSecrets(p.Progress.Stderr)
+			p.Progress.Stdout = progressURLSecretRegex.ReplaceAllString(p.Progress.Stdout, "${1}<REDACTED>${2}")
+			p.Progress.Stderr = progressURLSecretRegex.ReplaceAllString(p.Progress.Stderr, "${1}<REDACTED>${2}")
 		}
 	case *bespb.BuildEvent_Aborted:
 		{

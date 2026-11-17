@@ -537,11 +537,15 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
 			"--flag=@repo//package",
+			"--url=https://user:abc/def@example.com",
+			"--url=https://user:two words@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
 			"--flag=@repo//package",
+			"--url=https://user:abc/def@example.com",
+			"--url=https://user:two words@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
@@ -556,6 +560,8 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		t,
 		[]string{
 			"--flag=@repo//package",
+			"--url=https://user:<REDACTED>@example.com",
+			"--url=https://user:<REDACTED>@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
@@ -564,6 +570,8 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		t,
 		[]string{
 			"--flag=@repo//package",
+			"--url=https://user:<REDACTED>@example.com",
+			"--url=https://user:<REDACTED>@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
