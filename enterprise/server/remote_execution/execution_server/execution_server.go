@@ -833,9 +833,9 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 }
 
 // validateRunnerSize checks runner requests before scheduler sizing clamps them.
-func validateRunnerSize(ctx context.Context, size *scpb.TaskSize) error {
-	cpuLimit := maxRunnerCPU.Get(ctx)
-	memoryLimit := maxRunnerMemoryBytes.Get(ctx)
+func validateRunnerSize(ctx context.Context, size *scpb.TaskSize, experimentOpts ...any) error {
+	cpuLimit := maxRunnerCPU.Get(ctx, experimentOpts...)
+	memoryLimit := maxRunnerMemoryBytes.Get(ctx, experimentOpts...)
 	if cpuLimit < 0 {
 		return status.InternalError("remote_execution.runner.max_cpu must be non-negative")
 	}
@@ -962,6 +962,13 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	var workflowExperimentOpts []any
+	if rmd.GetActionMnemonic() == "BuildBuddyWorkflowRun" {
+		if actionName, ok := rexec.LookupEnv(command.GetEnvironmentVariables(), ci_runner_env.BuildBuddyActionNameEnvVarName); ok && actionName != "" {
+			workflowExperimentOpts = append(workflowExperimentOpts, experiments.WithContext("workflow_action_name", actionName))
+		}
+	}
+
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const taskSizeOverridesExperiment = "remote_execution.task_size_overrides"
 		requestedSize := tasksize.Requested(executionTask)
@@ -979,11 +986,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			experiments.WithContext("effective_requested_cpu", tasksize.CpuComputeUnits(requestedSize.GetEstimatedMilliCpu())),
 			experiments.WithContext("effective_requested_ram_gib", float64(requestedSize.GetEstimatedMemoryBytes())/tasksize.GiB),
 		}
-		if rmd.GetActionMnemonic() == "BuildBuddyWorkflowRun" {
-			if actionName, ok := rexec.LookupEnv(command.GetEnvironmentVariables(), ci_runner_env.BuildBuddyActionNameEnvVarName); ok && actionName != "" {
-				experimentOpts = append(experimentOpts, experiments.WithContext("workflow_action_name", actionName))
-			}
-		}
+		experimentOpts = append(experimentOpts, workflowExperimentOpts...)
 		expOverrides, details := fp.ObjectDetails(ctx, taskSizeOverridesExperiment, nil, experimentOpts...)
 		for propertyName, propertyValueAny := range expOverrides {
 			if propertyValue, ok := propertyValueAny.(string); ok {
@@ -1074,7 +1077,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if !pool.IsSelfHosted {
-		if err := validateRunnerSize(ctx, requestedTaskSize); err != nil {
+		if err := validateRunnerSize(ctx, requestedTaskSize, workflowExperimentOpts...); err != nil {
 			return nil, err
 		}
 	}
