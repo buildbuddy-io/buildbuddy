@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
@@ -39,17 +38,17 @@ func deleteUnion(err error) *rfpb.ResponseUnion {
 	}
 }
 
-func testSamples(n int) ([]*approxlru.Sample[*evictionKey], []*evictionKeyMeta) {
-	samples := make([]*approxlru.Sample[*evictionKey], n)
-	keys := make([]*evictionKeyMeta, n)
+func testCandidates(n int) ([]*evictionCandidate, []*evictionKeyMeta) {
+	candidates := make([]*evictionCandidate, n)
+	keyMetas := make([]*evictionKeyMeta, n)
 	for i := range n {
-		samples[i] = &approxlru.Sample[*evictionKey]{
-			Key:       &evictionKey{bytes: []byte{byte('a' + i)}},
-			Timestamp: time.UnixMicro(int64(1000 + i)),
+		candidates[i] = &evictionCandidate{
+			keyBytes: []byte{byte('a' + i)},
+			atime:    time.UnixMicro(int64(1000 + i)),
 		}
-		keys[i] = sender.NewKeyMeta(samples[i].Key.bytes, samples[i])
+		keyMetas[i] = sender.NewKeyMeta(candidates[i].keyBytes, candidates[i])
 	}
-	return samples, keys
+	return candidates, keyMetas
 }
 
 func TestDeleteBatch(t *testing.T) {
@@ -88,15 +87,15 @@ func TestDeleteBatch(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			samples, keys := testSamples(3)
+			candidates, keyMetas := testCandidates(3)
 			c := &fakeAPIClient{rsp: &rfpb.SyncProposeResponse{Batch: tc.rsp}}
 
-			res, err := pu.deleteBatch(context.Background(), c, &rfpb.Header{}, keys)
+			res, err := pu.deleteBatch(context.Background(), c, &rfpb.Header{}, keyMetas)
 			require.NoError(t, err)
 
-			var wantEvicted []*approxlru.Sample[*evictionKey]
+			var wantEvicted []*evictionCandidate
 			for _, i := range tc.wantEvicted {
-				wantEvicted = append(wantEvicted, samples[i])
+				wantEvicted = append(wantEvicted, candidates[i])
 			}
 			require.Equal(t, wantEvicted, res.evicted)
 			require.Equal(t, tc.wantNumFailed, res.numFailed)
@@ -104,12 +103,12 @@ func TestDeleteBatch(t *testing.T) {
 				require.True(t, status.IsFailedPreconditionError(res.lastErr), "lastErr: %v", res.lastErr)
 			}
 
-			// Deletes must match the sampled atimes.
+			// Deletes must match the candidates' atimes.
 			reqs := c.req.GetBatch().GetUnion()
-			require.Len(t, reqs, len(samples))
+			require.Len(t, reqs, len(candidates))
 			for i, r := range reqs {
-				require.Equal(t, samples[i].Key.bytes, r.GetDelete().GetKey())
-				require.Equal(t, samples[i].Timestamp.UnixMicro(), r.GetDelete().GetMatchAtime())
+				require.Equal(t, candidates[i].keyBytes, r.GetDelete().GetKey())
+				require.Equal(t, candidates[i].atime.UnixMicro(), r.GetDelete().GetMatchAtime())
 			}
 		})
 	}
@@ -117,10 +116,10 @@ func TestDeleteBatch(t *testing.T) {
 
 func TestDeleteBatchRPCError(t *testing.T) {
 	pu := &partitionUsage{}
-	_, keys := testSamples(2)
+	_, keyMetas := testCandidates(2)
 	c := &fakeAPIClient{err: status.UnavailableError("replica down")}
 
-	_, err := pu.deleteBatch(context.Background(), c, &rfpb.Header{}, keys)
+	_, err := pu.deleteBatch(context.Background(), c, &rfpb.Header{}, keyMetas)
 	require.True(t, status.IsUnavailableError(err), "err: %v", err)
 }
 
@@ -150,9 +149,9 @@ func TestUpdateEvictionMetricsScalesRemoteSizes(t *testing.T) {
 				nodes:     map[string]*nodePartitionUsage{"remote": {sizeBytes: 500}},
 				metrics:   testMetricSet(),
 			}
-			samples := []*approxlru.Sample[*evictionKey]{{SizeBytes: 100, Timestamp: time.Now()}}
+			candidates := []*evictionCandidate{{sizeBytes: 100, atime: time.Now()}}
 
-			require.NoError(t, pu.updateEvictionMetrics(samples))
+			require.NoError(t, pu.updateEvictionMetrics(candidates))
 			require.Equal(t, tc.wantRemote, pu.nodes["remote"].sizeBytes)
 		})
 	}
