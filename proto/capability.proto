@@ -25,9 +25,8 @@ enum Capability {
 enum CacheCapabilityKey {
   UNKNOWN_CACHE_CAPABILITY_KEY = 0;
 
-  // This cache can read from Google Cloud Storage (GCS). This capability may be
-  // specified multiple times. The value should be the GCS bucket that this
-  // cache can read from.
+  // This capability may be specified multiple times. The value should be the
+  // GCS bucket that this cache can read from.
   CACHE_CAPABILITY_READ_GCS = 1;
 }
 
