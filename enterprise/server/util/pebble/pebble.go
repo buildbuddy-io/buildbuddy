@@ -539,7 +539,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 		}
 		handle.finalizerSet = true
 		runtime.SetFinalizer(handle, func(h *refCountedDB) {
-			if !h.refCounter.closed {
+			if !h.refCounter.closed.Load() {
 				alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
 			}
 		})
@@ -549,20 +549,20 @@ func (l *leaser) DB() (IPebbleDB, error) {
 
 type refCounter struct {
 	wg     *sync.WaitGroup
-	closed bool
+	closed atomic.Bool
 }
 
 func newRefCounter(wg *sync.WaitGroup) *refCounter {
 	wg.Add(1)
 	return &refCounter{
-		wg:     wg,
-		closed: false,
+		wg: wg,
 	}
 }
 
 func (r *refCounter) Close() error {
-	if !r.closed {
-		r.closed = true
+	// CompareAndSwap ensures only one of several concurrent Close calls
+	// decrements the WaitGroup.
+	if r.closed.CompareAndSwap(false, true) {
 		r.wg.Add(-1)
 	}
 	return nil

@@ -52,6 +52,46 @@ func TestCloseLeasedDB(t *testing.T) {
 	require.Less(t, dbReturnTime, leaserCloseTime)
 }
 
+func TestConcurrentCloseLeasedDB(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+	defer db.Close()
+
+	leaser := pebble.NewDBLeaser(db)
+	handle1, err := leaser.DB()
+	require.NoError(t, err)
+	handle2, err := leaser.DB()
+	require.NoError(t, err)
+
+	// Close the same handle from many goroutines; only one lease should be
+	// returned.
+	eg := errgroup.Group{}
+	for range 100 {
+		eg.Go(handle1.Close)
+	}
+	require.NoError(t, eg.Wait())
+
+	// handle2 is still leased, so leaser.Close must keep waiting.
+	leaserClosed := make(chan struct{})
+	go func() {
+		leaser.Close()
+		close(leaserClosed)
+	}()
+	select {
+	case <-leaserClosed:
+		require.FailNow(t, "leaser closed while a lease was still held")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	require.NoError(t, handle2.Close())
+	select {
+	case <-leaserClosed:
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "leaser did not close after all leases were returned")
+	}
+}
+
 func TestRatchetDB(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 
