@@ -133,13 +133,13 @@ apt.install(
     ],
 )
 
-DOCKER_VERSION = "5:29.0.1-1~debian.13~trixie"
+DOCKER_VERSION = "5:29.10.0-1~debian.13~trixie"
 
-CONTAINERD_DEB_VERSION = "2.1.5-1~debian.13~trixie"
+CONTAINERD_DEB_VERSION = "2.4.2-4~debian.13~trixie"
 
-DOCKER_BUILDX_VERSION = "0.30.0-1~debian.13~trixie"
+DOCKER_BUILDX_VERSION = "0.39.0-1~debian.13~trixie"
 
-DOCKER_COMPOSE_VERSION = "2.40.3-1~debian.13~trixie"
+DOCKER_COMPOSE_VERSION = "5.8.0-1~debian.13~trixie"
 
 # Configure Debian debian13 docker packages
 apt.install(
