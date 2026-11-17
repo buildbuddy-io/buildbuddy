@@ -73,7 +73,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		existing := &tables.Invocation{}
 		err := tx.NewQuery(ctx, "invocationdb_find_existing_attempt").Raw(`
-				SELECT attempt, invocation_status FROM "Invocations"
+				SELECT attempt, invocation_status, user_id, group_id FROM "Invocations"
 				WHERE invocation_id = ? AND invocation_status <> ?
 				AND (invocation_status = ? OR updated_at_usec > ?)
 				`+d.h.SelectForUpdateModifier(),
@@ -93,6 +93,8 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 
 		if existing.InvocationStatus == int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS) {
 			ti.Attempt = 1
+		} else if existing.GroupID != ti.GroupID || existing.UserID != ti.UserID {
+			return status.PermissionDeniedErrorf("invocation %q belongs to a different owner", ti.InvocationID)
 		} else if existing.Attempt == 0 {
 			// This invocation was attempted before we added Attempt count, this is at
 			// least the second attempt.
