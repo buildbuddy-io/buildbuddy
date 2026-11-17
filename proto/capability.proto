@@ -21,3 +21,28 @@ enum Capability {
   // Allows sending notifications (such as email) via the notification API.
   SEND_NOTIFICATION = 64;  // 2^6
 }
+
+enum CacheCapabilityKey {
+  UNKNOWN_CACHE_CAPABILITY_KEY = 0;
+
+  // This capability may be specified multiple times. The value should be the
+  // GCS bucket that this cache can read from.
+  CACHE_CAPABILITY_READ_GCS = 1;
+}
+
+// A single cache capability, consisting of a key and an optional value. This
+// message is necessary because some capabilities may require additional
+// information (e.g. which storage buckets can be read from), and some
+// capabilities may be specified multiple times.
+message CacheCapability {
+  CacheCapabilityKey key = 1;
+  string value = 2;
+}
+
+// A set of cache capabilities. These are capabilties of the cache server(s)
+// involved in a request/response pair and are used to communicate what kinds of
+// optimizations, encodings, or other features are supported between the client
+// and the cache server(s).
+message CacheCapabilities {
+  repeated CacheCapability capabilities = 1;
+}
