@@ -173,7 +173,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	// Compatible change: existing snapshots never set the new InitializeRequest fields.
 	const (
-		expectedHash    = "9abaf488911621c069234c8a496bd8fd8a6ff3b602c4222b687936352f9ea8d1"
+		expectedHash    = "baf235a50ffc4851934eb4afb579bad03f82d242fce44065bd4a9a2fa4456693"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -3021,8 +3021,10 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 			10_000_000,
 			"used workspace disk size")
 		expectedTotalSize := ext4.MinDiskImageSizeBytes + workspaceDirSize + workspaceDiskSlackSpaceBytes
-		// 5% of blocks are reserved.
-		expectedTotalSize = int64(float64(expectedTotalSize) * 0.95)
+		// The reported total doesn't include the space that ext4 uses for
+		// metadata, which is mostly the inode table. mke2fs creates a 256-byte
+		// inode for every 16KiB of disk.
+		expectedTotalSize -= expectedTotalSize / 64
 		assert.InDelta(
 			t, expectedTotalSize, workspaceFSU.GetTotalBytes(),
 			40_000_000,
