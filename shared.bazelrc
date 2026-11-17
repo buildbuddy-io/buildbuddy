@@ -162,12 +162,8 @@ common:linux --experimental_output_paths=strip
 common:macos --experimental_output_paths=strip
 
 # Use C++17 standard for all C++ compilation
-common:linux --host_cxxopt=-std=c++17
-common:linux --cxxopt=-std=c++17
-common:macos --host_cxxopt=-std=c++17
-common:macos --cxxopt=-std=c++17
-common:windows --host_cxxopt=/std:c++17
-common:windows --cxxopt=/std:c++17
+common --host_cxxopt=-std=c++17
+common --cxxopt=-std=c++17
 
 # Suppress compiler warnings from external Redis C sources.
 common:linux --per_file_copt=external/redis\\+/.*@-w
