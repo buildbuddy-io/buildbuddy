@@ -188,7 +188,13 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 	for {
 		resp, err := remoteStream.Recv()
 		if err == io.EOF {
-			return cacheWriter.Commit()
+			if err := cacheWriter.Commit(); err != nil {
+				return err
+			}
+			if cacheWriter.GetCommittedSize() == -1 {
+				log.CtxInfof(ctx, "Local BS upload reported AlreadyExists while committing blob %s", hash.Hex)
+			}
+			return nil
 		}
 		if err != nil {
 			return err
@@ -197,7 +203,7 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 		_, writeErr := cacheWriter.Write(resp.GetData())
 		if writeErr != nil {
 			if status.IsAlreadyExistsError(writeErr) {
-				log.CtxInfof(ctx, "Local BS write returned AlreadyExists for blob %s", hash.Hex)
+				log.CtxInfof(ctx, "Local BS Write returned AlreadyExists for blob %s", hash.Hex)
 				return nil
 			}
 			return writeErr

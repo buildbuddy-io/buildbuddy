@@ -43,6 +43,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testhttp",
         "//server/util/claims",
+        "//server/util/compression",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
