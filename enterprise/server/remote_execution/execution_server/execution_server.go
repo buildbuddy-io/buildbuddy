@@ -396,16 +396,12 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
-func isWorkflowExecution(mnemonic string) bool {
-	return mnemonic == "BuildBuddyWorkflowRun" || mnemonic == "RemoteBazelRun"
-}
-
-func (s *ExecutionServer) applySnapshotSaveQuota(ctx context.Context, overrides *repb.Platform) {
+func (s *ExecutionServer) applySnapshotSaveQuota(ctx context.Context, cmd *repb.Command, overrides *repb.Platform) {
 	qm := s.env.GetQuotaManager()
 	if qm == nil {
 		return
 	}
-	force := isWorkflowExecution(bazel_request.GetRequestMetadata(ctx).GetActionMnemonic()) && enableWorkflowsQuota.Get(ctx)
+	force := platform.IsCIRunnerCommand(cmd) && enableWorkflowsQuota.Get(ctx)
 	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes), 0, force); err != nil {
 		platform.SetValue(overrides, platform.SkipLocalSnapshotSavePropertyName, "true")
 	}
@@ -414,12 +410,12 @@ func (s *ExecutionServer) applySnapshotSaveQuota(ctx context.Context, overrides 
 	}
 }
 
-func (s *ExecutionServer) recordSnapshotSaveQuota(ctx context.Context, fcStats *espb.FirecrackerPostExecStats) {
+func (s *ExecutionServer) recordSnapshotSaveQuota(ctx context.Context, cmd *repb.Command, fcStats *espb.FirecrackerPostExecStats) {
 	qm := s.env.GetQuotaManager()
 	if qm == nil || fcStats.GetSnapshotSavedBytes() <= 0 {
 		return
 	}
-	force := isWorkflowExecution(bazel_request.GetRequestMetadata(ctx).GetActionMnemonic()) && enableWorkflowsQuota.Get(ctx)
+	force := platform.IsCIRunnerCommand(cmd) && enableWorkflowsQuota.Get(ctx)
 	bytesWritten := fcStats.GetSnapshotSavedBytes()
 	var namespaces []string
 	if fcStats.GetSnapshotSavedLocally() {
@@ -931,7 +927,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	executionTask.PlatformOverrides = &repb.Platform{
 		Properties: platform.RemoteHeaderOverrides(ctx),
 	}
-	s.applySnapshotSaveQuota(ctx, executionTask.PlatformOverrides)
+	s.applySnapshotSaveQuota(ctx, command, executionTask.PlatformOverrides)
 
 	taskGroupID := interfaces.AuthAnonymousUser
 	if user, err := s.authenticator.AuthenticatedUser(ctx); err == nil {
@@ -1585,6 +1581,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	}
 	lastOp := &longrunningpb.Operation{}
 	taskID := ""
+	var cmd *repb.Command
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
 	mu := sync.Mutex{}
@@ -1672,7 +1669,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse PostCompletionStats: %s", err)
 			} else if ok {
-				s.recordSnapshotSaveQuota(ctx, stats.GetFirecrackerPostExecStats())
+				s.recordSnapshotSaveQuota(ctx, cmd, stats.GetFirecrackerPostExecStats())
 				if flushExecutionsOnEOF {
 					if err := s.updateExecutionPostCompletion(ctx, taskID, stats); err != nil {
 						log.CtxErrorf(ctx, "PublishOperation: error updating PostCompletionStats: %s", err)
@@ -1726,7 +1723,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
 		var action *repb.Action
-		var cmd *repb.Command
 		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
 			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
