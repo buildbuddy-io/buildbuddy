@@ -4,7 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -74,6 +78,65 @@ func TestWorkerExec_Stderr(t *testing.T) {
 			require.Error(t, result.Error)
 			require.True(t, utf8.ValidString(result.Error.Error()), "error contains invalid UTF-8: %q", result.Error)
 			require.Contains(t, result.Error.Error(), "persistent worker stderr:\n"+test.wantStderr)
+		})
+	}
+}
+
+type echoArgsContainer struct {
+	container.CommandContainer
+}
+
+func (c *echoArgsContainer) Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	// Echo the arguments using the JSON worker protocol.
+	var request struct {
+		Arguments []string `json:"arguments"`
+	}
+	if err := json.NewDecoder(stdio.Stdin).Decode(&request); err != nil {
+		return &interfaces.CommandResult{Error: err, ExitCode: -2}
+	}
+	err := json.NewEncoder(stdio.Stdout).Encode(map[string]string{
+		"output": strings.Join(request.Arguments, "\n"),
+	})
+	return &interfaces.CommandResult{Error: err}
+}
+
+func TestWorkerExec_ExpandsFlagFiles(t *testing.T) {
+	ctx := context.Background()
+	ws, err := workspace.New(nil, t.TempDir(), &workspace.Opts{})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(ws.Path(), "flags"), []byte("one\n@nested\nliteral\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(ws.Path(), "nested"), []byte("two\n"), 0644))
+
+	cmd := &repb.Command{Arguments: []string{"worker", "@flags"}}
+	w, err := persistentworker.Start(ctx, ws, &echoArgsContainer{}, "json", cmd)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, w.Stop()) })
+
+	result := w.Exec(ctx, cmd)
+	require.NoError(t, result.Error)
+	require.Equal(t, 0, result.ExitCode)
+	require.Equal(t, "one\ntwo\nliteral", string(result.Stderr))
+}
+
+func TestWorkerExec_RejectsFlagFileWorkspaceEscape(t *testing.T) {
+	ctx := context.Background()
+	ws, err := workspace.New(nil, t.TempDir(), &workspace.Opts{})
+	require.NoError(t, err)
+	outside := filepath.Join(t.TempDir(), "outside")
+	require.NoError(t, os.WriteFile(outside, []byte("secret\n"), 0644))
+	require.NoError(t, os.Symlink(outside, filepath.Join(ws.Path(), "link")))
+	relativeOutside, err := filepath.Rel(ws.Path(), outside)
+	require.NoError(t, err)
+
+	for _, arg := range []string{"@" + relativeOutside, "@" + outside, "@link"} {
+		t.Run(arg, func(t *testing.T) {
+			cmd := &repb.Command{Arguments: []string{"worker", arg}}
+			w, err := persistentworker.Start(ctx, ws, &echoArgsContainer{}, "json", cmd)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, w.Stop()) })
+
+			result := w.Exec(ctx, cmd)
+			require.ErrorContains(t, result.Error, "expand flag files")
 		})
 	}
 }
