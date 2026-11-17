@@ -253,7 +253,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	}
 
 	if proxy_util.SkipRemote(ctx) {
-		rsp, err := s.localACServer.GetActionResult(ctx, req)
+		rsp, err := s.localACServer.GetActionResult(proxy_util.SetSkipRemoteAtimeUpdate(ctx), req)
 
 		cacheStatus := metrics.MissStatusLabel
 		if err == nil {
@@ -384,7 +384,7 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 	}
 	// Only if it's explicitly requested do we cache AC results locally.
 	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption) {
-		resp, err := s.localACServer.UpdateActionResult(ctx, req)
+		resp, err := s.localACServer.UpdateActionResult(proxy_util.SetSkipRemoteAtimeUpdate(ctx), req)
 
 		labels := prometheus.Labels{
 			metrics.StatusLabel:           status.MetricsLabel(err),

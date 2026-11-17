@@ -221,7 +221,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		return s.local.FindMissingBlobs(ctx, req)
 	}
 	if proxy_util.SkipRemote(ctx) {
-		return s.local.FindMissingBlobs(ctx, req)
+		return s.local.FindMissingBlobs(proxy_util.SetSkipRemoteAtimeUpdate(ctx), req)
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
