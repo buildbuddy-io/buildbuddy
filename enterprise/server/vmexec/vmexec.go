@@ -949,12 +949,13 @@ func reseedRNG(seed []byte) error {
 	return nil
 }
 
-// Ext4MountData returns the mount data for a read-write ext4 mount.
+// Ext4MountData returns the data argument to pass to mount(2) when mounting an
+// ext4 filesystem read-write.
 //
-// If disableJournal is true, it returns "noload", which tells ext4 not to load
-// the journal. If the journal has nothing to replay, ext4 then runs the
-// filesystem as if it had been created without a journal. Otherwise, the mount
-// fails instead of skipping the replay.
+// If disableJournal is true, it returns "noload", which mounts the filesystem
+// without a journal, even if the filesystem was created with one. This is safe
+// because the disks we mount this way have never been mounted before, so their
+// journals are empty.
 func Ext4MountData(disableJournal bool) string {
 	if disableJournal {
 		return "noload"

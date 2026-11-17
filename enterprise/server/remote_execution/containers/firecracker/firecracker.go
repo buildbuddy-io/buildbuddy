@@ -2110,10 +2110,8 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		netnsPath = c.network.NamespacePath()
 	}
 	bootArgs := getBootArgs(c.vmConfig, c.genericSnapshot /*=deferRootfsMount*/)
-	// Add this here instead of in getBootArgs, because vmConfig.BootArgs is
-	// part of the snapshot key, and turning off the journal should not
-	// invalidate existing snapshots. Snapshots of VMs that booted with a
-	// journal keep using it, because resuming a VM does not remount its root.
+	// Append some additional args which should take effect for new VMs, but
+	// not affect the snapshot key.
 	if execution_experiments.FirecrackerDisableExt4Journal.Get(ctx) {
 		bootArgs += " -disable_ext4_journal"
 	}
