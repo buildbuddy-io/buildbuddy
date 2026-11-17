@@ -2337,8 +2337,20 @@ func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
 	require.LessOrEqual(t, counter.Snapshot()[blobPath], 1, "subsequent fetch should be served from cache or a single upstream retry")
 }
 
+type singleflightWaitContext struct {
+	context.Context
+	once    sync.Once
+	waiting *atomic.Int32
+}
+
+func (c *singleflightWaitContext) Done() <-chan struct{} {
+	c.once.Do(func() { c.waiting.Add(1) })
+	return c.Context.Done()
+}
+
 func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
-	reg, counter := setupRegistry(t, nil, nil)
+	blocker := newBlockingInterceptor()
+	reg, counter := setupRegistry(t, nil, blocker.intercept)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
 
 	layers, err := img.Layers()
@@ -2359,11 +2371,28 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	}
 
 	const numRequests = 4
-	results := runConcurrentFetchBlob(t, server, req, numRequests,
-		func(idx int) *concurrentMockFetchBlobServer {
-			return &concurrentMockFetchBlobServer{ctx: context.Background()}
-		},
-	)
+	var waiting atomic.Int32
+	blocker.enable()
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(blocker.release) }
+	defer release()
+	resultsCh := make(chan []*fetchResult, 1)
+	go func() {
+		resultsCh <- runConcurrentFetchBlob(t, server, req, numRequests,
+			func(idx int) *concurrentMockFetchBlobServer {
+				return &concurrentMockFetchBlobServer{ctx: &singleflightWaitContext{
+					Context: context.Background(),
+					waiting: &waiting,
+				}}
+			},
+		)
+	}()
+	require.Eventually(t, func() bool {
+		return waiting.Load() == numRequests && blocker.requestCount.Load() > 0
+	}, 5*time.Second, time.Millisecond)
+	require.EqualValues(t, 1, blocker.requestCount.Load(), "all callers joined the same flight before the upstream response")
+	release()
+	results := <-resultsCh
 
 	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
 	require.Equal(t, numRequests, counter.Snapshot()[blobPath], "each request should fetch from the registry when caching fails")
