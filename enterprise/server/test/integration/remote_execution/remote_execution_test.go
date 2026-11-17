@@ -1878,7 +1878,8 @@ func testInvocationCancellation(t *testing.T, tc cancelInvocationTestCase) {
 	err = bep.Publish(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{
 			Started: &bespb.BuildStarted{
-				StartTime: timestamppb.New(startTime),
+				StartTime:          timestamppb.New(startTime),
+				OptionsDescription: "--some_build_options",
 			},
 		},
 	})
