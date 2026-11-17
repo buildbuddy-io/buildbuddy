@@ -11,10 +11,24 @@ genrule(
     toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
 
+# Prototype: the same program, attached to the BPF LSM hook file_open (see
+# NewLSMTracker).
+genrule(
+    name = "fileaccess_lsm_bpf",
+    srcs = ["fileaccess.bpf.c"],
+    outs = ["fileaccess_lsm.bpf.o"],
+    cmd = "$(CC) -O2 -g -Wall -target bpf -DUSE_LSM -c $< -o $@",
+    target_compatible_with = ["@platforms//os:linux"],
+    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
+)
+
 go_library(
     name = "fileaccess",
     srcs = ["fileaccess.go"],
-    embedsrcs = ["fileaccess.bpf.o"],
+    embedsrcs = [
+        "fileaccess.bpf.o",
+        "fileaccess_lsm.bpf.o",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/fileaccess",
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],

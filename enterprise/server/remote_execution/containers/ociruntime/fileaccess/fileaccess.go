@@ -23,6 +23,12 @@ import (
 //go:embed fileaccess.bpf.o
 var bpfObject []byte
 
+// fileaccess_lsm.bpf.o is the same program built with -DUSE_LSM, which
+// attaches to the BPF LSM hook file_open (a prototype, see NewLSMTracker).
+//
+//go:embed fileaccess_lsm.bpf.o
+var bpfObjectLSM []byte
+
 // key mirrors struct key in fileaccess.bpf.c.
 type key struct {
 	CgroupID uint64
@@ -56,7 +62,20 @@ type Tracker struct {
 // NewTracker loads and attaches the eBPF program. It requires CAP_BPF and
 // CAP_PERFMON (or root) and a kernel with BTF.
 func NewTracker() (*Tracker, error) {
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(bpfObject))
+	return newTracker(bpfObject, false)
+}
+
+// NewLSMTracker is a prototype of NewTracker with the program attached to the
+// BPF LSM hook file_open in place of fentry/security_file_open, so that the
+// kernel never skips a run of it (see fileaccess.bpf.c). It requires Linux
+// 6.10 and "bpf" in the kernel's list of active LSMs
+// (/sys/kernel/security/lsm), which it does not check yet.
+func NewLSMTracker() (*Tracker, error) {
+	return newTracker(bpfObjectLSM, true)
+}
+
+func newTracker(object []byte, lsm bool) (*Tracker, error) {
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(object))
 	if err != nil {
 		return nil, fmt.Errorf("load eBPF spec: %w", err)
 	}
@@ -67,10 +86,14 @@ func NewTracker() (*Tracker, error) {
 	if err := spec.LoadAndAssign(&t.objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
 	}
-	t.link, err = link.AttachTracing(link.TracingOptions{
-		Program:    t.objs.FileOpen,
-		AttachType: ebpf.AttachTraceFEntry,
-	})
+	if lsm {
+		t.link, err = link.AttachLSM(link.LSMOptions{Program: t.objs.FileOpen})
+	} else {
+		t.link, err = link.AttachTracing(link.TracingOptions{
+			Program:    t.objs.FileOpen,
+			AttachType: ebpf.AttachTraceFEntry,
+		})
+	}
 	if err != nil {
 		t.closeObjs()
 		return nil, fmt.Errorf("attach eBPF program: %w", err)
