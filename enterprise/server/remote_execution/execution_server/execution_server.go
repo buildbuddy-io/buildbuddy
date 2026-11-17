@@ -1650,6 +1650,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		}
 	}
 
+	authorized := false
+	authorizedName := ""
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1661,6 +1663,15 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if err != nil {
 			log.CtxErrorf(ctx, "PublishOperation: recv err: %s", err)
 			return err
+		}
+		if !authorized {
+			if err := s.env.GetSchedulerService().AuthorizeTaskWrites(ctx, op.GetName()); err != nil {
+				return err
+			}
+			authorized = true
+			authorizedName = op.GetName()
+		} else if op.GetName() != authorizedName {
+			return status.InvalidArgumentErrorf("operation name changed from %q to %q", authorizedName, op.GetName())
 		}
 
 		response := operation.ExtractExecuteResponse(op)

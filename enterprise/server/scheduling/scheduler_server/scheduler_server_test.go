@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
@@ -36,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -124,6 +127,13 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 		env.SetClock(opts.options.Clock)
 	}
 
+	testUsers := make(map[string]interfaces.UserInfo, 0)
+	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
+	testUsers["user2"] = &testauth.TestUser{UserID: "user2", GroupID: "group2", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
+
+	ta := testauth.NewTestAuthenticator(t, testUsers)
+	env.SetAuthenticator(ta)
+
 	flags.Set(t, "remote_execution.default_pool_name", "defaultPoolName")
 	flags.Set(t, "remote_execution.shared_executor_pool_group_id", "sharedGroupID")
 
@@ -145,6 +155,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	env.SetSchedulerService(s)
 
 	scpb.RegisterSchedulerServer(server, env.GetSchedulerService())
+	repb.RegisterExecutionServer(server, env.GetRemoteExecutionService())
 	go runFunc()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -154,13 +165,8 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	t.Cleanup(func() { clientConn.Close() })
 	sc := scpb.NewSchedulerClient(clientConn)
 	env.SetSchedulerClient(sc)
+	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 
-	testUsers := make(map[string]interfaces.UserInfo, 0)
-	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
-	testUsers["user2"] = &testauth.TestUser{UserID: "user2", GroupID: "group2", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
-
-	ta := testauth.NewTestAuthenticator(t, testUsers)
-	env.SetAuthenticator(ta)
 	s.enableUserOwnedExecutors = opts.userOwnedEnabled
 
 	if user != "" {
@@ -2144,6 +2150,104 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 
 	require.Nil(t, err)
 	require.False(t, resp.GetExists())
+}
+
+func TestAuthorizeTaskWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		taskGroupID string
+		caller      string
+		unknownTask bool
+		wantErr     func(error) bool
+	}{
+		{name: "same group", taskGroupID: "group1", caller: "user1"},
+		{name: "other group", taskGroupID: "group1", caller: "user2", wantErr: status.IsPermissionDeniedError},
+		{name: "unauthenticated", taskGroupID: "group1", wantErr: status.IsPermissionDeniedError},
+		{name: "anonymous task", caller: "user2"},
+		{name: "unknown task", caller: "user1", unknownTask: true, wantErr: status.IsNotFoundError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.Register()
+
+			req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+			req.GetMetadata().TaskGroupId = tc.taskGroupID
+			_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+			require.NoError(t, err)
+
+			callerCtx := context.Background()
+			if tc.caller != "" {
+				callerCtx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(callerCtx, tc.caller)
+				require.NoError(t, err)
+			}
+			taskID := req.GetTaskId()
+			if tc.unknownTask {
+				taskID = "unknown-task"
+			}
+			err = env.GetSchedulerService().AuthorizeTaskWrites(callerCtx, taskID)
+			if tc.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.True(t, tc.wantErr(err), "AuthorizeTaskWrites error: %v", err)
+			}
+		})
+	}
+}
+
+func TestPublishOperation_TaskOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		publisher  string
+		cancelTask bool
+		wantErr    func(error) bool
+	}{
+		{name: "task JWT"},
+		{name: "other group", publisher: "user2", wantErr: status.IsPermissionDeniedError},
+		{name: "cancelled task", cancelTask: true, wantErr: status.IsNotFoundError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.node.Pool = "defaultPoolName"
+			fe.Register()
+
+			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			cd, err := cachetools.UploadProtoToCAS(cacheCtx, env.GetCache(), "", repb.DigestFunction_SHA256, &repb.Command{Arguments: []string{"test"}})
+			require.NoError(t, err)
+			ad, err := cachetools.UploadProtoToCAS(cacheCtx, env.GetCache(), "", repb.DigestFunction_SHA256, &repb.Action{CommandDigest: cd})
+			require.NoError(t, err)
+			executeStream, err := env.GetRemoteExecutionClient().Execute(ctx, &repb.ExecuteRequest{ActionDigest: ad, DigestFunction: repb.DigestFunction_SHA256})
+			require.NoError(t, err)
+			op, err := executeStream.Recv()
+			require.NoError(t, err)
+			taskID := op.GetName()
+			fe.WaitForTask(taskID)
+			lease := fe.Claim(taskID)
+
+			publishCtx := metadata.AppendToOutgoingContext(context.Background(), authutil.ContextTokenStringKey, lease.task.GetJwt())
+			if tc.publisher != "" {
+				publishCtx = authenticatedContext(t, env, tc.publisher)
+			}
+			if tc.cancelTask {
+				_, err := env.GetSchedulerService().CancelTask(ctx, taskID)
+				require.NoError(t, err)
+			}
+
+			executingOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_EXECUTING, ad), nil)
+			require.NoError(t, err)
+			publishStream, err := env.GetRemoteExecutionClient().PublishOperation(publishCtx)
+			require.NoError(t, err)
+			_ = publishStream.Send(executingOp)
+			_, err = publishStream.CloseAndRecv()
+			if tc.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.True(t, tc.wantErr(err), "PublishOperation error: %v", err)
+			}
+		})
+	}
 }
 
 func TestScheduleTask_DeletesTaskOnEnqueueFailure(t *testing.T) {
