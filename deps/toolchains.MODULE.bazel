@@ -1,33 +1,7 @@
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
 buildbuddy.platform(container_image = "docker://buildpack-deps@sha256:fa56fe73b4475655b2f39d6376b6a6664d24b5c43227f709d4a923609f3286a1")
 
-# Register LLVM for non-Windows execution and target platforms only.
-_LLVM_TARGETS = [
-    "linux_aarch64",
-    "linux_x86_64",
-    "macos_aarch64",
-    "macos_x86_64",
-]
-
-[
-    register_toolchains("@llvm//toolchain:{}{}_to_{}".format(stage, exec_platform, target_platform))
-    for stage in [
-        "",
-        "stage1_",
-        "stage2_",
-        "stage3_",
-    ]
-    for exec_platform in _LLVM_TARGETS
-    for target_platform in _LLVM_TARGETS
-]
-
-[
-    register_toolchains("@llvm//toolchain:cc_runtimes_" + os)
-    for os in [
-        "linux",
-        "macos",
-    ]
-]
+register_toolchains("@llvm//toolchain:all")
 
 # Specify only the frameworks we actually link
 osx = use_extension("@llvm//extensions:osx.bzl", "osx")
