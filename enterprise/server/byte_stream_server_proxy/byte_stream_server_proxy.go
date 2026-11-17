@@ -211,7 +211,7 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 	ctx = authutil.ContextWithCachedAuthHeaders(ctx, s.authenticator)
 
 	if proxy_util.SkipRemote(ctx) {
-		if err := s.readLocalOnly(ctx, req, stream); err != nil {
+		if err := s.readLocalOnly(ctx, rn, req, stream); err != nil {
 			log.CtxInfof(ctx, "Error reading local: %v", err)
 			return readMetrics{
 				cacheStatus: metrics.MissStatusLabel,
@@ -718,20 +718,9 @@ func flushToClient(ctx context.Context, remoteReadStream bspb.ByteStream_ReadCli
 	}
 }
 
-func (s *ByteStreamServerProxy) readLocalOnly(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	return s.local.Read(req, &localReadStream{
-		ByteStream_ReadServer: stream,
-		ctx:                   proxy_util.SetSkipRemoteAtimeUpdate(ctx),
-	})
+func (s *ByteStreamServerProxy) readLocalOnly(ctx context.Context, rn *digest.CASResourceName, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	return s.local.ReadCASResource(proxy_util.SetSkipRemoteAtimeUpdate(ctx), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 }
-
-// localReadStream overrides the context seen by the local ByteStreamServer.
-type localReadStream struct {
-	bspb.ByteStream_ReadServer
-	ctx context.Context
-}
-
-func (s *localReadStream) Context() context.Context { return s.ctx }
 
 // localWriteStream overrides the context seen by the local ByteStreamServer.
 type localWriteStream struct {
