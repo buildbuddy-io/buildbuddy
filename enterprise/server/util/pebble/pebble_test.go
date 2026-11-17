@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -44,7 +45,7 @@ func TestCloseLeasedDB(t *testing.T) {
 
 	// DB is now closed; check that leasing fails.
 	_, err = leaser.DB()
-	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got %v", err)
 
 	// Check that the db lease was returned before the leaser closed
 	// (even though we did these in opposite order). This is to check

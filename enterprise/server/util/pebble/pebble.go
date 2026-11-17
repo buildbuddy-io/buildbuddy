@@ -501,7 +501,7 @@ type leaser struct {
 // to prevent leaks. The DB cannot be closed until all handles are returned.
 //
 // Once the DB leaser has been closed with Close(), no new handles can be
-// acquired, instead an error is returned.
+// acquired, instead an Unavailable error is returned.
 func NewDBLeaser(db IPebbleDB) Leaser {
 	return &leaser{db: db}
 }
@@ -523,7 +523,9 @@ func (l *leaser) DB() (IPebbleDB, error) {
 	l.closedMu.RLock()
 	defer l.closedMu.RUnlock()
 	if l.closed {
-		return nil, status.FailedPreconditionError("db is closed")
+		// The DB is closed during shutdown. Return Unavailable so that
+		// clients retry, likely against another server.
+		return nil, status.UnavailableError("db is closed")
 	}
 
 	handle := &refCountedDB{
