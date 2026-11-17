@@ -737,7 +737,8 @@ message DeleteResponse {
   // True if there was no record to delete. The delete still succeeds.
   //
   // Not response-idempotent: re-applying a delete that removed the record
-  // reports not_found.
+  // reports not_found. This is best-effort, and should not be relied on for
+  // correctness.
   bool not_found = 1;
 }
 

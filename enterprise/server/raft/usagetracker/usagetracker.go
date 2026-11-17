@@ -238,8 +238,7 @@ type evictionKeyMeta = sender.KeyMeta[*evictionCandidate]
 
 // deleteBatchResult tracks the outcome of evictions on one range.
 type deleteBatchResult struct {
-	evicted []*evictionCandidate
-	// notFound holds the candidates whose record was already gone.
+	evicted   []*evictionCandidate
 	notFound  []*evictionCandidate
 	numFailed int
 	lastErr   error
@@ -282,9 +281,9 @@ func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h 
 		}
 		if rsp.GetNotFound() {
 			res.notFound = append(res.notFound, candidate)
-			continue
+		} else {
+			res.evicted = append(res.evicted, candidate)
 		}
-		res.evicted = append(res.evicted, candidate)
 	}
 	return res, nil
 }
@@ -301,7 +300,9 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
 	// still returns success, so this path does not need sender-owned sessions.
-	// The retry reports not_found, so it isn't counted as an eviction.
+	// If the delete was retried, even though the first attempt succeeded,
+	// the second attempt will return not_found=true, so metrics won't be
+	// updated.
 	rsps, err := pu.sender.RunMultiKey(ctx, keys, pu.deleteBatch)
 	failed := err != nil
 	if err != nil {
