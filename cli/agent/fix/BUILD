@@ -13,6 +13,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/agent/fix",
     deps = [
         "//cli/agent/agentflags",
+        "//cli/credentialhelper",
         "//cli/log",
         "//cli/login",
         "//cli/parser",

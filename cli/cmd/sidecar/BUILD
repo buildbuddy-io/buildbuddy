@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar",
     deps = [
         "//cli/config",
+        "//cli/credentialhelper",
         "//cli/devnull",
         "//cli/sidecar_proxy",
         "//proto:publish_build_event_go_proto",

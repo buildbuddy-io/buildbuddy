@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/analyze_profile/ztracing"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/agent"
@@ -105,7 +106,7 @@ func downloadTimingProfile(ctx context.Context, invocationID string) (string, er
 	if err != nil {
 		return "", err
 	}
-	conn, err := grpc_client.DialSimple(target)
+	conn, err := grpc_client.DialSimple(target, credentialhelper.DialOptions(target)...)
 	if err != nil {
 		return "", err
 	}

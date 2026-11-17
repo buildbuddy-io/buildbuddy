@@ -7,6 +7,7 @@ go_library(
     srcs = ["download.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/util/download",
     deps = [
+        "//cli/credentialhelper",
         "//cli/flaghistory",
         "//cli/log",
         "//cli/login",
@@ -16,6 +17,5 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//metadata",
     ],
 )

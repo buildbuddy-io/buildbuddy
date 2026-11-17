@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"google.golang.org/grpc/metadata"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -52,8 +52,7 @@ func GetInvocationFile(ctx context.Context, bbClient bbspb.BuildBuddyServiceClie
 	}
 
 	// Fetch the URI for the file from the invocation.
-	grpcCtx := metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
-	file, err := getInvocationResource(grpcCtx, bbClient, invocationID, description, selector)
+	file, err := getInvocationResource(login.WithAPIKey(ctx, apiKey), bbClient, invocationID, description, selector)
 	if err != nil {
 		return err
 	}
@@ -67,7 +66,12 @@ func GetInvocationFile(ctx context.Context, bbClient bbspb.BuildBuddyServiceClie
 	if err != nil {
 		return fmt.Errorf("create %s download request: %w", description, err)
 	}
-	req.Header.Set("x-buildbuddy-api-key", apiKey)
+	if apiKey != "" {
+		req.Header.Set("x-buildbuddy-api-key", apiKey)
+	}
+	if err := credentialhelper.SetHTTPHeaders(req); err != nil {
+		return fmt.Errorf("failed to get credentials to download %s: %w", description, err)
+	}
 	// Preserve the bytes as stored. In particular, timing profiles ending in
 	// .gz should remain gzipped on disk rather than being transparently decoded
 	// by net/http.

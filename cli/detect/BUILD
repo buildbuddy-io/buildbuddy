@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/detect",
     deps = [
         "//cli/arg",
+        "//cli/credentialhelper",
         "//cli/explain",
         "//cli/log",
         "//cli/login",

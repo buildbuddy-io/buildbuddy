@@ -23,6 +23,7 @@ import (
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -422,7 +423,7 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 
 	// Register with the gateway.
-	grpcConn, err := grpc_client.DialSimple(*gateway)
+	grpcConn, err := grpc_client.DialSimple(*gateway, credentialhelper.DialOptions(*gateway)...)
 	if err != nil {
 		return 1, status.WrapError(err, "dialing gateway")
 	}

@@ -7,6 +7,7 @@ go_library(
     srcs = ["record.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/record",
     deps = [
+        "//cli/credentialhelper",
         "//cli/log",
         "//cli/login",
         "//cli/terminal",

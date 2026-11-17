@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -149,7 +150,7 @@ func uploadFile(args []string) error {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
 	}
 
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialSimple(*target, credentialhelper.DialOptions(*target)...)
 	if err != nil {
 		return fmt.Errorf("dial target: %w", err)
 	}

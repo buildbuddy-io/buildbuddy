@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
@@ -300,7 +301,7 @@ func HandleDownload(args []string) (int, error) {
 			ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
 		}
 	}
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialSimple(*target, credentialhelper.DialOptions(*target)...)
 	if err != nil {
 		return -1, fmt.Errorf("dial %q: %w", *target, err)
 	}

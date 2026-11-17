@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
@@ -114,7 +115,7 @@ func record(cmdArgs []string) (int, error) {
 
 	fmt.Fprintln(os.Stderr, streamingLog)
 
-	conn, err := grpc_client.DialSimple(*besBackend)
+	conn, err := grpc_client.DialSimple(*besBackend, credentialhelper.DialOptions(*besBackend)...)
 	if err != nil {
 		return 1, status.WrapError(err, "dial BES backend")
 	}

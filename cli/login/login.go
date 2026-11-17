@@ -21,6 +21,7 @@ import (
 	_ "embed"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
@@ -88,7 +89,7 @@ The exit code indicates the result of the check:
 )
 
 func authenticate(apiKey string) error {
-	conn, err := grpc_client.DialSimple(*apiTarget)
+	conn, err := grpc_client.DialSimple(*apiTarget, credentialhelper.DialOptions(*apiTarget)...)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", *apiTarget, err)
 	}
@@ -386,6 +387,63 @@ func ConfigureAPIKey(args *arg.BazelArgs) error {
 	return nil
 }
 
+// credentialHelperTargetFlags name the Bazel flags whose hosts get the
+// configured credential helper. Scoping the helper to them keeps its
+// credentials out of Bazel's other fetches, such as repository downloads.
+var credentialHelperTargetFlags = []string{"bes_backend", "remote_cache", "remote_executor"}
+
+// ConfigureCredentialHelper passes the credential helper named by
+// BUILDBUDDY_CREDENTIAL_HELPER to Bazel with --credential_helper, scoped to
+// the hosts of --bes_backend, --remote_cache and --remote_executor, so Bazel
+// authenticates the same way bb's own commands do. A scope the user already
+// configured a helper for is left alone.
+func ConfigureCredentialHelper(args *arg.BazelArgs) error {
+	if !credentialhelper.Enabled() || !isSupportedCommand(args.GetCommand()) {
+		return nil
+	}
+	helper, err := credentialhelper.AbsPath()
+	if err != nil {
+		return err
+	}
+	configured := map[string]bool{}
+	for _, value := range args.GetAllFlagsWithName("credential_helper") {
+		if scope, _, ok := strings.Cut(value, "="); ok {
+			configured[scope] = true
+		}
+	}
+	for _, flag := range credentialHelperTargetFlags {
+		host, err := targetHost(args.Get(flag))
+		if err != nil {
+			return fmt.Errorf("failed to parse --%s: %w", flag, err)
+		}
+		if host == "" || configured[host] {
+			continue
+		}
+		configured[host] = true
+		if err := args.Append("--credential_helper=" + host + "=" + helper); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// targetHost returns the host of a Bazel gRPC target, which defaults to
+// grpcs:// when it has no scheme. It returns "" for targets without a host,
+// such as unix sockets.
+func targetHost(target string) (string, error) {
+	if target == "" {
+		return "", nil
+	}
+	if !strings.Contains(target, "://") {
+		target = "grpcs://" + target
+	}
+	u, err := url.Parse(target)
+	if err != nil {
+		return "", err
+	}
+	return u.Hostname(), nil
+}
+
 // ConfigureBESAPIKey copies the BuildBuddy API key from remote_header to
 // bes_header, since Bazel 10 redacts remote_header values from the BEP command
 // line. It only does so when every comma-separated BES backend either has the
@@ -505,7 +563,9 @@ func isSupportedCommand(command string) bool {
 // GetAPIKey attempts to read an API key from the
 // BUILDBUDDY_API_KEY environment variable and, if not set, from the buildbuddy
 // config set at the key `buildbuddy.api-key` in .git/config. If neither is set,
-// and we're running in a tty, this will start the login flow.
+// and we're running in a tty, this will start the login flow. When a credential
+// helper is configured, a missing API key is not an error: it returns an empty
+// key and the helper's headers authenticate requests instead.
 func GetAPIKey() (string, error) {
 	return getAPIKey(true /*=interactive*/)
 }
@@ -527,6 +587,10 @@ func getAPIKey(interactive bool) (string, error) {
 		debugAPIKey(".git/config buildbuddy.api-key", apiKey)
 		return apiKey, nil
 	}
+	if credentialhelper.Enabled() {
+		log.Debugf("No API key set; using credentials from %s", credentialhelper.EnvVar)
+		return "", nil
+	}
 	// If an API key is not set, and we're running in a terminal, start the
 	// login flow.
 	if interactive && terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
@@ -545,6 +609,16 @@ func getAPIKey(interactive bool) (string, error) {
 	} else {
 		return "", status.NotFoundErrorf("API key not set")
 	}
+}
+
+// WithAPIKey returns ctx with apiKey attached as outgoing metadata. It returns
+// ctx unchanged when apiKey is empty, which GetAPIKey returns when a credential
+// helper authenticates requests instead.
+func WithAPIKey(ctx context.Context, apiKey string) context.Context {
+	if apiKey == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 }
 
 func debugAPIKey(source, apiKey string) {

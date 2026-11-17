@@ -8,12 +8,12 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/credentialhelper"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/mattn/go-isatty"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -76,7 +76,7 @@ func HandleRemoteDownload(args []string) (int, error) {
 		parsedDigestFunction = df
 	}
 
-	conn, err := grpc_client.DialSimpleWithoutPooling(*target)
+	conn, err := grpc_client.DialSimpleWithoutPooling(*target, credentialhelper.DialOptions(*target)...)
 	if err != nil {
 		return -1, fmt.Errorf("dial %q: %s", *target, err)
 	}
@@ -111,7 +111,7 @@ func HandleRemoteDownload(args []string) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("failed to get API key: %w", err)
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+	ctx = login.WithAPIKey(ctx, apiKey)
 
 	resp, err := client.FetchBlob(ctx, req)
 	if err != nil {
