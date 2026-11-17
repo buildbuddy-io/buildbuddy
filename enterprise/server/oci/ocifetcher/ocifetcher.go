@@ -17,10 +17,12 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -32,6 +34,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -151,6 +155,33 @@ func RegisterServer(env *real_environment.RealEnv) error {
 	}
 	env.SetOCIFetcherServer(server)
 	return nil
+}
+
+// NewCacheProxyActionCacheClient returns an ActionCacheClient that calls the
+// cache proxy's local AC server in-process as a trusted caller of the
+// restricted OCI instance names, so it needs no client identity. Requests are
+// marked proxy_skip_remote so the proxy's AC hit tracker tracks them.
+func NewCacheProxyActionCacheClient(localACServer repb.ActionCacheServer) repb.ActionCacheClient {
+	return &cacheProxyACClient{server: localACServer}
+}
+
+type cacheProxyACClient struct {
+	server repb.ActionCacheServer
+}
+
+func trustedLocalContext(ctx context.Context) context.Context {
+	md, _ := metadata.FromIncomingContext(ctx)
+	md = md.Copy()
+	md.Set(proxy_util.SkipRemoteKey, "true")
+	return authutil.ContextWithRestrictedACAccess(metadata.NewIncomingContext(ctx, md))
+}
+
+func (c *cacheProxyACClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, _ ...grpc.CallOption) (*repb.ActionResult, error) {
+	return c.server.GetActionResult(trustedLocalContext(ctx), req)
+}
+
+func (c *cacheProxyACClient) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest, _ ...grpc.CallOption) (*repb.ActionResult, error) {
+	return c.server.UpdateActionResult(trustedLocalContext(ctx), req)
 }
 
 // FetchBlob streams an OCI blob from the byte stream server if present.

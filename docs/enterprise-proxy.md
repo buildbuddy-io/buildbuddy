@@ -78,6 +78,32 @@ These ratios are rules of thumb rather than fixed requirements. Monitor proxy CP
 
 When Cache Proxies and executors run in the same cluster, the executor fleet can autoscale independently while the proxy fleet retains its cache within the cluster. Newly started executors can read cached artifacts over the cluster network instead of fetching those artifacts across clusters during scale-up.
 
+### Container image fetching
+
+This section only applies if executors fetch container images through the OCI fetcher service. That requires `executor.use_oci_fetcher: true` on the executors (off by default) and the `use-oci-fetcher` platform property on the action.
+
+When it applies, the Cache Proxy pulls container images from registries directly, rather than through BuildBuddy, and caches them for executors in the cluster. The proxy pods need network egress to every container registry and registry mirror your executors use.
+
+The proxy reads registry settings from its own config, not from the BuildBuddy apps or executors. Executors still read their own registry settings too, so set mirrors on both the proxy and the executors. Set any of these that apply in the proxy chart's `config:` value:
+
+- `executor.container_registry_mirrors`: list of registry mirrors, each with an `original_url` and a `mirror_url`.
+- `executor.container_registry_allowed_private_ips`: private IP ranges (CIDR) that registries may resolve to. Private IPs are disallowed by default.
+- `ocifetcher.blob_head_fallback_registries`: registry hosts whose blob `HEAD` requests are retried as single-byte ranged `GET`s when the registry answers 401 or 405. Defaults to `public.ecr.aws`. Setting this list replaces the default, so include `public.ecr.aws` if you still pull from ECR Public.
+- `oci.cache.secret`: secret mixed into the keys the proxy uses to cache OCI manifests. Set it to a random value.
+- `auth.admin_group_id`: ID of the server admin group. Only needed in fully self-hosted deployments, where you run your own BuildBuddy apps, for server-admin requests that bypass the registry and read images from the cache only.
+
+For example:
+
+```yaml title="values.yaml"
+config:
+  executor:
+    container_registry_mirrors:
+      - original_url: https://index.docker.io
+        mirror_url: https://docker-mirror.example.com
+    container_registry_allowed_private_ips:
+      - 10.0.0.0/8
+```
+
 ## Usage
 
 Now you can point Bazel hosts and remote executors in the same cluster at your cache proxy deployment, using its cluster IP. The relevant flags are `--remote_cache` for Bazel and `--executor.cache_target` for the BuildBuddy remote executor. If you need to access the proxy from outside of the cluster, you can create and use an ingress.

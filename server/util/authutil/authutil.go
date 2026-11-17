@@ -201,11 +201,23 @@ func AuthErrorFromContext(ctx context.Context) (error, bool) {
 	return err, ok
 }
 
+type restrictedACAccessKey struct{}
+
+// ContextWithRestrictedACAccess marks ctx as coming from a trusted in-process
+// caller, which ValidateRestrictedACAccess allows without a client identity.
+// Never apply it to a context on behalf of a remote client.
+func ContextWithRestrictedACAccess(ctx context.Context) context.Context {
+	return context.WithValue(ctx, restrictedACAccessKey{}, true)
+}
+
 // ValidateRestrictedACAccess returns an error if instanceName has a restricted
 // prefix and the caller identity stored in ctx is not a trusted internal service.
 // This MUST be checked in action cache server implementations.
 func ValidateRestrictedACAccess(ctx context.Context, env environment.Env, instanceName string) error {
 	if !strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) {
+		return nil
+	}
+	if trusted, _ := ctx.Value(restrictedACAccessKey{}).(bool); trusted {
 		return nil
 	}
 	cis := env.GetClientIdentityService()
