@@ -38,6 +38,12 @@ func deleteUnion(err error) *rfpb.ResponseUnion {
 	}
 }
 
+func notFoundUnion() *rfpb.ResponseUnion {
+	return &rfpb.ResponseUnion{
+		Value: &rfpb.ResponseUnion_Delete{Delete: &rfpb.DeleteResponse{NotFound: true}},
+	}
+}
+
 func testCandidates(n int) ([]*evictionCandidate, []*evictionKeyMeta) {
 	candidates := make([]*evictionCandidate, n)
 	keyMetas := make([]*evictionKeyMeta, n)
@@ -59,6 +65,7 @@ func TestDeleteBatch(t *testing.T) {
 		name          string
 		rsp           *rfpb.BatchCmdResponse
 		wantEvicted   []int
+		wantNotFound  []int
 		wantNumFailed int
 	}{
 		{
@@ -78,6 +85,15 @@ func TestDeleteBatch(t *testing.T) {
 			wantNumFailed: 1,
 		},
 		{
+			// A record that was already gone is not an eviction.
+			name: "not found",
+			rsp: &rfpb.BatchCmdResponse{Union: []*rfpb.ResponseUnion{
+				deleteUnion(nil), notFoundUnion(), deleteUnion(nil),
+			}},
+			wantEvicted:  []int{0, 2},
+			wantNotFound: []int{1},
+		},
+		{
 			name: "batch status error",
 			rsp: &rfpb.BatchCmdResponse{
 				Union:  []*rfpb.ResponseUnion{{}, {}, {}},
@@ -93,11 +109,15 @@ func TestDeleteBatch(t *testing.T) {
 			res, err := pu.deleteBatch(context.Background(), c, &rfpb.Header{}, keyMetas)
 			require.NoError(t, err)
 
-			var wantEvicted []*evictionCandidate
+			var wantEvicted, wantNotFound []*evictionCandidate
 			for _, i := range tc.wantEvicted {
 				wantEvicted = append(wantEvicted, candidates[i])
 			}
+			for _, i := range tc.wantNotFound {
+				wantNotFound = append(wantNotFound, candidates[i])
+			}
 			require.Equal(t, wantEvicted, res.evicted)
+			require.Equal(t, wantNotFound, res.notFound)
 			require.Equal(t, tc.wantNumFailed, res.numFailed)
 			if tc.wantNumFailed > 0 {
 				require.True(t, status.IsFailedPreconditionError(res.lastErr), "lastErr: %v", res.lastErr)
