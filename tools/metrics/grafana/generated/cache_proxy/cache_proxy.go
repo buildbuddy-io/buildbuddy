@@ -181,7 +181,7 @@ func probersRow() *dashboard.RowBuilder {
 			AxisSoftMin(0).
 			AxisSoftMax(1).
 			ShowPoints(common.VisibilityModeNever).
-			WithTarget(dash.PromQuery(`sum(increase(cloudprober_success{cloud=~"${cloud}", region=~"${region}", probe=~".*proxy.*"}[10m])) by (probe) / sum(increase(cloudprober_total{cloud=~"${cloud}", region=~"${region}", probe=~".*proxy.*"}[10m])) by (probe)`, "{{probe}} Up")))
+			WithTarget(dash.PromQuery(`sum(increase(cloudprober_success{cloud=~"${cloud}", region=~"${region}", probe=~".*proxy.*"}[10m])) by (cloud, region, probe) / sum(increase(cloudprober_total{cloud=~"${cloud}", region=~"${region}", probe=~".*proxy.*"}[10m])) by (cloud, region, probe)`, "{{cloud}}/{{region}} {{probe}} Up")))
 }
 
 func atimeUpdaterRow() *dashboard.RowBuilder {
