@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -329,10 +328,22 @@ func (w *Worker) unmarshalWorkResponse(responseProto *wkpb.WorkResponse) error {
 // Based on:
 // https://github.com/bazelbuild/bazel/blob/e9e6978809b0214e336fee05047d5befe4f4e0c3/src/main/java/com/google/devtools/build/lib/worker/WorkerSpawnRunner.java#L324
 func (w *Worker) expandFlagFiles(args []string) ([]string, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	root, err := os.OpenRoot(w.workspace.Path())
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return expandFlagFilesInRoot(root, args)
+}
+
+func expandFlagFilesInRoot(root *os.Root, args []string) ([]string, error) {
 	expandedArgs := make([]string, 0)
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "@") && !strings.HasPrefix(arg, "@@") && !externalRepositoryPattern.MatchString(arg) {
-			file, err := os.Open(filepath.Join(w.workspace.Path(), arg[1:]))
+			file, err := root.Open(arg[1:])
 			if err != nil {
 				return nil, err
 			}
@@ -342,7 +353,7 @@ func (w *Worker) expandFlagFiles(args []string) ([]string, error) {
 			// cases. Increase it to 1MB.
 			scanner.Buffer(nil, 1024*1024)
 			for scanner.Scan() {
-				args, err := w.expandFlagFiles([]string{scanner.Text()})
+				args, err := expandFlagFilesInRoot(root, []string{scanner.Text()})
 				if err != nil {
 					return nil, err
 				}
