@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/util/vfs_server",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/cache/dirtools",
         "//server/real_environment",
@@ -19,7 +20,6 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/status",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
     ],
 )

@@ -10,6 +10,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cache/dirtools",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -30,7 +31,6 @@ go_library(
         "//third_party/singleflight",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_roaringbitmap_roaring//:roaring",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_x_sync//errgroup",
@@ -58,6 +58,7 @@ go_test(
     embed = [":dirtools"],
     deps = [
         "//enterprise/server/remote_execution/filecache",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
@@ -82,7 +83,6 @@ go_test(
         "@com_github_roaringbitmap_roaring//:roaring",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_x_sync//errgroup",
     ] + select({

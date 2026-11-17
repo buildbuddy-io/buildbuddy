@@ -52,12 +52,12 @@ import (
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (

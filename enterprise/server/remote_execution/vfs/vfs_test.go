@@ -36,10 +36,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func TestSymlinkTargetAfterRemount(t *testing.T) {

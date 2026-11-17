@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/oci/ocicache",
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/util/ocimanifest",
+        "//proto:bytestream_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
@@ -30,7 +31,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/partial",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/types",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
@@ -44,6 +44,7 @@ go_test(
         "//enterprise/server/clientidentity",
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/testutil/testregistry",
+        "//proto:bytestream_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
@@ -68,7 +69,6 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],
 )
