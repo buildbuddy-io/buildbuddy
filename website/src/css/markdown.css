@@ -65,7 +65,7 @@ a .theme-code-block code {
   letter-spacing: -0.015em;
 }
 
-.markdown p {
+.markdown p:where(:not(.react-tweet-theme *)) {
   line-height: 1.75;
 }
 
@@ -76,4 +76,11 @@ a .theme-code-block code {
 .theme-code-block > div {
   color: #aaa;
   border-bottom-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Restore react-tweet's native font size, line-height, and spacing from Infima's .markdown p rules */
+.markdown .react-tweet-theme p {
+  font-size: inherit;
+  line-height: inherit;
+  margin: 0;
 }
