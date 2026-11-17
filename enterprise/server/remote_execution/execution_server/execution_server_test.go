@@ -3175,13 +3175,15 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 // fakeQuotaManager reports the configured namespaces as over quota and
 // records all usage charged to it.
 type fakeQuotaManager struct {
-	mu        sync.Mutex
-	exhausted map[string]bool
-	recorded  map[string]int64
+	mu           sync.Mutex
+	exhausted    map[string]bool
+	recorded     map[string]int64
+	allowForced  map[string]bool
+	recordForced map[string]bool
 }
 
 func newFakeQuotaManager(exhausted ...string) *fakeQuotaManager {
-	qm := &fakeQuotaManager{exhausted: map[string]bool{}, recorded: map[string]int64{}}
+	qm := &fakeQuotaManager{exhausted: map[string]bool{}, recorded: map[string]int64{}, allowForced: map[string]bool{}, recordForced: map[string]bool{}}
 	for _, ns := range exhausted {
 		qm.exhausted[ns] = true
 	}
@@ -3191,6 +3193,7 @@ func newFakeQuotaManager(exhausted ...string) *fakeQuotaManager {
 func (qm *fakeQuotaManager) Allow(ctx context.Context, namespace string, quantity int64, force bool) error {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
+	qm.allowForced[namespace] = force
 	if qm.exhausted[namespace] {
 		return status.ResourceExhaustedErrorf("quota exceeded for %q", namespace)
 	}
@@ -3200,6 +3203,7 @@ func (qm *fakeQuotaManager) Allow(ctx context.Context, namespace string, quantit
 func (qm *fakeQuotaManager) RecordUsage(ctx context.Context, namespace string, quantity int64, force bool) (bool, error) {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
+	qm.recordForced[namespace] = force
 	qm.recorded[namespace] += quantity
 	return !qm.exhausted[namespace], nil
 }
@@ -3212,6 +3216,12 @@ func (qm *fakeQuotaManager) Recorded(namespace string) int64 {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
 	return qm.recorded[namespace]
+}
+
+func (qm *fakeQuotaManager) Forced(namespace string) (allow, record bool) {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	return qm.allowForced[namespace], qm.recordForced[namespace]
 }
 
 var (
@@ -3265,27 +3275,51 @@ func TestDispatch_SnapshotSaveQuotaOverridesUserProperties(t *testing.T) {
 }
 
 func TestPublishOperation_RecordsSnapshotSaveQuotaUsage(t *testing.T) {
+	flags.Set(t, "remote_execution.enable_workflows_quota", true)
 	const savedBytes = 12345
 	for _, tc := range []struct {
-		name       string
-		stats      *espb.FirecrackerPostExecStats
-		wantLocal  int64
-		wantRemote int64
+		name                    string
+		stats                   *espb.FirecrackerPostExecStats
+		wantLocalBytesRecorded  int64
+		wantRemoteBytesRecorded int64
+		args                    []string
+		reconnect               bool
+		wantForce               bool
 	}{
 		{
-			name:  "no save",
-			stats: &espb.FirecrackerPostExecStats{SnapshotSavedBytes: savedBytes},
+			name:                    "non CI runner",
+			stats:                   &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedRemotely: true, SnapshotSavedBytes: savedBytes},
+			wantLocalBytesRecorded:  savedBytes,
+			wantRemoteBytesRecorded: savedBytes,
+			wantForce:               false,
 		},
 		{
-			name:      "local only",
-			stats:     &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedBytes: savedBytes},
-			wantLocal: savedBytes,
+			name:                   "CI runner local only",
+			args:                   []string{"./buildbuddy_ci_runner"},
+			stats:                  &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedBytes: savedBytes},
+			wantLocalBytesRecorded: savedBytes,
+			wantForce:              true,
 		},
 		{
-			name:       "local and remote",
-			stats:      &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedRemotely: true, SnapshotSavedBytes: savedBytes},
-			wantLocal:  savedBytes,
-			wantRemote: savedBytes,
+			name:                    "CI runner local and remote",
+			args:                    []string{"./buildbuddy_ci_runner"},
+			stats:                   &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedRemotely: true, SnapshotSavedBytes: savedBytes},
+			wantLocalBytesRecorded:  savedBytes,
+			wantRemoteBytesRecorded: savedBytes,
+			wantForce:               true,
+		},
+		{
+			name:      "CI runner no save",
+			args:      []string{"./buildbuddy_ci_runner"},
+			stats:     &espb.FirecrackerPostExecStats{SnapshotSavedBytes: savedBytes},
+			wantForce: true,
+		},
+		{
+			name:                   "quota not recorded on reconnected publish stream",
+			args:                   []string{"./buildbuddy_ci_runner"},
+			reconnect:              true,
+			stats:                  &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedRemotely: true, SnapshotSavedBytes: savedBytes},
+			wantLocalBytesRecorded: savedBytes, wantRemoteBytesRecorded: savedBytes, wantForce: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3296,7 +3330,11 @@ func TestPublishOperation_RecordsSnapshotSaveQuotaUsage(t *testing.T) {
 			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US1")
 			require.NoError(t, err)
 
-			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, &repb.Action{})
+			args := tc.args
+			if args == nil {
+				args = []string{"test"}
+			}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, &repb.Action{}, &repb.Command{Arguments: args})
 			executionClient, err := client.Execute(ctx, &repb.ExecuteRequest{
 				ActionDigest:   arn.GetDigest(),
 				DigestFunction: arn.GetDigestFunction(),
@@ -3321,6 +3359,12 @@ func TestPublishOperation_RecordsSnapshotSaveQuotaUsage(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.NoError(t, stream.Send(firstOp))
+			if tc.reconnect {
+				_, err := stream.CloseAndRecv()
+				require.NoError(t, err)
+				stream, err = client.PublishOperation(executorCtx)
+				require.NoError(t, err)
+			}
 
 			// Second COMPLETED: sent after the snapshot is saved.
 			statsAny, err := anypb.New(&espb.PostCompletionStats{FirecrackerPostExecStats: tc.stats})
@@ -3343,9 +3387,15 @@ func TestPublishOperation_RecordsSnapshotSaveQuotaUsage(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			// Each quota is charged exactly once, by the second COMPLETED.
-			assert.Equal(t, tc.wantLocal, qm.Recorded(localSnapshotQuotaKey))
-			assert.Equal(t, tc.wantRemote, qm.Recorded(remoteSnapshotQuotaKey))
+			assert.Equal(t, tc.wantLocalBytesRecorded, qm.Recorded(localSnapshotQuotaKey))
+			assert.Equal(t, tc.wantRemoteBytesRecorded, qm.Recorded(remoteSnapshotQuotaKey))
+
+			allowForced, recordForced := qm.Forced(localSnapshotQuotaKey)
+			assert.Equal(t, tc.wantForce, allowForced)
+			// Snapshot usage is recorded by the second COMPLETED. Reconnecting
+			// loses the command, so workflow quota is not forced in that case.
+			// No usage is recorded (and so nothing is forced) if nothing was saved.
+			assert.Equal(t, tc.wantForce && !tc.reconnect && tc.wantLocalBytesRecorded > 0, recordForced)
 		})
 	}
 }
