@@ -990,3 +990,94 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 		})
 	}
 }
+
+type unreadableBSClient struct {
+	bspb.ByteStreamClient
+}
+
+func (c *unreadableBSClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	return nil, status.NotFoundError("blob unavailable")
+}
+
+func (c *unreadableBSClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	return &alreadyExistsWriteClient{}, nil
+}
+
+type alreadyExistsWriteClient struct {
+	grpc.ClientStream
+}
+
+func (c *alreadyExistsWriteClient) Send(*bspb.WriteRequest) error {
+	return io.EOF
+}
+
+func (c *alreadyExistsWriteClient) CloseAndRecv() (*bspb.WriteResponse, error) {
+	return nil, status.AlreadyExistsError("blob exists")
+}
+
+func TestFetchBlob_UnreadableLocalCache(t *testing.T) {
+	testFetchBlobUnreadableLocalCache(t, 1)
+}
+
+func TestFetchBlob_UnreadableLocalCacheConcurrent(t *testing.T) {
+	testFetchBlobUnreadableLocalCache(t, 10)
+}
+
+func testFetchBlobUnreadableLocalCache(t *testing.T, numClients int) {
+	ctx := context.Background()
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layer := layers[0]
+	hash, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+	_, bsClient, acClient := setupCacheEnv(t)
+	remote := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	env := testenv.GetTestEnv(t)
+	env.SetOCIFetcherClient(remote)
+	env.SetLocalByteStreamClient(&unreadableBSClient{})
+	proxy, err := New(env)
+	require.NoError(t, err)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	ofpb.RegisterOCIFetcherServer(grpcServer, proxy)
+	go runFunc()
+	t.Cleanup(grpcServer.GracefulStop)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := ofpb.NewOCIFetcherClient(conn)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	results := make([][]byte, numClients)
+	errs := make([]error, numClients)
+	for i := range numClients {
+		wg.Go(func() {
+			<-start
+			stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: imageName + "@" + hash.String()})
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			for {
+				resp, err := stream.Recv()
+				if err == io.EOF {
+					return
+				}
+				if err != nil {
+					errs[i] = err
+					return
+				}
+				results[i] = append(results[i], resp.GetData()...)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	for i := range numClients {
+		require.NoError(t, errs[i], "client %d", i)
+		require.Equal(t, expectedData, results[i], "client %d", i)
+	}
+}
