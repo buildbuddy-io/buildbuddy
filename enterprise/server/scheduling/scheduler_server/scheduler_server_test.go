@@ -2154,20 +2154,29 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 
 func TestAuthorizeTaskWrites(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		taskGroupID string
-		caller      string
-		unknownTask bool
-		wantErr     func(error) bool
+		name           string
+		taskGroupID    string
+		caller         string
+		clientIdentity bool
+		callerClient   string
+		unknownTask    bool
+		wantErr        func(error) bool
 	}{
 		{name: "same group", taskGroupID: "group1", caller: "user1"},
 		{name: "other group", taskGroupID: "group1", caller: "user2", wantErr: status.IsPermissionDeniedError},
 		{name: "unauthenticated", taskGroupID: "group1", wantErr: status.IsPermissionDeniedError},
 		{name: "anonymous task", caller: "user2"},
 		{name: "unknown task", caller: "user1", unknownTask: true, wantErr: status.IsNotFoundError},
+		{name: "anonymous task from executor", clientIdentity: true, callerClient: interfaces.ClientIdentityExecutor},
+		{name: "anonymous task from workflow", clientIdentity: true, callerClient: interfaces.ClientIdentityWorkflow, wantErr: status.IsPermissionDeniedError},
+		{name: "anonymous task from group", clientIdentity: true, caller: "user2", wantErr: status.IsPermissionDeniedError},
+		{name: "group task with client identity", taskGroupID: "group1", clientIdentity: true, caller: "user1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			if tc.clientIdentity {
+				enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityApp)
+			}
 			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 			fe.Register()
 
@@ -2179,6 +2188,17 @@ func TestAuthorizeTaskWrites(t *testing.T) {
 			callerCtx := context.Background()
 			if tc.caller != "" {
 				callerCtx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(callerCtx, tc.caller)
+				require.NoError(t, err)
+			}
+			if tc.callerClient != "" {
+				identityService := env.GetClientIdentityService()
+				header, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+					Origin: interfaces.ClientIdentityInternalOrigin,
+					Client: tc.callerClient,
+				}, time.Minute)
+				require.NoError(t, err)
+				incomingCtx := metadata.NewIncomingContext(callerCtx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+				callerCtx, err = identityService.ValidateIncomingIdentity(incomingCtx)
 				require.NoError(t, err)
 			}
 			taskID := req.GetTaskId()
@@ -2197,28 +2217,38 @@ func TestAuthorizeTaskWrites(t *testing.T) {
 
 func TestPublishOperation_TaskOwnership(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		publisher  string
-		cancelTask bool
-		wantErr    func(error) bool
+		name            string
+		anonymousTask   bool
+		publisher       string
+		publisherClient string
+		cancelTask      bool
+		wantErr         func(error) bool
 	}{
 		{name: "task JWT"},
 		{name: "other group", publisher: "user2", wantErr: status.IsPermissionDeniedError},
 		{name: "cancelled task", cancelTask: true, wantErr: status.IsNotFoundError},
+		{name: "anonymous task from executor", anonymousTask: true, publisherClient: interfaces.ClientIdentityExecutor},
+		{name: "anonymous task from workflow", anonymousTask: true, publisherClient: interfaces.ClientIdentityWorkflow, wantErr: status.IsPermissionDeniedError},
+		{name: "anonymous task from group", anonymousTask: true, publisher: "user2", wantErr: status.IsPermissionDeniedError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 			fe.node.Pool = "defaultPoolName"
 			fe.Register()
+			taskCtx := ctx
+			if tc.anonymousTask {
+				enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityApp)
+				taskCtx = context.Background()
+			}
 
-			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			cacheCtx, err := prefix.AttachUserPrefixToContext(taskCtx, env.GetAuthenticator())
 			require.NoError(t, err)
 			cd, err := cachetools.UploadProtoToCAS(cacheCtx, env.GetCache(), "", repb.DigestFunction_SHA256, &repb.Command{Arguments: []string{"test"}})
 			require.NoError(t, err)
 			ad, err := cachetools.UploadProtoToCAS(cacheCtx, env.GetCache(), "", repb.DigestFunction_SHA256, &repb.Action{CommandDigest: cd})
 			require.NoError(t, err)
-			executeStream, err := env.GetRemoteExecutionClient().Execute(ctx, &repb.ExecuteRequest{ActionDigest: ad, DigestFunction: repb.DigestFunction_SHA256})
+			executeStream, err := env.GetRemoteExecutionClient().Execute(taskCtx, &repb.ExecuteRequest{ActionDigest: ad, DigestFunction: repb.DigestFunction_SHA256})
 			require.NoError(t, err)
 			op, err := executeStream.Recv()
 			require.NoError(t, err)
@@ -2226,9 +2256,20 @@ func TestPublishOperation_TaskOwnership(t *testing.T) {
 			fe.WaitForTask(taskID)
 			lease := fe.Claim(taskID)
 
-			publishCtx := metadata.AppendToOutgoingContext(context.Background(), authutil.ContextTokenStringKey, lease.task.GetJwt())
+			publishCtx := context.Background()
+			if jwt := lease.task.GetJwt(); jwt != "" {
+				publishCtx = metadata.AppendToOutgoingContext(publishCtx, authutil.ContextTokenStringKey, jwt)
+			}
 			if tc.publisher != "" {
 				publishCtx = authenticatedContext(t, env, tc.publisher)
+			}
+			if tc.publisherClient != "" {
+				header, err := env.GetClientIdentityService().NewIdentityHeader(&interfaces.ClientIdentity{
+					Origin: interfaces.ClientIdentityInternalOrigin,
+					Client: tc.publisherClient,
+				}, time.Minute)
+				require.NoError(t, err)
+				publishCtx = metadata.AppendToOutgoingContext(publishCtx, authutil.ClientIdentityHeaderName, header)
 			}
 			if tc.cancelTask {
 				_, err := env.GetSchedulerService().CancelTask(ctx, taskID)

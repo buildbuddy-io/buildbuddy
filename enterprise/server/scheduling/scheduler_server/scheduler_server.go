@@ -3215,6 +3215,17 @@ func (s *SchedulerServer) AuthorizeTaskWrites(ctx context.Context, taskID string
 	}
 	taskGroupID := md.GetTaskGroupId()
 	if taskGroupID == "" || taskGroupID == interfaces.AuthAnonymousUser {
+		// Anonymous tasks have no task JWT, so executors can only identify
+		// themselves with client identity. Without it (e.g. on-prem), there
+		// is no credential to check.
+		cis := s.env.GetClientIdentityService()
+		if cis == nil {
+			return nil
+		}
+		identity, err := cis.IdentityFromContext(ctx)
+		if err != nil || identity.Client != interfaces.ClientIdentityExecutor {
+			return status.PermissionDeniedErrorf("only executors may act on anonymous task %q", taskID)
+		}
 		return nil
 	}
 	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
