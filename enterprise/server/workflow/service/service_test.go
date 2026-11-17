@@ -54,7 +54,9 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -1275,9 +1277,83 @@ func TestExecuteWorkflow_CrossOrgAccessDenied(t *testing.T) {
 				PushedRepoUrl:  tc.repoURL,
 				PushedBranch:   "main",
 			})
-			assert.True(t, status.IsPermissionDeniedError(err))
+			assert.True(t, status.IsNotFoundError(err))
 		})
 	}
+}
+
+func TestExecuteWorkflow_WorkflowOutsideSelectedGroupDenied(t *testing.T) {
+	ctx := t.Context()
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	flags.Set(t, "remote_execution.disable_legacy_workflows", false)
+	te := newTestEnv(t)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	_ = setupFakeGitProvider(t, te)
+
+	// US1 is an admin of gid1 and a reader in gid2.
+	ctx1, uid1, gid1 := authenticate(t, ctx, te)
+	ctx2, _, gid2 := authenticateAsUser(t, ctx, te, "US2")
+	_, err := te.GetUserDB().RequestToJoinGroup(ctx1, gid2)
+	require.NoError(t, err)
+	err = te.GetUserDB().UpdateGroupUsers(ctx2, gid2, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId:           &uidpb.UserId{Id: uid1},
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		Role:             grpb.Group_READER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	repoURL1 := makeTempRepo(t)
+	createWorkflow(t, te, repoURL1, gid1, true /*useDefaultWorkflowConfig*/)
+	repoURL2 := makeTempRepo(t)
+	createWorkflow(t, te, repoURL2, gid2, true /*useDefaultWorkflowConfig*/)
+	legacyWorkflow := &tables.Workflow{
+		WorkflowID: "WF2",
+		GroupID:    gid2,
+		Perms:      perms.GROUP_READ | perms.GROUP_WRITE,
+		RepoURL:    repoURL2,
+	}
+	err = te.GetDBHandle().NewQuery(ctx, "create_workflow").Create(legacyWorkflow)
+	require.NoError(t, err)
+
+	// Authenticate US1 again so that the claims include the gid2 membership,
+	// with gid1 as the selected group.
+	reqCtx := testauth.RequestContext(uid1, gid1)
+	auth := te.GetAuthenticator().(*testauth.TestAuthenticator)
+	ctx1, err = auth.WithAuthenticatedUser(requestcontext.ContextWithProtoRequestContext(ctx, reqCtx), uid1)
+	require.NoError(t, err)
+
+	clientConn := runBBServer(ctx, t, te)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	rsp, err := bbClient.ExecuteWorkflow(ctx1, &wfpb.ExecuteWorkflowRequest{
+		RequestContext: reqCtx,
+		WorkflowId:     te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid1, repoURL1),
+		PushedRepoUrl:  repoURL1,
+		PushedBranch:   "main",
+		Async:          true,
+	})
+	require.NoError(t, err)
+	statuses := rsp.GetActionStatuses()
+	require.Len(t, statuses, 1)
+	code := statuses[0].GetStatus().GetCode()
+	require.Equal(t, int32(codes.OK), code)
+	_ = execClient.NextExecuteRequest()
+
+	_, err = bbClient.ExecuteWorkflow(ctx1, &wfpb.ExecuteWorkflowRequest{
+		RequestContext: reqCtx,
+		WorkflowId:     te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid2, repoURL2),
+		PushedRepoUrl:  repoURL2,
+		PushedBranch:   "main",
+	})
+	require.True(t, status.IsNotFoundError(err), "got %v", err)
+
+	_, err = bbClient.ExecuteWorkflow(ctx1, &wfpb.ExecuteWorkflowRequest{
+		RequestContext: reqCtx,
+		WorkflowId:     legacyWorkflow.WorkflowID,
+		PushedRepoUrl:  repoURL2,
+		PushedBranch:   "main",
+	})
+	require.True(t, status.IsNotFoundError(err), "got %v", err)
 }
 
 func TestExecuteWorkflow_BlockedGroupDoesNotStartWorkflow(t *testing.T) {
