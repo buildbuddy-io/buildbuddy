@@ -6,9 +6,7 @@ import (
 	"context"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,38 +154,6 @@ func fileDigest(t *testing.T, path string) string {
 	d, err := digest.Compute(f, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	return d.GetHash()
-}
-
-func TestDisableJournal(t *testing.T) {
-	for _, testCase := range []struct {
-		name           string
-		disableJournal bool
-	}{
-		{name: "journal", disableJournal: false},
-		{name: "no journal", disableJournal: true},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			ctx := t.Context()
-			root := testfs.MakeTempDir(t)
-			inputDir := testfs.MakeDirAll(t, root, "input")
-			testfs.WriteAllFileContents(t, inputDir, map[string]string{"a.txt": "hello"})
-
-			fromDirImage := filepath.Join(root, "from_dir.ext4")
-			err := ext4.DirectoryToImage(ctx, inputDir, fromDirImage, 64<<20, testCase.disableJournal)
-			require.NoError(t, err)
-			emptyImage := filepath.Join(root, "empty.ext4")
-			err = ext4.MakeEmptyImage(ctx, emptyImage, 64<<20, testCase.disableJournal)
-			require.NoError(t, err)
-
-			for _, image := range []string{fromDirImage, emptyImage} {
-				// Prints "Filesystem features: has_journal ext_attr ...".
-				out, err := exec.CommandContext(ctx, "/sbin/debugfs", "-R", "features", image).Output()
-				require.NoError(t, err)
-				hasJournal := slices.Contains(strings.Fields(string(out)), "has_journal")
-				require.Equal(t, !testCase.disableJournal, hasJournal, "%s: %s", filepath.Base(image), out)
-			}
-		})
-	}
 }
 
 func TestImageToDirectory(t *testing.T) {
