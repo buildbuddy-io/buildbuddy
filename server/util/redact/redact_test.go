@@ -192,6 +192,19 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 			}}},
 		},
 		{
+			name: "redact passwords in urls in target complete failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:passwordthatshouldberedacted@repo.example.com/package.tar.gz",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:<REDACTED>@repo.example.com/package.tar.gz",
+				},
+			}}},
+		},
+		{
 			name: "redact passwords in urls in aborted description",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Aborted{Aborted: &bespb.Aborted{
 				Description: "Build aborted due to error: failed to fetch https://username:passwordthatshouldberedacted@example.com/resource",
@@ -761,6 +774,24 @@ func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
 
 	require.Equal(t, 1, len(workspaceStatus.Item))
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", workspaceStatus.Item[0].Value)
+}
+
+func TestRedactMetadata_Progress_StripsURLSecrets(t *testing.T) {
+	redactor := redact.NewStreamingRedactor()
+	progress := &bespb.Progress{
+		Stdout: "Fetching https://stdout-user:STDOUT_TOKEN@example.com/repo.git\n",
+		Stderr: "ERROR: failed to fetch https://stderr-user:STDERR_TOKEN@example.com/archive.tar.gz\n",
+	}
+
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Progress{Progress: progress},
+	})
+	require.NoError(t, err)
+
+	assert.NotContains(t, progress.Stdout, "STDOUT_TOKEN")
+	assert.Contains(t, progress.Stdout, "<REDACTED>@example.com/repo.git")
+	assert.NotContains(t, progress.Stderr, "STDERR_TOKEN")
+	assert.Contains(t, progress.Stderr, "<REDACTED>@example.com/archive.tar.gz")
 }
 
 func TestRedactAPIKey(t *testing.T) {

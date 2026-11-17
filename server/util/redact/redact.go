@@ -693,6 +693,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
 		{
+			p.Progress.Stdout = stripURLSecrets(p.Progress.Stdout)
+			p.Progress.Stderr = stripURLSecrets(p.Progress.Stderr)
 		}
 	case *bespb.BuildEvent_Aborted:
 		{
@@ -755,6 +757,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	case *bespb.BuildEvent_Completed:
 		{
 			p.Completed.DirectoryOutput = stripURLSecretsFromFiles(p.Completed.DirectoryOutput)
+			if p.Completed.FailureDetail != nil {
+				p.Completed.FailureDetail.Message = RedactText(p.Completed.FailureDetail.Message)
+			}
 		}
 	case *bespb.BuildEvent_TestResult:
 		{
