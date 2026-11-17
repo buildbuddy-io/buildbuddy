@@ -1098,6 +1098,8 @@ type SchedulerService interface {
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	CancelTask(ctx context.Context, taskID string) (bool, error)
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
+	// GetTaskGroupID returns NotFound if the task does not exist.
+	GetTaskGroupID(ctx context.Context, taskID string) (string, error)
 	// WatchTaskLiveness returns a channel that the scheduler closes if it
 	// loses the task, meaning that the task no longer exists and so no
 	// executor will run it again. The scheduler watches the task until ctx is

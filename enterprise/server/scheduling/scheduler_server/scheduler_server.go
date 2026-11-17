@@ -3200,6 +3200,20 @@ func (s *SchedulerServer) ExistsTask(ctx context.Context, taskID string) (bool, 
 	return n == 1, err
 }
 
+func (s *SchedulerServer) GetTaskGroupID(ctx context.Context, taskID string) (string, error) {
+	b, err := s.rdb.HGet(ctx, s.redisKeyForTask(taskID), redisTaskMetadataField).Bytes()
+	if err == redis.Nil {
+		return "", status.NotFoundErrorf("task %q not found", taskID)
+	} else if err != nil {
+		return "", status.InternalErrorf("read task metadata: %s", err)
+	}
+	md := &scpb.SchedulingMetadata{}
+	if err := proto.Unmarshal(b, md); err != nil {
+		return "", status.InternalErrorf("unmarshal task metadata: %s", err)
+	}
+	return md.GetTaskGroupId(), nil
+}
+
 func (s *SchedulerServer) TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error) {
 	exists, err := s.ExistsTask(ctx, req.GetTaskId())
 	if err != nil {

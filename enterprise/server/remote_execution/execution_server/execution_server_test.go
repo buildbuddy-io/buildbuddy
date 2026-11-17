@@ -81,6 +81,7 @@ type schedulerServerMock struct {
 	interfaces.SchedulerService
 
 	canceledCount int
+	mu            sync.Mutex
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 	scheduleErr   error
 	// WatchTaskLiveness returns taskLost for every task. Tests close it to
@@ -109,15 +110,31 @@ func (s *schedulerServerMock) GetSharedExecutorPoolGroupID() string {
 }
 
 func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
+	s.mu.Lock()
 	s.scheduleReqs = append(s.scheduleReqs, req)
+	s.mu.Unlock()
 	if s.scheduleErr != nil {
 		return nil, s.scheduleErr
 	}
 	return &scpb.ScheduleTaskResponse{}, nil
 }
 
+func (s *schedulerServerMock) GetTaskGroupID(ctx context.Context, taskID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, req := range s.scheduleReqs {
+		if req.GetTaskId() == taskID {
+			return req.GetMetadata().GetTaskGroupId(), nil
+		}
+	}
+	return "", status.NotFoundErrorf("task %q not found", taskID)
+}
+
 func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.canceledCount++
+	s.scheduleReqs = slices.DeleteFunc(s.scheduleReqs, func(req *scpb.ScheduleTaskRequest) bool { return req.GetTaskId() == taskID })
 	return true, nil
 }
 
@@ -1777,6 +1794,62 @@ func TestPublishOperation_RetriedStream(t *testing.T) {
 	}
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
 	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec, "usage should be recorded exactly once")
+}
+
+func TestPublishOperation_TaskGroupAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		publisher   string
+		withTaskJWT bool
+		cancelTask  bool
+		wantCode    codes.Code
+	}{
+		{name: "same group", publisher: "user2"},
+		{name: "task JWT", withTaskJWT: true},
+		{name: "other group", publisher: "user3", wantCode: codes.PermissionDenied},
+		{name: "unauthenticated", wantCode: codes.PermissionDenied},
+		{name: "cancelled task", withTaskJWT: true, cancelTask: true, wantCode: codes.NotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			client := repb.NewExecutionClient(conn)
+			ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1", "user2", "group1", "user3", "group2"))
+			env.SetAuthenticator(ta)
+			ctx := context.Background()
+			taskCtx, err := ta.WithAuthenticatedUser(ctx, "user1")
+			require.NoError(t, err)
+
+			arn := uploadAction(taskCtx, t, env, "", repb.DigestFunction_SHA256, &repb.Action{})
+			executeStream, err := client.Execute(taskCtx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest(), DigestFunction: arn.GetDigestFunction()})
+			require.NoError(t, err)
+			op, err := executeStream.Recv()
+			require.NoError(t, err)
+			executingOp, err := operation.Assemble(op.GetName(), operation.Metadata(repb.ExecutionStage_EXECUTING, arn.GetDigest()), nil)
+			require.NoError(t, err)
+
+			publishCtx := ctx
+			if tc.publisher != "" {
+				publishCtx, err = ta.WithAuthenticatedUser(ctx, tc.publisher)
+				require.NoError(t, err)
+			}
+			if tc.withTaskJWT {
+				sched := env.GetSchedulerService().(*schedulerServerMock)
+				task := &repb.ExecutionTask{}
+				require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].GetSerializedTask(), task))
+				publishCtx = metadata.AppendToOutgoingContext(ctx, authutil.ContextTokenStringKey, task.GetJwt())
+			}
+			if tc.cancelTask {
+				_, err := env.GetSchedulerService().CancelTask(ctx, op.GetName())
+				require.NoError(t, err)
+			}
+
+			publishStream, err := client.PublishOperation(publishCtx)
+			require.NoError(t, err)
+			_ = publishStream.Send(executingOp)
+			_, err = publishStream.CloseAndRecv()
+			require.Equal(t, tc.wantCode, gstatus.Code(err), "PublishOperation error: %v", err)
+		})
+	}
 }
 
 // TestPublishOperation_FlushWithEmptyLinks pins down the contract:

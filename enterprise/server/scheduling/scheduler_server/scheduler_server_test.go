@@ -2146,6 +2146,21 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 	require.False(t, resp.GetExists())
 }
 
+func TestGetTaskGroupID(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+	req.GetMetadata().TaskGroupId = "group1"
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.NoError(t, err)
+
+	groupID, err := env.GetSchedulerService().GetTaskGroupID(ctx, req.GetTaskId())
+	require.NoError(t, err)
+	require.Equal(t, "group1", groupID)
+}
+
 func TestScheduleTask_DeletesTaskOnEnqueueFailure(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 

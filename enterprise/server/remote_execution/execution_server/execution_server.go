@@ -1573,6 +1573,23 @@ func (s *ExecutionServer) metadataForClickhouse(ctx context.Context, taskID stri
 	return action, cmd, properties, nil
 }
 
+func (s *ExecutionServer) checkPublishAccess(ctx context.Context, taskID string) error {
+	// Without a scheduler record the task's lease can't be renewed either, so
+	// an executor has no valid publish for it.
+	taskGroupID, err := s.env.GetSchedulerService().GetTaskGroupID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if taskGroupID == "" || taskGroupID == interfaces.AuthAnonymousUser {
+		return nil
+	}
+	user, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil || user.GetGroupID() != taskGroupID {
+		return status.PermissionDeniedErrorf("caller may not publish operations for task %q", taskID)
+	}
+	return nil
+}
+
 // PublishOperation is called by the executor to publish updates to the
 // execution operation as the execution progresses. The server will stream these
 // updates to the client via WaitExecution, and will also use these updates to
@@ -1661,6 +1678,11 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if err != nil {
 			log.CtxErrorf(ctx, "PublishOperation: recv err: %s", err)
 			return err
+		}
+		if taskID == "" || op.GetName() != taskID {
+			if err := s.checkPublishAccess(ctx, op.GetName()); err != nil {
+				return err
+			}
 		}
 
 		response := operation.ExtractExecuteResponse(op)
