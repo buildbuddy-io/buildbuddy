@@ -798,7 +798,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	buf.WriteString("<pre>")
 	buf.WriteString(s.liveness.String() + "\n")
 
-	su := s.Usage()
+	su := s.usage(ctx)
 	buf.WriteString(fmt.Sprintf("%36s | Replicas: %4d | Leases: %7d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
@@ -2610,7 +2610,7 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 	}
 }
 
-func (s *Store) Usage() *rfpb.StoreUsage {
+func (s *Store) usage(ctx context.Context) *rfpb.StoreUsage {
 	su := &rfpb.StoreUsage{
 		Node: s.NodeDescriptor(),
 	}
@@ -2619,7 +2619,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	su.ReplicaCount = int64(len(s.openRanges))
 	s.rangeMu.RUnlock()
 
-	su.LeaseCount = s.leaseKeeper.LeaseCount(context.TODO())
+	su.LeaseCount = s.leaseKeeper.LeaseCount(ctx)
 	s.replicas.Range(func(key, value any) bool {
 		r, _ := value.(*replica.Replica)
 		ru, err := r.Usage()
@@ -2770,8 +2770,9 @@ type updateTagsWorker struct {
 	lastExecutedAt time.Time
 	tasks          chan *updateTagsTask
 
-	quitChan chan struct{}
-	eg       errgroup.Group
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+	eg         errgroup.Group
 
 	store *Store
 }
@@ -2792,7 +2793,7 @@ func (w *updateTagsWorker) Enqueue() {
 }
 
 func (w *updateTagsWorker) Start() {
-	w.quitChan = make(chan struct{})
+	w.ctx, w.cancelFunc = context.WithCancel(context.Background())
 	w.eg.Go(func() error {
 		w.processUpdateTags()
 		return nil
@@ -2804,7 +2805,7 @@ func (w *updateTagsWorker) processUpdateTags() error {
 	eg.Go(func() error {
 		for {
 			select {
-			case <-w.quitChan:
+			case <-w.ctx.Done():
 				return nil
 			case task := <-w.tasks:
 				w.handleTask(task)
@@ -2821,7 +2822,7 @@ func (w *updateTagsWorker) processUpdateTags() error {
 }
 
 func (w *updateTagsWorker) Stop() {
-	close(w.quitChan)
+	w.cancelFunc()
 
 	w.store.log.Info("updateTagsWorker shutdown started")
 	now := time.Now()
@@ -2856,7 +2857,7 @@ func (w *updateTagsWorker) updateTags() error {
 
 	storeTags[constants.GRPCAddressTag] = w.store.grpcAddr
 
-	su := w.store.Usage()
+	su := w.store.usage(w.ctx)
 	buf, err := proto.Marshal(su)
 	if err != nil {
 		return err
