@@ -1208,7 +1208,6 @@ var atimeIndexCleanupCommitSizeBytes = 4 * 1024 * 1024
 // DeleteRangeDataAndAtimeIndexEntries deletes the records in [start, end) and
 // their atime-index entries. Nothing may write to the span while it runs.
 func DeleteRangeDataAndAtimeIndexEntries(db pebble.IPebbleDB, start, end []byte, opts *pebble.WriteOptions) error {
-	// The iterator reads a consistent view, so deleting behind it is safe.
 	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 	if err != nil {
 		return err
@@ -1231,7 +1230,7 @@ func DeleteRangeDataAndAtimeIndexEntries(db pebble.IPebbleDB, start, end []byte,
 	}
 
 	for iter.First(); iter.Valid(); iter.Next() {
-		// Keys outside a partition (e.g. the meta range) have no entry.
+		// Keys outside a partition (e.g. the meta range) have no index entry.
 		partID := keys.PartitionIDFromRangeStart(iter.Key())
 		if partID == "" {
 			continue
