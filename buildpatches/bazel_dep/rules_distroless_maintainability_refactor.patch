@@ -1,0 +1,446 @@
+From 4b1b66d87f23bcf899475672fe57002f1ca1a77b Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Tue, 3 Nov 2026 11:02:01 -0800
+Subject: [PATCH 2/5] use `source` generally
+
+---
+ apt/extensions.bzl                 | 82 +++++++++++++-----------------
+ apt/private/apt_deb_repository.bzl | 55 +++++++++++---------
+ apt/private/lockfile.bzl           | 12 +++--
+ apt/private/pgp.bzl                | 24 ++++-----
+ apt/private/util.bzl               |  7 ++-
+ 5 files changed, 88 insertions(+), 92 deletions(-)
+
+diff --git a/apt/extensions.bzl b/apt/extensions.bzl
+index 29d3e29..0621df0 100644
+--- a/apt/extensions.bzl
++++ b/apt/extensions.bzl
+@@ -24,13 +24,13 @@ def _get_auth(mctx, urls):
+         netrc = read_user_netrc(mctx)
+     return use_netrc(netrc, urls, {})
+ 
+-def _start_downloads(mctx, urls, dist, comp, arch, integrity, source_id, cached_format = None, hashes = None):
+-    """Initiate package index downloads with block=False.
++def _start_downloads(mctx, source, integrity, source_id, cached_format = None, hashes = None):
++    """Initiate all format downloads for a given index type with block=False.
+ 
+     If cached_format is set, only that extension is attempted — avoiding
+     404 warnings for formats the remote doesn't serve.
+     """
+-    target_triple = "{}/{}/{}".format(dist, comp, arch)
++    target_triple = "{}/{}/{}".format(source.distribution, source.component, source.architecture)
+ 
+     # See https://linux.die.net/man/1/xz , https://linux.die.net/man/1/gzip , and https://linux.die.net/man/1/bzip2
+     #  --keep       -> keep the original file (Bazel might be still committing the output to the cache)
+@@ -48,20 +48,20 @@ def _start_downloads(mctx, urls, dist, comp, arch, integrity, source_id, cached_
+     if hashes != None:
+         available_extensions = []
+         for (ext, cmd) in extensions:
+-            path = "{}/binary-{}/Packages{}".format(comp, arch, ext)
++            path = "{}/binary-{}/Packages{}".format(source.component, source.architecture, ext)
+             if path in hashes:
+                 available_extensions.append((ext, cmd))
+         extensions = available_extensions
+         if not extensions:
+-            fail("No Packages index found in Release file for suite '{}', component '{}', arch '{}'".format(dist, comp, arch))
++            fail("No Packages index found in Release file for suite '{}', component '{}', arch '{}'".format(source.distribution, source.component, source.architecture))
+ 
+     if cached_format != None:
+         extensions = [(ext, cmd) for (ext, cmd) in extensions if ext == cached_format]
+ 
+-    base_auth = _get_auth(mctx, urls)
++    base_auth = _get_auth(mctx, source.urls)
+     tokens = []
+ 
+-    for (url_idx, url) in enumerate(urls):
++    for (url_idx, url) in enumerate(source.urls):
+         for (ext, cmd) in extensions:
+             # Each (url, ext) gets a unique output directory to prevent
+             # concurrent downloads from clobbering each other's files.
+@@ -69,9 +69,8 @@ def _start_downloads(mctx, urls, dist, comp, arch, integrity, source_id, cached_
+             # .xz/.gz/.bz2 would both write to the same final path.
+             ext_name = ext.lstrip(".") if ext else "raw"
+             output = "{}/{}/{}/{}/Packages{}".format(source_id, target_triple, url_idx, ext_name, ext)
+-            path = "{}/binary-{}/Packages{}".format(comp, arch, ext)
+-            dist_url = "{}/dists/{}/{}".format(url, dist, path)
+-
++            path = "{}/binary-{}/Packages{}".format(source.component, source.architecture, ext)
++            dist_url = "{}/dists/{}/{}".format(url, source.distribution, path)
+             auth = {}
+             if url in base_auth:
+                 auth = {dist_url: base_auth[url]}
+@@ -81,9 +80,9 @@ def _start_downloads(mctx, urls, dist, comp, arch, integrity, source_id, cached_
+                 if path not in hashes:
+                     fail("Missing SHA256 checksum in Release file for '{}' (suite '{}', component '{}', arch '{}')".format(
+                         path,
+-                        dist,
+-                        comp,
+-                        arch,
++                        source.distribution,
++                        source.component,
++                        source.architecture,
+                     ))
+                 sha256 = hashes[path]
+ 
+@@ -142,77 +141,59 @@ def _fetch_and_parse_sources(mctx, repo, glock, snapshot_indices, formats):
+     so the caller can prune stale facts left behind by previous URLs.
+     """
+     pending = []
+-    seen = {}
+     used_keys = {}
+     verified_releases = {}
+ 
+-    def get_release_hashes(dist, urls, gpg_keys):
+-        cache_key = (dist, tuple(urls), tuple([str(k) for k in gpg_keys]))
++    def get_release_hashes(source):
++        cache_key = (source, tuple([str(k) for k in source.gpg_keys]))
+         if cache_key in verified_releases:
+             return verified_releases[cache_key]
+-        release_content = pgp.download_and_verify_release(mctx, urls, dist, gpg_keys)
++        release_content = pgp.download_and_verify_release(mctx, source)
+         hashes = util.parse_release_file(release_content)
+         verified_releases[cache_key] = hashes
+         return hashes
+ 
+-    for source_key, source in repo.sources().items():
+-        (urls, dist, component, architecture, gpg_keys) = source
+-
+-        # Deduplicate: multiple dict entries can map to the same logical source
+-        # (one entry per URL in the urls list). Only process each unique
+-        # (URLs, dist, component, architecture) combination once.
+-        dedup_key = util.index_fact_key(dist, component, architecture, "Packages", urls)
+-        if dedup_key in seen:
+-            continue
+-        seen[dedup_key] = True
+-
+-        # We assume that `url` does not contain a trailing forward slash when passing to
+-        # functions below. If one is present, remove it. Some HTTP servers do not handle
+-        # redirects properly when a path contains "//"
+-        urls = [url.rstrip("/") for url in urls]
++    for (source_id, source) in enumerate(repo.sources()):
+ 
+-        pkg_fact_key = util.index_fact_key(dist, component, architecture, "Packages", urls)
++        pkg_fact_key = util.index_fact_key(source, "Packages")
+         used_keys[pkg_fact_key] = True
+-        if urls and all([util.is_snapshot_uri(url) for url in urls]):
++        if source.urls and all([util.is_snapshot_uri(url) for url in source.urls]):
+             snapshot_indices[pkg_fact_key] = True
+ 
+         # Check cached format info to avoid 404 warnings on subsequent runs
+         cached_pkg_format = formats.get(pkg_fact_key)
+ 
+         hashes = None
+-        if gpg_keys:
+-            hashes = get_release_hashes(dist, urls, gpg_keys)
++        if source.gpg_keys:
++            hashes = get_release_hashes(source)
+ 
+         # Pass 1: Initiate all downloads with block=False
+         # For snapshot suites, integrity hashes from facts enable instant cache hits.
+         # Cached formats narrow downloads to only the known-good extension.
+-        mctx.report_progress("starting downloads: {}/{} for {}".format(dist, component, architecture))
++        mctx.report_progress("starting downloads: {}/{} for {}".format(source.distribution, source.component, source.architecture))
+         pkg_tokens = _start_downloads(
+             mctx,
+-            urls,
+-            dist,
+-            component,
+-            architecture,
++            source,
+             glock.facts().get(pkg_fact_key, ""),
+-            source_id = len(seen),
++            source_id = source_id,
+             cached_format = cached_pkg_format,
+             hashes = hashes,
+         )
+ 
+-        pending.append((urls, dist, component, architecture, pkg_tokens, pkg_fact_key))
++        pending.append((source, pkg_tokens, pkg_fact_key))
+ 
+     # Pass 2: Wait, decompress, parse
+-    for (urls, dist, comp, arch, pkg_tokens, pkg_fk) in pending:
++    for (source, pkg_tokens, pkg_fk) in pending:
+         if not pkg_tokens:
+             continue
+-        mctx.report_progress("resolving Package indices: {}/{} for {}".format(dist, comp, arch))
++        mctx.report_progress("resolving Package indices: {}/{} for {}".format(source.distribution, source.component, source.architecture))
+         (output, url, integrity, ext) = _resolve_downloads(mctx, pkg_tokens)
+         if pkg_fk in snapshot_indices:
+             glock.facts()[pkg_fk] = integrity
+         formats[pkg_fk] = ext
+ 
+-        mctx.report_progress("parsing Package indices: {}/{} for {}".format(dist, comp, arch))
+-        repo.parse_package_index(mctx.read(output), urls, dist)
++        mctx.report_progress("parsing Package indices: {}/{} for {}".format(source.distribution, source.component, source.architecture))
++        repo.parse_package_index(mctx.read(output), source)
+ 
+     return used_keys
+ 
+@@ -317,7 +298,12 @@ def _distroless_extension(mctx):
+                 )
+ 
+                 repo.add_source(
+-                    (uris, suite, sl.components, architectures, tuple(gpg_keys)),
++                    uris,
++                    suite,
++                    sl.components,
++                    architectures,
++                    tuple(gpg_keys),
++                    sl.flat,
+                 )
+ 
+     # Seed cached formats from facts (which extensions each remote serves)
+diff --git a/apt/private/apt_deb_repository.bzl b/apt/private/apt_deb_repository.bzl
+index 51edabe..1c8c964 100644
+--- a/apt/private/apt_deb_repository.bzl
++++ b/apt/private/apt_deb_repository.bzl
+@@ -3,7 +3,7 @@
+ load(":util.bzl", "util")
+ load(":version_constraint.bzl", "version_constraint")
+ 
+-def _parse_repository(state, contents, roots, dist):
++def _parse_repository(state, contents, source):
+     last_key = ""
+     pkg = {}
+     for group in contents.split("\n\n"):
+@@ -31,8 +31,7 @@ def _parse_repository(state, contents, roots, dist):
+         if len(pkg.keys()) != 0:
+             if "Package" not in pkg:
+                 fail("Invalid debian package index format. No 'Package' key found in entry: {}".format(pkg))
+-            pkg["Roots"] = roots
+-            pkg["Dist"] = dist
++            pkg["Source"] = source
+             _add_package(state, pkg)
+             last_key = ""
+             pkg = {}
+@@ -86,13 +85,13 @@ def _virtual_packages(state, name, arch, suites = None):
+     all_providers = util.get_dict(state.virtual_packages, [arch, name], [])
+     if not suites:
+         return all_providers
+-    return [(pkg, v) for (pkg, v) in all_providers if pkg["Dist"] in suites]
++    return [(pkg, v) for (pkg, v) in all_providers if pkg["Source"].distribution in suites]
+ 
+ def _package_versions(state, name, arch, suites = None):
+     all_packages = util.get_dict(state.packages, [arch, name], {})
+     if not suites:
+         return all_packages.keys()
+-    return [v for v, pkg in all_packages.items() if pkg["Dist"] in suites]
++    return [v for v, pkg in all_packages.items() if pkg["Source"].distribution in suites]
+ 
+ def _package(state, name, version, arch, suites = None):
+     if not version:
+@@ -100,27 +99,25 @@ def _package(state, name, version, arch, suites = None):
+     package = util.get_dict(state.packages, keys = (arch, name, version))
+     if not package:
+         return None
+-    if suites and package["Dist"] not in suites:
++    if suites and package["Source"].distribution not in suites:
+         return None
+     return package
+ 
+-def _add_source_if_not_present(state, source):
+-    (urls, dist, components, architectures, gpg_keys) = source
+-
++def _add_source_if_not_present(state, urls, dist, components, architectures, gpg_keys):
++    # We assume that `url` does not contain a trailing forward slash. If one is
++    # present, remove it. Some HTTP servers do not handle redirects properly
++    # when a path contains "//"
++    urls = [url.rstrip("/") for url in urls]
+     for arch in architectures:
+         for comp in components:
+-            keys = [
+-                "%".join((url, dist, comp, arch))
+-                for url in urls
+-            ]
+             found = False
+-            for key in keys:
+-                if key in state.sources:
++            for url in urls:
++                if (url, dist, comp, arch) in state.keys:
+                     found = True
+-                    (_, _, _, _, old_keys) = state.sources[key]
++                    old_keys = state.keys[(url, dist, comp, arch)]
+                     if sorted([str(k) for k in old_keys]) != sorted([str(k) for k in gpg_keys]):
+                         fail("Conflicting GPG configuration for source '{url}' suite '{dist}' component '{comp}' arch '{arch}': previously registered with gpg_keys = {old}; conflicting definition has gpg_keys = {new}.".format(
+-                            url = key.split("%")[0],
++                            url = url,
+                             dist = dist,
+                             comp = comp,
+                             arch = arch,
+@@ -129,20 +126,22 @@ def _add_source_if_not_present(state, source):
+                         ))
+             if found:
+                 continue
+-            for key in keys:
+-                state.sources[key] = (urls, dist, comp, arch, gpg_keys)
++            for url in urls:
++                state.keys[(url, dist, comp, arch)] = gpg_keys
++            state.sources.append(struct(urls=tuple(sorted(urls)), distribution=dist, component=comp, architecture=arch, gpg_keys=gpg_keys))
+ 
+ def _create():
+     state = struct(
+-        sources = dict(),
++        keys = dict(),
++        sources = list(),
+         packages = dict(),
+         virtual_packages = dict(),
+     )
+ 
+     return struct(
+-        add_source = lambda source: _add_source_if_not_present(state, source),
++        add_source = lambda urls, dist, components, architectures, gpg_keys, flat: _add_source_if_not_present(state, urls, dist, components, architectures, gpg_keys),
+         sources = lambda: state.sources,
+-        parse_package_index = lambda contents, roots, dist: _parse_repository(state, contents, roots, dist),
++        parse_package_index = lambda contents, source: _parse_repository(state, contents, source),
+         package_versions = lambda **kwargs: _package_versions(state, **kwargs),
+         virtual_packages = lambda **kwargs: _virtual_packages(state, **kwargs),
+         package = lambda **kwargs: _package(state, **kwargs),
+@@ -167,7 +166,17 @@ def _create_test_only():
+         package_versions = lambda **kwargs: _package_versions(state, **kwargs),
+         virtual_packages = lambda **kwargs: _virtual_packages(state, **kwargs),
+         package = lambda **kwargs: _package(state, **kwargs),
+-        parse_repository = lambda contents, dist = "test": _parse_repository(state, contents, "http://nowhere", dist),
++        parse_repository = lambda contents, dist = "test": _parse_repository(
++            state,
++            contents,
++            struct(
++               urls=("http://nowhere",),
++               distribution=dist,
++               components=["component"],
++               architectures=["amd64"],
++               gpg_keys=[],
++            ),
++        ),
+         packages = state.packages,
+         reset = reset,
+     )
+diff --git a/apt/private/lockfile.bzl b/apt/private/lockfile.bzl
+index 70519b6..5e6e4fd 100644
+--- a/apt/private/lockfile.bzl
++++ b/apt/private/lockfile.bzl
+@@ -1,5 +1,7 @@
+ "lock"
+ 
++load("@bazel_skylib//lib:paths.bzl", "paths")
++
+ def _make_package_key(suite, name, version, arch):
+     return "/%s/%s:%s=%s" % (
+         suite,
+@@ -29,19 +31,19 @@ def _short_package_key(package, arch = None):
+     to create one dependency closure per architecture.
+     """
+     return "/%s/%s:%s" % (
+-        package["Dist"],
++        package["Source"].distribution,
+         package["Package"],
+         arch or package["Architecture"],
+     )
+ 
+ def _package_key(package, arch = None):
+-    return _make_package_key(package["Dist"], package["Package"], package["Version"], arch or package["Architecture"])
++    return _make_package_key(package["Source"].distribution, package["Package"], package["Version"], arch or package["Architecture"])
+ 
+ def _add_package(lock, package, arch = None):
+     k = _package_key(package, arch)
+     if k in lock.packages:
+         # Refresh provenance from the selected index when reading an older lock.
+-        lock.packages[k]["urls"] = [root + "/" + package["Filename"] for root in package["Roots"]]
++        lock.packages[k]["urls"] = [root + "/" + paths.normalize(package["Filename"]) for root in package["Source"].urls]
+         return
+     lock.packages[k] = {
+         "name": package["Package"],
+@@ -49,8 +51,8 @@ def _add_package(lock, package, arch = None):
+         "architecture": package["Architecture"],
+         "sha256": package["SHA256"],
+         "filename": package["Filename"],
+-        "urls": [root + "/" + package["Filename"] for root in package["Roots"]],
+-        "suite": package["Dist"],
++        "urls": [url + "/" + paths.normalize(package["Filename"]) for url in package["Source"].urls],
++        "suite": package["Source"].distribution,
+         "section": package["Section"],
+         "size": int(package["Size"]),
+         "depends_on": [],
+diff --git a/apt/private/pgp.bzl b/apt/private/pgp.bzl
+index 423a0d0..9e72789 100644
+--- a/apt/private/pgp.bzl
++++ b/apt/private/pgp.bzl
+@@ -174,20 +174,20 @@ def _prepare_keyring_paths(mctx, verifier, gpg_keys):
+         paths.append(str(key_path))
+     return paths
+ 
+-def _download_and_verify_release(mctx, urls, dist, gpg_keys):
++def _download_and_verify_release(mctx, source):
+     """Downloads InRelease (or Release + Release.gpg) and verifies with gpgv/sqv."""
+     verifier = _find_pgp_verifier(mctx)
+     if not verifier:
+-        fail("GPG verification requested for dist '{}', but neither `gpgv` nor `sqv` was found on PATH. Please install a modern version of `gpgv` (GnuPG 2.x) or `sqv` (Sequoia PGP >= 1.0).".format(dist))
++        fail("GPG verification requested for dist '{}', but neither `gpgv` nor `sqv` was found on PATH. Please install a modern version of `gpgv` (GnuPG 2.x) or `sqv` (Sequoia PGP >= 1.0).".format(source.distribution))
+ 
+-    keyring_paths = _prepare_keyring_paths(mctx, verifier, gpg_keys)
++    keyring_paths = _prepare_keyring_paths(mctx, verifier, source.gpg_keys)
+     keyring_args = _build_keyring_args(keyring_paths)
+     errors = []
+ 
+-    for (url_idx, url) in enumerate(urls):
+-        in_release_url = "{}/dists/{}/InRelease".format(url, dist)
+-        in_release_path = "inrelease/{}/{}/InRelease".format(dist, url_idx)
+-        verified_path = "inrelease/{}/{}/Release.verified".format(dist, url_idx)
++    for (url_idx, url) in enumerate(source.urls):
++        in_release_url = "{}/dists/{}/InRelease".format(url, source.distribution)
++        in_release_path = "inrelease/dists/{}/{}/InRelease".format(source.distribution, url_idx)
++        verified_path = "inrelease/dists/{}/{}/Release.verified".format(source.distribution, url_idx)
+ 
+         mctx.report_progress("Downloading InRelease from {}".format(in_release_url))
+         download = mctx.download(
+@@ -205,10 +205,10 @@ def _download_and_verify_release(mctx, urls, dist, gpg_keys):
+             errors.append("Failed to download InRelease from {}".format(in_release_url))
+ 
+         # Fallback to Release + Release.gpg
+-        release_url = "{}/dists/{}/Release".format(url, dist)
+-        release_gpg_url = "{}/dists/{}/Release.gpg".format(url, dist)
+-        release_path = "inrelease/{}/{}/Release".format(dist, url_idx)
+-        release_gpg_path = "inrelease/{}/{}/Release.gpg".format(dist, url_idx)
++        release_url = "{}/dists/{}/Release".format(url, source.distribution)
++        release_gpg_url = "{}/dists/{}/Release.gpg".format(url, source.distribution)
++        release_path = "inrelease/{}/{}/Release".format(source.distribution, url_idx)
++        release_gpg_path = "inrelease/{}/{}/Release.gpg".format(source.distribution, url_idx)
+ 
+         mctx.report_progress("Downloading Release from {}".format(release_url))
+         dl_rel = mctx.download(url = release_url, output = release_path, allow_fail = True)
+@@ -227,7 +227,7 @@ def _download_and_verify_release(mctx, urls, dist, gpg_keys):
+             errors.append("Failed to download Release from {}".format(release_url))
+ 
+     fail("Failed to fetch or verify repository Release/InRelease for dist '{}':\n{}".format(
+-        dist,
++        source.distribution,
+         "\n".join(errors),
+     ))
+ 
+diff --git a/apt/private/util.bzl b/apt/private/util.bzl
+index 8248ad9..25a2c07 100644
+--- a/apt/private/util.bzl
++++ b/apt/private/util.bzl
+@@ -48,7 +48,7 @@ def _is_snapshot_uri(uri):
+             return True
+     return False
+ 
+-def _index_fact_key(dist, component, architecture, index_type, urls):
++def _index_fact_key(source, index_type):
+     """Cache key for the integrity/format facts of a single package index.
+ 
+     The key must include the snapshot urls (so that updating a source doesn't leave stale facts),
+@@ -57,9 +57,8 @@ def _index_fact_key(dist, component, architecture, index_type, urls):
+     The suite (`dist`) stays first so callers relying on `key.split("/")[0]` still recover the suite.
+     URLs are deduplicated and sorted so that mirror order / `mirror+` duplicates don't spuriously invalidate the cache.
+     """
+-    sorted_deduplicated_urls = sorted({url: None for url in urls}.keys())
+-    url_token = "|".join(sorted_deduplicated_urls)
+-    return "{}/{}/{}/{}/{}".format(dist, component, architecture, index_type, url_token)
++    url_token = "|".join(source.urls)
++    return "{}/{}/{}/{}/{}".format(source.distribution, source.component, source.architecture, index_type, url_token)
+ 
+ def _prune_uncacheable_facts(indices, formats, used_keys, snapshot_indices):
+     """Keep only the facts that can be cached.
+-- 
+2.47.3
+
