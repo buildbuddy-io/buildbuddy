@@ -11,6 +11,7 @@ go_library(
         "//server/util/basicauth",
         "//server/util/flag",
         "//server/util/flagz",
+        "//server/util/flightrecorder",
         "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/status",

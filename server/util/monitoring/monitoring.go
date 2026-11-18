@@ -1,6 +1,7 @@
 package monitoring
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/basicauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flightrecorder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -81,6 +83,20 @@ func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
 	handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 	handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
+
+	// Execution-trace flight recorder: keeps the last few seconds of trace in
+	// memory and dumps them when a long stop-the-world pause is recorded.
+	if flightrecorder.Enabled() {
+		stop, err := flightrecorder.Start()
+		if err != nil {
+			log.Warningf("Could not start flight recorder: %s", err)
+		}
+		env.GetHealthChecker().RegisterShutdownFunction(func(_ context.Context) error {
+			stop()
+			return nil
+		})
+		handle("/debug/flightrecorder", flightrecorder.Handler())
+	}
 
 	if *enableRpcz {
 		grpc.EnableTracing = true
