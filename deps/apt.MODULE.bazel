@@ -117,8 +117,11 @@ apt.install(
     packages = [
         # executor packages
         "tini",
+        "coreutils",
+        "grep",
         "tar",
         "dash",
+        "util-linux",
         "e2fsprogs",
         "fuse3",
         "iproute2",

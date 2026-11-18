@@ -439,8 +439,11 @@ container_image(
         tars = [
             # debian packages
             "@debian13//tini/%s" % arch,
+            "@debian13//coreutils/%s" % arch,
+            "@debian13//grep/%s" % arch,
             "@debian13//tar/%s" % arch,
             "@debian13//dash/%s" % arch,
+            "@debian13//util-linux/%s" % arch,
             "@debian13//e2fsprogs/%s" % arch,
             "@debian13//fuse3/%s" % arch,
             "@debian13//iproute2/%s" % arch,
@@ -717,8 +720,10 @@ image_manifest(
             ":apt_image_layer_%s" % arch,
             ":alternatives_symlink_layer",
             ":docker_credential_gcr_image_layer_%s" % arch,
-            ":containerd_patch_image_layer_%s" % arch,
-            ":runc_patch_image_layer_%s" % arch,
+            # Updating these layers does not currently afford us any vulnerability
+            # fixes; leave them out for now.
+            # ":containerd_patch_image_layer_%s" % arch,
+            # ":runc_patch_image_layer_%s" % arch,
             ":executor_tools_image_layer_%s" % arch,
             ":podman_static_image_layer",
             ":runfiles_image_layer",
