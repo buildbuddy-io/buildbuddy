@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -10,13 +10,16 @@ go_library(
         "//proto:telemetry_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/rpc/interceptors",
         "//server/tables",
         "//server/util/grpc_server",
         "//server/util/log",
+        "//server/util/status",
         "@io_gorm_gorm//clause",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
     ],
 )
+

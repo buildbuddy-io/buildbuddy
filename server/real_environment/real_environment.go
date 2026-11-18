@@ -20,6 +20,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 type executionClientConfig struct {
@@ -149,6 +150,7 @@ type RealEnv struct {
 	ociFetcherServer                     ofpb.OCIFetcherServer
 	hitTrackerFactory                    interfaces.HitTrackerFactory
 	hitTrackerServiceServer              hitpb.HitTrackerServiceServer
+	telemetryServer                      telpb.TelemetryServer
 	experimentFlagProvider               interfaces.ExperimentFlagProvider
 }
 
@@ -922,6 +924,13 @@ func (r *RealEnv) GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer {
 }
 func (r *RealEnv) SetHitTrackerServiceServer(hitTrackerServiceServer hitpb.HitTrackerServiceServer) {
 	r.hitTrackerServiceServer = hitTrackerServiceServer
+}
+
+func (r *RealEnv) GetTelemetryServer() telpb.TelemetryServer {
+	return r.telemetryServer
+}
+func (r *RealEnv) SetTelemetryServer(telemetryServer telpb.TelemetryServer) {
+	r.telemetryServer = telemetryServer
 }
 
 func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider {
