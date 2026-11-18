@@ -44,6 +44,13 @@ const (
 	allowEnvPrefix            = "ALLOW_ENV="
 	allowEnvListSeparator     = ","
 	explicitCommandLineName   = "EXPLICIT_COMMAND_LINE"
+
+	urlScheme        = `[a-z][a-z0-9+.-]*://`
+	urlHost          = `[^"\s<>{}|\\^[\]]+`
+	looseUsername    = `[^:@\r\n]+`
+	loosePassword    = `[^@\r\n]*`
+	progressUsername = `[^:/@\s]+`
+	progressPassword = `[^/@\s]*`
 )
 
 var (
@@ -55,8 +62,8 @@ var (
 	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
 	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
-	urlSecretRegex         = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@\r\n]+:)[^@\r\n]*(@[^"\s<>{}|\\^[\]]+)`)
-	progressURLSecretRegex = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:/@\s]+:)[^/@\s]*(@[^"\s<>{}|\\^[\]]+)`)
+	urlSecretRegex         = regexp.MustCompile(`(?i)(` + urlScheme + looseUsername + `:)` + loosePassword + `(@` + urlHost + `)`)
+	progressURLSecretRegex = regexp.MustCompile(`(?i)(` + urlScheme + progressUsername + `:)` + progressPassword + `(@` + urlHost + `)`)
 	residualSecretRegex    = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
