@@ -261,6 +261,7 @@ proto_library(
         "reference.proto",
     ],
     deps = [
+        ":resource_proto",
         ":storage_proto",
     ],
 )
@@ -1800,6 +1801,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/reference",
     proto = ":reference_proto",
     deps = [
+        ":resource_go_proto",
         ":storage_go_proto",
     ],
 )
