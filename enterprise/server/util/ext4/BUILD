@@ -16,6 +16,7 @@ go_library(
             "//server/util/tracing",
             "@com_github_prometheus_client_golang//prometheus",
             "@io_opentelemetry_go_otel//attribute",
+            "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
     }),
@@ -28,6 +29,8 @@ go_test(
         # Reproducible images need e2fsprogs 1.47.2 or later, which Ubuntu
         # 26.04 ships.
         "test.container-image": "docker://mirror.gcr.io/library/ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78",
+        # OCI seccomp blocks the user namespace needed for mounts.
+        "test.workload-isolation-type": "firecracker",
     },
     target_compatible_with = ["@platforms//os:linux"],
     deps = select({
@@ -37,6 +40,7 @@ go_test(
             "//server/remote_cache/digest",
             "//server/testutil/testdigest",
             "//server/testutil/testfs",
+            "//server/testutil/testmount",
             "//server/util/disk",
             "//server/util/testing/flags",
             "@com_github_stretchr_testify//require",
