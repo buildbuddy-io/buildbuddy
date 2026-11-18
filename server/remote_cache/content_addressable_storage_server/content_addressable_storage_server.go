@@ -942,7 +942,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 
 	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) (*fetchResult, error)
 	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) (*fetchResult, error) {
-		if len(dirWithDigest.Directory.Directories) == 0 {
+		if len(dirWithDigest.GetDirectory().GetDirectories()) == 0 {
 			return &fetchResult{
 				mainDirectories: []*capb.DirectoryWithDigest{dirWithDigest},
 			}, nil
@@ -979,7 +979,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		leaves := children[:0]
 		eg, egCtx := errgroup.WithContext(ctx)
 		for _, childDirWithDigest := range children {
-			if len(childDirWithDigest.Directory.Directories) == 0 {
+			if len(childDirWithDigest.GetDirectory().GetDirectories()) == 0 {
 				leaves = append(leaves, childDirWithDigest)
 				continue
 			}
