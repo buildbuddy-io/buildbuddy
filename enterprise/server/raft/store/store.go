@@ -454,14 +454,14 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	// StartOnDiskReplica can be blocked when the the buffered leaderChangeListener channel is full.
 	s.leaseKeeper.Start()
 
-	s.updateTagsWorker.Start()
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	s.egCancel = cancelFunc
 
 	eg, gctx := errgroup.WithContext(ctx)
 	s.eg = eg
 	s.egCtx = gctx
+	// The worker uses egCtx, so start it after that is set.
+	s.updateTagsWorker.Start()
 	eg.Go(func() error {
 		s.queryForMetarange(gctx)
 		return nil
@@ -2770,9 +2770,8 @@ type updateTagsWorker struct {
 	lastExecutedAt time.Time
 	tasks          chan *updateTagsTask
 
-	ctx        context.Context
-	cancelFunc context.CancelFunc
-	eg         errgroup.Group
+	quitChan chan struct{}
+	eg       errgroup.Group
 
 	store *Store
 }
@@ -2793,7 +2792,7 @@ func (w *updateTagsWorker) Enqueue() {
 }
 
 func (w *updateTagsWorker) Start() {
-	w.ctx, w.cancelFunc = context.WithCancel(context.Background())
+	w.quitChan = make(chan struct{})
 	w.eg.Go(func() error {
 		w.processUpdateTags()
 		return nil
@@ -2805,7 +2804,7 @@ func (w *updateTagsWorker) processUpdateTags() error {
 	eg.Go(func() error {
 		for {
 			select {
-			case <-w.ctx.Done():
+			case <-w.quitChan:
 				return nil
 			case task := <-w.tasks:
 				w.handleTask(task)
@@ -2822,7 +2821,7 @@ func (w *updateTagsWorker) processUpdateTags() error {
 }
 
 func (w *updateTagsWorker) Stop() {
-	w.cancelFunc()
+	close(w.quitChan)
 
 	w.store.log.Info("updateTagsWorker shutdown started")
 	now := time.Now()
@@ -2857,7 +2856,7 @@ func (w *updateTagsWorker) updateTags() error {
 
 	storeTags[constants.GRPCAddressTag] = w.store.grpcAddr
 
-	su := w.store.usage(w.ctx)
+	su := w.store.usage(w.store.egCtx)
 	buf, err := proto.Marshal(su)
 	if err != nil {
 		return err
