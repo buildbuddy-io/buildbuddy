@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -48,6 +49,14 @@ const (
 	// The total number of submitted executions (canonical, hedged, and merged)
 	// for this action.
 	actionCountKey = "action-count"
+	// The execution priority of the canonical execution. Once the execution
+	// is claimed, this is set to claimedPriority so that all subsequent
+	// executions merge into it. This is used to prevent merging high priority
+	// executions against queued, lower priority executions.
+	priorityKey = "priority"
+
+	// Highest possible execution priority (lower values are higher priority).
+	claimedPriority = math.MinInt32
 
 	// The redis keys storing action merging data are versioned to support
 	// making backwards-incompatible changes to the storage representation.
@@ -126,7 +135,7 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 	}
 
 	pipe := rdb.TxPipeline()
-	pipe.HSet(ctx, forwardKey, executionIDKey, executionID)
+	pipe.HSet(ctx, forwardKey, executionIDKey, executionID, priorityKey, strconv.FormatInt(claimedPriority, 10))
 	pipe.Expire(ctx, forwardKey, ttl)
 	pipe.Set(ctx, reverseKey, forwardKey, ttl)
 	_, err = pipe.Exec(ctx)
@@ -257,7 +266,7 @@ const (
 // merging data to exist in Redis pointing to a dead execution. For this reason,
 // the TTLs are set somewhat conservatively so this problem self-heals
 // reasonably quickly.
-func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.CASResourceName, doNotCache bool) (string, DispatchAction) {
+func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.CASResourceName, doNotCache bool, priority int32) (string, DispatchAction) {
 	newExecutionID := adResource.NewUploadString()
 	if !*enableActionMerging || doNotCache {
 		return newExecutionID, New
@@ -286,6 +295,7 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 		nowString := strconv.FormatInt(time.Now().UnixMicro(), 36)
 		pipe := tx.TxPipeline()
 		pipe.HSetNX(ctx, forwardKey, executionIDKey, newExecutionID)
+		pipe.HSetNX(ctx, forwardKey, priorityKey, strconv.FormatInt(int64(priority), 10))
 		pipe.HSetNX(ctx, forwardKey, firstExecutionSubmitTimeKey, nowString)
 		pipe.HSet(ctx, forwardKey, lastExecutionSubmitTimeKey, nowString)
 		pipe.HIncrBy(ctx, forwardKey, hedgedExecutionCountKey, 0)
@@ -325,6 +335,14 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 	hash, err := rdb.HGetAll(ctx, forwardKey).Result()
 	if err != nil {
 		log.CtxDebugf(ctx, "Error reading action-merging state from Redis: %s", err)
+		return newExecutionID, New
+	}
+
+	// Run a standalone execution rather than merging into a queued execution
+	// with a lower priority. Don't record any action-merging state for it, so
+	// that the queued execution's merge state is left untouched.
+	if shouldSupersede(hash, priority) {
+		log.CtxInfof(ctx, "Not merging into queued execution %q with lower priority %s (requested priority %d)", executionID, hash[priorityKey], priority)
 		return newExecutionID, New
 	}
 
@@ -369,6 +387,22 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 	} else {
 		return executionID, Merge
 	}
+}
+
+// Returns true if a new execution with the given priority should run on its
+// own, rather than being merged into the existing execution described by the
+// provided action-merging hash. This is the case when the existing execution is
+// queued and has a lower priority than the new one, since merging would
+// effectively deprioritize the request in this case.
+func shouldSupersede(canonical map[string]string, priority int32) bool {
+	if canonical[executionIDKey] == "" {
+		return false
+	}
+	canonicalPriority, err := strconv.ParseInt(canonical[priorityKey], 10, 32)
+	if err != nil {
+		return false
+	}
+	return int32(canonicalPriority) > priority
 }
 
 // Returns true if a hedged execution should be run given the provided

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -17,5 +17,21 @@ go_library(
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//prometheus",
+    ],
+)
+
+go_test(
+    name = "action_merger_test",
+    srcs = ["action_merger_test.go"],
+    deps = [
+        ":action_merger",
+        "//enterprise/server/testutil/testredis",
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/nullauth",
+        "//server/remote_cache/digest",
+        "//server/util/prefix",
+        "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_stretchr_testify//require",
     ],
 )
