@@ -100,6 +100,8 @@ var (
 	maxRunnerCPU         = expflag.Float64("remote_execution.runner.max_cpu", 0, "Maximum CPU that can be requested by a runner, in vCPUs. Must be non-negative. Zero disables the limit.")
 	maxRunnerMemoryBytes = expflag.Int64("remote_execution.runner.max_memory_bytes", 0, "Maximum memory that can be requested by a runner, in bytes. Must be non-negative. Zero disables the limit.")
 
+	enableWorkflowsQuota = expflag.Bool("remote_execution.enable_workflows_quota", false, "If true, enforce workflow quotas (such as snapshot saves) even if quota management is globally disabled.")
+
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
 
@@ -392,6 +394,44 @@ func trimStatus(statusMessage string) string {
 		return statusMessage[:252] + "..."
 	}
 	return statusMessage
+}
+
+func (s *ExecutionServer) applySnapshotSaveQuota(ctx context.Context, cmd *repb.Command, overrides *repb.Platform) {
+	qm := s.env.GetQuotaManager()
+	if qm == nil {
+		return
+	}
+	force := platform.IsCIRunnerCommand(cmd) && enableWorkflowsQuota.Get(ctx)
+	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes), 0, force); err != nil {
+		platform.SetValue(overrides, platform.SkipLocalSnapshotSavePropertyName, "true")
+	}
+	if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes), 0, force); err != nil {
+		platform.SetValue(overrides, platform.SkipRemoteSnapshotSavePropertyName, "true")
+	}
+}
+
+func (s *ExecutionServer) recordSnapshotSaveQuota(ctx context.Context, cmd *repb.Command, fcStats *espb.FirecrackerPostExecStats) {
+	qm := s.env.GetQuotaManager()
+	if qm == nil || fcStats.GetSnapshotSavedBytes() <= 0 {
+		return
+	}
+	force := platform.IsCIRunnerCommand(cmd) && enableWorkflowsQuota.Get(ctx)
+	bytesWritten := fcStats.GetSnapshotSavedBytes()
+	var namespaces []string
+	if fcStats.GetSnapshotSavedLocally() {
+		namespaces = append(namespaces, quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes))
+	}
+	if fcStats.GetSnapshotSavedRemotely() {
+		namespaces = append(namespaces, quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes))
+	}
+	for _, ns := range namespaces {
+		withinQuota, err := qm.RecordUsage(ctx, ns, bytesWritten, force)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to record snapshot usage for %q: %s", ns, err)
+		} else if !withinQuota {
+			log.CtxInfof(ctx, "Snapshot save quota %q exhausted", ns)
+		}
+	}
 }
 
 // updateExecutionPostCompletion adds a StoredExecution to the collector with
@@ -793,9 +833,9 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 }
 
 // validateRunnerSize checks runner requests before scheduler sizing clamps them.
-func validateRunnerSize(ctx context.Context, size *scpb.TaskSize) error {
-	cpuLimit := maxRunnerCPU.Get(ctx)
-	memoryLimit := maxRunnerMemoryBytes.Get(ctx)
+func validateRunnerSize(ctx context.Context, size *scpb.TaskSize, experimentOpts ...any) error {
+	cpuLimit := maxRunnerCPU.Get(ctx, experimentOpts...)
+	memoryLimit := maxRunnerMemoryBytes.Get(ctx, experimentOpts...)
 	if cpuLimit < 0 {
 		return status.InternalError("remote_execution.runner.max_cpu must be non-negative")
 	}
@@ -887,6 +927,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	executionTask.PlatformOverrides = &repb.Platform{
 		Properties: platform.RemoteHeaderOverrides(ctx),
 	}
+	s.applySnapshotSaveQuota(ctx, command, executionTask.PlatformOverrides)
 
 	taskGroupID := interfaces.AuthAnonymousUser
 	if user, err := s.authenticator.AuthenticatedUser(ctx); err == nil {
@@ -921,6 +962,13 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	var workflowExperimentOpts []any
+	if rmd.GetActionMnemonic() == "BuildBuddyWorkflowRun" {
+		if actionName, ok := rexec.LookupEnv(command.GetEnvironmentVariables(), ci_runner_env.BuildBuddyActionNameEnvVarName); ok && actionName != "" {
+			workflowExperimentOpts = append(workflowExperimentOpts, experiments.WithContext("workflow_action_name", actionName))
+		}
+	}
+
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const taskSizeOverridesExperiment = "remote_execution.task_size_overrides"
 		requestedSize := tasksize.Requested(executionTask)
@@ -938,11 +986,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 			experiments.WithContext("effective_requested_cpu", tasksize.CpuComputeUnits(requestedSize.GetEstimatedMilliCpu())),
 			experiments.WithContext("effective_requested_ram_gib", float64(requestedSize.GetEstimatedMemoryBytes())/tasksize.GiB),
 		}
-		if rmd.GetActionMnemonic() == "BuildBuddyWorkflowRun" {
-			if actionName, ok := rexec.LookupEnv(command.GetEnvironmentVariables(), ci_runner_env.BuildBuddyActionNameEnvVarName); ok && actionName != "" {
-				experimentOpts = append(experimentOpts, experiments.WithContext("workflow_action_name", actionName))
-			}
-		}
+		experimentOpts = append(experimentOpts, workflowExperimentOpts...)
 		expOverrides, details := fp.ObjectDetails(ctx, taskSizeOverridesExperiment, nil, experimentOpts...)
 		for propertyName, propertyValueAny := range expOverrides {
 			if propertyValue, ok := propertyValueAny.(string); ok {
@@ -1033,7 +1077,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if !pool.IsSelfHosted {
-		if err := validateRunnerSize(ctx, requestedTaskSize); err != nil {
+		if err := validateRunnerSize(ctx, requestedTaskSize, workflowExperimentOpts...); err != nil {
 			return nil, err
 		}
 	}
@@ -1231,11 +1275,12 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	if op == action_merger.New {
 		log.CtxDebugf(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 
-		// Check CPU time quota before dispatching execution.
-		// Use a 1ns check to verify quota is available before starting.
+		// Check CPU time quota before dispatching execution. Usage isn't known
+		// until the execution completes, so do a read-only check here and
+		// record the actual usage afterwards.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, 1); err != nil {
+			if err := qm.Allow(ctx, namespace, 0, false /* force */); err != nil {
 				return err
 			}
 		}
@@ -1539,6 +1584,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	}
 	lastOp := &longrunningpb.Operation{}
 	taskID := ""
+	var cmd *repb.Command
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
 	mu := sync.Mutex{}
@@ -1605,6 +1651,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		}
 	}
 
+	authorized := false
+	authorizedName := ""
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1617,6 +1665,15 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			log.CtxErrorf(ctx, "PublishOperation: recv err: %s", err)
 			return err
 		}
+		if !authorized {
+			if err := s.env.GetSchedulerService().AuthorizeTaskWrites(ctx, op.GetName()); err != nil {
+				return err
+			}
+			authorized = true
+			authorizedName = op.GetName()
+		} else if op.GetName() != authorizedName {
+			return status.InvalidArgumentErrorf("operation name changed from %q to %q", authorizedName, op.GetName())
+		}
 
 		response := operation.ExtractExecuteResponse(op)
 		currentStage := operation.ExtractStage(op)
@@ -1626,6 +1683,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse PostCompletionStats: %s", err)
 			} else if ok {
+				s.recordSnapshotSaveQuota(ctx, cmd, stats.GetFirecrackerPostExecStats())
 				if flushExecutionsOnEOF {
 					if err := s.updateExecutionPostCompletion(ctx, taskID, stats); err != nil {
 						log.CtxErrorf(ctx, "PublishOperation: error updating PostCompletionStats: %s", err)
@@ -1679,7 +1737,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
 		var action *repb.Action
-		var cmd *repb.Command
 		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
 			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
@@ -1888,8 +1945,11 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
-				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos, false /* force */)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to record CPU time quota usage: %s", err)
+			} else if !withinQuota {
+				log.CtxInfof(ctx, "CPU time quota exhausted after execution")
 			}
 		}
 	}
@@ -1963,8 +2023,11 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
-				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos, false /* force */)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to record CPU time quota usage: %s", err)
+			} else if !withinQuota {
+				log.CtxInfof(ctx, "CPU time quota exhausted after execution")
 			}
 		}
 	}

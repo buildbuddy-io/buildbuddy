@@ -95,6 +95,10 @@ type Iterator interface {
 	// caller should not modify the contents of the returned slice, and its
 	// contents may change on the next call to Next.
 	Value() []byte
+
+	// Error returns any accumulated error. Check it after a scan: an error
+	// ends iteration the same way exhaustion does.
+	Error() error
 }
 
 type Reader interface {
@@ -237,6 +241,10 @@ func (i *instrumentedIter) SeekLT(key []byte) bool {
 	t := i.db.iterSeekLTMetrics.Track()
 	defer t.Done()
 	return i.iter.SeekLT(key)
+}
+
+func (i *instrumentedIter) Error() error {
+	return i.iter.Error()
 }
 
 func (i *instrumentedIter) Key() []byte {
@@ -493,7 +501,7 @@ type leaser struct {
 // to prevent leaks. The DB cannot be closed until all handles are returned.
 //
 // Once the DB leaser has been closed with Close(), no new handles can be
-// acquired, instead an error is returned.
+// acquired, instead an Unavailable error is returned.
 func NewDBLeaser(db IPebbleDB) Leaser {
 	return &leaser{db: db}
 }
@@ -515,7 +523,9 @@ func (l *leaser) DB() (IPebbleDB, error) {
 	l.closedMu.RLock()
 	defer l.closedMu.RUnlock()
 	if l.closed {
-		return nil, status.FailedPreconditionError("db is closed")
+		// The DB is closed during shutdown. Return Unavailable so that
+		// clients retry, likely against another server.
+		return nil, status.UnavailableError("db is closed")
 	}
 
 	handle := &refCountedDB{
@@ -531,7 +541,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 		}
 		handle.finalizerSet = true
 		runtime.SetFinalizer(handle, func(h *refCountedDB) {
-			if !h.refCounter.closed {
+			if !h.refCounter.closed.Load() {
 				alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
 			}
 		})
@@ -541,20 +551,20 @@ func (l *leaser) DB() (IPebbleDB, error) {
 
 type refCounter struct {
 	wg     *sync.WaitGroup
-	closed bool
+	closed atomic.Bool
 }
 
 func newRefCounter(wg *sync.WaitGroup) *refCounter {
 	wg.Add(1)
 	return &refCounter{
-		wg:     wg,
-		closed: false,
+		wg: wg,
 	}
 }
 
 func (r *refCounter) Close() error {
-	if !r.closed {
-		r.closed = true
+	// CompareAndSwap ensures only one of several concurrent Close calls
+	// decrements the WaitGroup.
+	if r.closed.CompareAndSwap(false, true) {
 		r.wg.Add(-1)
 	}
 	return nil
@@ -748,6 +758,10 @@ func (mc *MetricsCollector) UpdateMetrics(m *Metrics, om Metrics, cacheName stri
 		metrics.PebbleCachePebbleLevelTablesIngestedCount.With(lbls).Add(float64(l.TablesIngested - ol.TablesIngested))
 		metrics.PebbleCachePebbleLevelTablesMovedCount.With(lbls).Add(float64(l.TablesMoved - ol.TablesMoved))
 	}
+
+	// WAL metrics.
+	metrics.PebbleCachePebbleWALBytesWritten.With(nameLabel).Add(float64(m.WAL.BytesWritten - om.WAL.BytesWritten))
+	metrics.PebbleCachePebbleWALBytesIn.With(nameLabel).Add(float64(m.WAL.BytesIn - om.WAL.BytesIn))
 
 	// Block cache metrics.
 	metrics.PebbleCachePebbleBlockCacheSizeBytes.With(nameLabel).Set(float64(m.BlockCache.Size))

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -18,7 +19,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 // The environment struct allows for easily injecting many of buildbuddy's core
@@ -147,6 +148,7 @@ type Env interface {
 	GetCPULeaser() interfaces.CPULeaser
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
 	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
+	GetTelemetryServer() telpb.TelemetryServer
 	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
 	GetOCIFetcherClient() ofpb.OCIFetcherClient
 }

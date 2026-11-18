@@ -52,6 +52,9 @@ bb run //enterprise/vmsupport/kernel:guest_kernel_x86_64_v6_18_upload --config=r
 # aarch64 v5.10
 # --config=target-linux-x86-exec-multiarch enables the BB arm64 platform in the build graph
 bb run //enterprise/vmsupport/kernel:guest_kernel_aarch64_v5_10_upload --config=remote --config=target-linux-x86-exec-multiarch
+
+# aarch64 v6.18
+bb run //enterprise/vmsupport/kernel:guest_kernel_aarch64_v6_18_upload --config=remote --config=target-linux-x86-exec-multiarch
 ```
 
 ## Using the guest kernel

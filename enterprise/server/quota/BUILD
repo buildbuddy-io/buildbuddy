@@ -34,6 +34,7 @@ go_test(
         "//server/environment",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//openfeature/memprovider",

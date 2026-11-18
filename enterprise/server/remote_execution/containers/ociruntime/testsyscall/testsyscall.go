@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 
@@ -25,5 +26,6 @@ func main() {
 	default:
 		panic("unknown syscall")
 	}
+	fmt.Printf("errno=%d\n", errno)
 	os.Exit(int(errno))
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"slices"
 	"sort"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -25,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
@@ -35,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -123,6 +127,13 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 		env.SetClock(opts.options.Clock)
 	}
 
+	testUsers := make(map[string]interfaces.UserInfo, 0)
+	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
+	testUsers["user2"] = &testauth.TestUser{UserID: "user2", GroupID: "group2", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
+
+	ta := testauth.NewTestAuthenticator(t, testUsers)
+	env.SetAuthenticator(ta)
+
 	flags.Set(t, "remote_execution.default_pool_name", "defaultPoolName")
 	flags.Set(t, "remote_execution.shared_executor_pool_group_id", "sharedGroupID")
 
@@ -144,6 +155,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	env.SetSchedulerService(s)
 
 	scpb.RegisterSchedulerServer(server, env.GetSchedulerService())
+	repb.RegisterExecutionServer(server, env.GetRemoteExecutionService())
 	go runFunc()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -153,13 +165,8 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	t.Cleanup(func() { clientConn.Close() })
 	sc := scpb.NewSchedulerClient(clientConn)
 	env.SetSchedulerClient(sc)
+	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 
-	testUsers := make(map[string]interfaces.UserInfo, 0)
-	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
-	testUsers["user2"] = &testauth.TestUser{UserID: "user2", GroupID: "group2", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
-
-	ta := testauth.NewTestAuthenticator(t, testUsers)
-	env.SetAuthenticator(ta)
 	s.enableUserOwnedExecutors = opts.userOwnedEnabled
 
 	if user != "" {
@@ -2051,6 +2058,77 @@ func TestEnqueueTaskReservation_RequiresAppClientIdentity(t *testing.T) {
 	require.True(t, status.IsUnavailableError(err))
 }
 
+func TestCancelTaskReservation_RequiresAppClientIdentity(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityApp)
+	scheduler := env.GetSchedulerService().(*SchedulerServer)
+
+	request := func() *scpb.CancelTaskReservationRequest {
+		return &scpb.CancelTaskReservationRequest{TaskId: "task-id", ExecutorId: "executor-id"}
+	}
+	contextWithIdentity := func(client string) context.Context {
+		identityService := env.GetClientIdentityService()
+		header, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+			Origin: interfaces.ClientIdentityInternalOrigin,
+			Client: client,
+		}, time.Minute)
+		require.NoError(t, err)
+		incomingCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+		validatedCtx, err := identityService.ValidateIncomingIdentity(incomingCtx)
+		require.NoError(t, err)
+		return validatedCtx
+	}
+
+	_, err := scheduler.CancelTaskReservation(ctx, request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	_, err = scheduler.CancelTaskReservation(contextWithIdentity(interfaces.ClientIdentityExecutor), request())
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// The executor isn't connected to this app, which is not an error.
+	_, err = scheduler.CancelTaskReservation(contextWithIdentity(interfaces.ClientIdentityApp), request())
+	require.NoError(t, err)
+}
+
+func TestCancelOnRemoteExecutor_PeerReturnsUnimplemented(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	scheduler := env.GetSchedulerService().(*SchedulerServer)
+
+	// A peer app that predates CancelTaskReservation answers it with
+	// Unimplemented, as apps on older versions do during a rollout.
+	calls := make(chan string, 1)
+	peer := grpc.NewServer(grpc.UnknownServiceHandler(func(srv any, stream grpc.ServerStream) error {
+		method, _ := grpc.MethodFromServerStream(stream)
+		calls <- method
+		return status.UnimplementedErrorf("unknown method %s", method)
+	}))
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	go peer.Serve(lis)
+	t.Cleanup(peer.Stop)
+
+	node := &executionNode{
+		ExecutionNode:     &scpb.ExecutionNode{ExecutorId: "executor-id"},
+		schedulerHostPort: lis.Addr().String(),
+	}
+	// Best effort: the error is logged and dropped.
+	scheduler.cancelOnRemoteExecutor(ctx, node, "task-id")
+
+	// The scheduler caches the peer connection and never closes it; close it
+	// so the test doesn't leak its goroutines.
+	conn, err := scheduler.schedulerClientCache.conns.Get(node.schedulerHostPort)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	// The peer handled the call before the client got its response.
+	select {
+	case method := <-calls:
+		require.Equal(t, "/scheduler.Scheduler/CancelTaskReservation", method)
+	default:
+		require.FailNow(t, "CancelTaskReservation did not reach the peer")
+	}
+}
+
 func TestEnqueueTaskReservation_Exists(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
@@ -2072,6 +2150,104 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 
 	require.Nil(t, err)
 	require.False(t, resp.GetExists())
+}
+
+func TestAuthorizeTaskWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		taskGroupID string
+		caller      string
+		unknownTask bool
+		wantErr     func(error) bool
+	}{
+		{name: "same group", taskGroupID: "group1", caller: "user1"},
+		{name: "other group", taskGroupID: "group1", caller: "user2", wantErr: status.IsPermissionDeniedError},
+		{name: "unauthenticated", taskGroupID: "group1", wantErr: status.IsPermissionDeniedError},
+		{name: "anonymous task", caller: "user2"},
+		{name: "unknown task", caller: "user1", unknownTask: true, wantErr: status.IsNotFoundError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.Register()
+
+			req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+			req.GetMetadata().TaskGroupId = tc.taskGroupID
+			_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+			require.NoError(t, err)
+
+			callerCtx := context.Background()
+			if tc.caller != "" {
+				callerCtx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(callerCtx, tc.caller)
+				require.NoError(t, err)
+			}
+			taskID := req.GetTaskId()
+			if tc.unknownTask {
+				taskID = "unknown-task"
+			}
+			err = env.GetSchedulerService().AuthorizeTaskWrites(callerCtx, taskID)
+			if tc.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.True(t, tc.wantErr(err), "AuthorizeTaskWrites error: %v", err)
+			}
+		})
+	}
+}
+
+func TestPublishOperation_TaskOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		publisher  string
+		cancelTask bool
+		wantErr    func(error) bool
+	}{
+		{name: "task JWT"},
+		{name: "other group", publisher: "user2", wantErr: status.IsPermissionDeniedError},
+		{name: "cancelled task", cancelTask: true, wantErr: status.IsNotFoundError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.node.Pool = "defaultPoolName"
+			fe.Register()
+
+			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			cd, err := cachetools.UploadProtoToCAS(cacheCtx, env.GetCache(), "", repb.DigestFunction_SHA256, &repb.Command{Arguments: []string{"test"}})
+			require.NoError(t, err)
+			ad, err := cachetools.UploadProtoToCAS(cacheCtx, env.GetCache(), "", repb.DigestFunction_SHA256, &repb.Action{CommandDigest: cd})
+			require.NoError(t, err)
+			executeStream, err := env.GetRemoteExecutionClient().Execute(ctx, &repb.ExecuteRequest{ActionDigest: ad, DigestFunction: repb.DigestFunction_SHA256})
+			require.NoError(t, err)
+			op, err := executeStream.Recv()
+			require.NoError(t, err)
+			taskID := op.GetName()
+			fe.WaitForTask(taskID)
+			lease := fe.Claim(taskID)
+
+			publishCtx := metadata.AppendToOutgoingContext(context.Background(), authutil.ContextTokenStringKey, lease.task.GetJwt())
+			if tc.publisher != "" {
+				publishCtx = authenticatedContext(t, env, tc.publisher)
+			}
+			if tc.cancelTask {
+				_, err := env.GetSchedulerService().CancelTask(ctx, taskID)
+				require.NoError(t, err)
+			}
+
+			executingOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_EXECUTING, ad), nil)
+			require.NoError(t, err)
+			publishStream, err := env.GetRemoteExecutionClient().PublishOperation(publishCtx)
+			require.NoError(t, err)
+			_ = publishStream.Send(executingOp)
+			_, err = publishStream.CloseAndRecv()
+			if tc.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.True(t, tc.wantErr(err), "PublishOperation error: %v", err)
+			}
+		})
+	}
 }
 
 func TestScheduleTask_DeletesTaskOnEnqueueFailure(t *testing.T) {

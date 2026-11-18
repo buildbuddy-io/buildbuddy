@@ -28,14 +28,14 @@ const (
 	// The job is matched by regex because us-west1 runs several deployments
 	// (cache-proxy-a, -b, -c) while every other region runs a single
 	// "cache-proxy" job.
-	proxyFilter = `region="${region}", job=~"cache-proxy.*"`
+	proxyFilter = `cloud=~"${cloud}", region=~"${region}", job=~"cache-proxy.*"`
 
 	// podFilter selects cache-proxy pods in metrics that come from Kubernetes
 	// rather than from the proxy (kube-state-metrics, cAdvisor). Those carry
 	// the pod's namespace but no cache-proxy job label, and pod names differ
 	// per region (StatefulSet ordinals on metal, Deployment hashes on GKE,
 	// cache-proxy-a/b/c in us-west1), so the namespace is the stable handle.
-	podFilter = `region="${region}", namespace=~"cache-proxy-.*"`
+	podFilter = `cloud=~"${cloud}", region=~"${region}", namespace=~"cache-proxy-.*"`
 
 	// cacheFilter narrows proxyFilter to one pebble cache, for panels that
 	// repeat per ${cache_name}.
@@ -43,7 +43,7 @@ const (
 
 	// envoyFilter selects the Envoy (Contour) upstream clusters that front the
 	// cache proxies, only in regions with an Envoy ingress.
-	envoyFilter = `region="${region}", namespace="projectcontour", envoy_cluster_name=~"cache-proxy-.*_cache-proxy-service_.*"`
+	envoyFilter = `cloud=~"${cloud}", region=~"${region}", namespace="projectcontour", envoy_cluster_name=~"cache-proxy-.*_cache-proxy-service_.*"`
 )
 
 // row returns a collapsed row.
@@ -105,10 +105,12 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Min(0).
 			ShowPoints(common.VisibilityModeNever).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (job) (up{`+proxyFilter+`})`, "{{job}} up").RefId("A")).
-			WithTarget(dash.PromQuery(`sum(kube_pod_status_ready{`+podFilter+`, condition="true"})`, "Ready").RefId("B")).
-			WithTarget(dash.PromQuery(`max(envoy_cluster_membership_healthy{`+envoyFilter+`})`, "healthy in Envoy").RefId("D")).
-			WithTarget(dash.PromQuery(`sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{region="${region}", horizontalpodautoscaler=~"cache-proxy.*autoscaler"})`, "{{horizontalpodautoscaler}} target").RefId("C"))).
+			WithTarget(dash.PromQuery(`sum by (cloud, region, job) (up{`+proxyFilter+`})`, "{{cloud}}/{{region}} {{job}} up").RefId("A")).
+			// kube-state-metrics series carry job="kube-state-metrics", so borrow
+			// the cache-proxy job from the pod's own up series.
+			WithTarget(dash.PromQuery(`sum by (cloud, region, job) (kube_pod_status_ready{`+podFilter+`, pod=~".*cache-proxy.*", condition="true"} * on (cloud, region, pod) group_left(job) label_replace(group by (cloud, region, pod_name, job) (up{`+proxyFilter+`}), "pod", "$1", "pod_name", "(.*)"))`, "{{cloud}}/{{region}} {{job}} ready").RefId("B")).
+			WithTarget(dash.PromQuery(`max by (cloud, region) (envoy_cluster_membership_healthy{`+envoyFilter+`})`, "{{cloud}}/{{region}} healthy in Envoy").RefId("D")).
+			WithTarget(dash.PromQuery(`sum by (cloud, region, horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{cloud=~"${cloud}", region=~"${region}", horizontalpodautoscaler=~"cache-proxy.*autoscaler"})`, "{{cloud}}/{{region}} {{horizontalpodautoscaler}} target").RefId("C"))).
 		WithPanel(ts("Cache-proxy nodes cordoned or NotReady", dash.UnitShort).
 			Description("Nodes hosting a cache-proxy pod that are cordoned or not Ready.").
 			Height(7).
@@ -119,8 +121,8 @@ func systemStatusRow() *dashboard.RowBuilder {
 			FillOpacity(15).
 			ShowPoints(common.VisibilityModeNever).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`max by (node) (kube_node_status_condition{region="${region}", condition="Ready", status!="true", node=~"${node}"} == 1) and on (node) count by (node) (kube_pod_info{`+podFilter+`})`, "{{node}} NotReady").RefId("A")).
-			WithTarget(dash.PromQuery(`max by (node) (kube_node_spec_unschedulable{region="${region}", node=~"${node}"} == 1) and on (node) count by (node) (kube_pod_info{`+podFilter+`})`, "{{node}} cordoned").RefId("B"))).
+			WithTarget(dash.PromQuery(`max by (node) (kube_node_status_condition{cloud=~"${cloud}", region=~"${region}", condition="Ready", status!="true", node=~"${node}"} == 1) and on (node) count by (node) (kube_pod_info{`+podFilter+`})`, "{{node}} NotReady").RefId("A")).
+			WithTarget(dash.PromQuery(`max by (node) (kube_node_spec_unschedulable{cloud=~"${cloud}", region=~"${region}", node=~"${node}"} == 1) and on (node) count by (node) (kube_pod_info{`+podFilter+`})`, "{{node}} cordoned").RefId("B"))).
 		WithPanel(ts("cache-proxy versions", "").
 			WithTarget(dash.PromQuery(`sum by (version, commit) (buildbuddy_version{`+proxyFilter+`})`, "{{version}} ({{commit}})"))).
 		WithPanel(ts("Failing Health Checks", "").
@@ -181,7 +183,7 @@ func probersRow() *dashboard.RowBuilder {
 			AxisSoftMin(0).
 			AxisSoftMax(1).
 			ShowPoints(common.VisibilityModeNever).
-			WithTarget(dash.PromQuery(`sum(increase(cloudprober_success{region="${region}", probe=~".*proxy.*"}[10m])) by (probe) / sum(increase(cloudprober_total{region="${region}", probe=~".*proxy.*"}[10m])) by (probe)`, "{{probe}} Up")))
+			WithTarget(dash.PromQuery(`sum(increase(cloudprober_success{cloud=~"${cloud}", region=~"${region}", probe=~".*proxy.*"}[10m])) by (cloud, region, probe) / sum(increase(cloudprober_total{cloud=~"${cloud}", region=~"${region}", probe=~".*proxy.*"}[10m])) by (cloud, region, probe)`, "{{cloud}}/{{region}} {{probe}} Up")))
 }
 
 func atimeUpdaterRow() *dashboard.RowBuilder {
@@ -495,7 +497,7 @@ func golangRow() *dashboard.RowBuilder {
 }
 
 func nodesRow() *dashboard.RowBuilder {
-	nodeFilter := `region="${region}", nodename=~"^${node}"`
+	nodeFilter := `cloud=~"${cloud}", region=~"${region}", nodename=~"^${node}"`
 	return row("Nodes Overview (${node})").
 		WithPanel(ts("CPU", dash.UnitPercentUnit).
 			Max(1).
@@ -519,11 +521,23 @@ func internalRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`sum by (name) (rate(buildbuddy_unexpected_event{`+proxyFilter+`}[${window}]))`, "")))
 }
 
+func cloudVariable() *dashboard.QueryVariableBuilder {
+	query := `label_values(up, cloud)`
+	return dash.QueryVar("cloud", query).
+		Refresh(dashboard.VariableRefreshOnDashboardLoad).
+		IncludeAll(true).
+		AllValue(".*").
+		Current(dash.SelectedOption("All", "$__all")).
+		Definition(query)
+}
+
 func regionVariable() *dashboard.QueryVariableBuilder {
-	query := `label_values(up, region)`
+	query := `label_values(up{cloud=~"$cloud"}, region)`
 	return dash.QueryVar("region", query).
 		Refresh(dashboard.VariableRefreshOnDashboardLoad).
-		Current(dash.SelectedOption("us-west1", "us-west1")).
+		IncludeAll(true).
+		AllValue(".*").
+		Current(dash.SelectedOption("All", "$__all")).
 		Definition(query)
 }
 
@@ -543,7 +557,7 @@ func quantileVariable() *dashboard.CustomVariableBuilder {
 }
 
 func cacheNameVariable() *dashboard.QueryVariableBuilder {
-	query := `label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region="$region", job=~"cache-proxy.*", namespace!="raft-dev"},cache_name)`
+	query := `label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{cloud=~"$cloud", region=~"$region", job=~"cache-proxy.*", namespace!="raft-dev"},cache_name)`
 	return dash.QueryVar("cache_name", query).
 		Refresh(dashboard.VariableRefreshOnDashboardLoad).
 		IncludeAll(true).
@@ -553,7 +567,7 @@ func cacheNameVariable() *dashboard.QueryVariableBuilder {
 }
 
 func nodeVariable() *dashboard.QueryVariableBuilder {
-	query := `label_values(kube_pod_info{pod=~"cache-proxy.*", region="$region"},node)`
+	query := `label_values(kube_pod_info{pod=~"cache-proxy.*", cloud=~"$cloud", region=~"$region"},node)`
 	return dash.QueryVar("node", query).
 		Refresh(dashboard.VariableRefreshOnDashboardLoad).
 		IncludeAll(true).
@@ -572,6 +586,7 @@ func build() (dashboard.Dashboard, error) {
 		Time("now-3h", "now").
 		Timepicker(dashboard.NewTimePickerBuilder().
 			RefreshIntervals([]string{"1s", "5s", "10s", "15s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"})).
+		WithVariable(cloudVariable()).
 		WithVariable(regionVariable()).
 		WithVariable(windowVariable()).
 		WithVariable(quantileVariable()).

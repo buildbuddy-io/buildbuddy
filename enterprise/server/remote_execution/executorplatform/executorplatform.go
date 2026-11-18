@@ -222,6 +222,7 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 // configured executor properties.
 func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, task *repb.ExecutionTask) error {
 	command := task.GetCommand()
+	isCIRunnerCommand := platform.IsCIRunnerCommand(task.GetCommand()) // before we modify the command
 	if len(executorProps.SupportedIsolationTypes) == 0 {
 		return status.FailedPreconditionError("No workload isolation types configured.")
 	}
@@ -265,6 +266,13 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 	// Check that the selected isolation type is supported by this executor.
 	if !executorProps.SupportsIsolation(platform.ContainerType(platformProps.WorkloadIsolationType)) {
 		return status.InvalidArgumentErrorf("The requested workload isolation type %q is unsupported by this executor. Supported types: %s)", platformProps.WorkloadIsolationType, executorProps.SupportedIsolationTypes)
+	}
+
+	if platformProps.WorkloadIsolationType == string(platform.FirecrackerContainerType) && platformProps.RecycleRunner {
+		if salt := execution_experiments.SnapshotSalt.Get(ctx); salt != "" {
+			// Include the salt in the platform hash used for snapshot and runner keys.
+			platform.SetValueForTask(task, platform.SnapshotSaltPropertyName, salt)
+		}
 	}
 
 	// Normalize the container image string
@@ -360,7 +368,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 
 	// TODO: find a cleaner way to set the origin header, other than by
 	// forwarding an env var to the runner.
-	if platformProps.WorkflowID != "" {
+	if isCIRunnerCommand {
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  ci_runner_env.BBGrpcClientOriginEnvVarName,
 			Value: usageutil.ClientOrigin(),

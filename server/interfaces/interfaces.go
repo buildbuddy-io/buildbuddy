@@ -29,6 +29,7 @@ import (
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -57,12 +58,12 @@ import (
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -525,6 +526,7 @@ type APIKeyGroup interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
+	GetUserAccountType() uidpb.AccountType
 	IsImpersonating() bool
 	GetGroupStatus() grpb.Group_GroupStatus
 }
@@ -1096,6 +1098,10 @@ type SchedulerService interface {
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	CancelTask(ctx context.Context, taskID string) (bool, error)
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
+	// AuthorizeTaskWrites returns nil if the caller may write updates for the
+	// task, NotFound if the task does not exist, and PermissionDenied
+	// otherwise.
+	AuthorizeTaskWrites(ctx context.Context, taskID string) error
 	// WatchTaskLiveness returns a channel that the scheduler closes if it
 	// loses the task, meaning that the task no longer exists and so no
 	// executor will run it again. The scheduler watches the task until ctx is
@@ -1105,6 +1111,7 @@ type SchedulerService interface {
 	// retry.
 	WatchTaskLiveness(ctx context.Context, taskID string) <-chan struct{}
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
+	CancelTaskReservation(ctx context.Context, req *scpb.CancelTaskReservationRequest) (*scpb.CancelTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
@@ -1581,12 +1588,29 @@ type GroupStatusChecker interface {
 
 // QuotaManager manages quota.
 type QuotaManager interface {
-	// Allow checks whether a user (identified from the ctx) has exceeded a rate
-	// limit inside the namespace and returns ResourceExhaustedError
-	// when it's not allowed.
-	// If the rate limit has not been exceeded, the underlying storage is updated
-	// by the supplied quantity.
-	Allow(ctx context.Context, namespace string, quantity int64) error
+	// Allow checks whether the user (identified from ctx) has enough quota for
+	// quantity. If so, it consumes quantity. Otherwise, it returns
+	// ResourceExhaustedError and consumes nothing. Returns nil if no quota
+	// applies or the quota service fails, so service errors do not block usage.
+	//
+	// If force is true, quota is applied even if quota management is globally
+	// disabled. This lets infrequent operations opt into quota without
+	// enabling quota checks on every RPC.
+	//
+	// Pass quantity 0 for a read-only check of whether the user is over quota.
+	// When usage is not known ahead of time (such as for execution minutes),
+	// call Allow with quantity 0 before the work begins, and RecordUsage when
+	// the work completes.
+	Allow(ctx context.Context, namespace string, quantity int64, force bool) error
+
+	// RecordUsage consumes quantity even if doing so exceeds the quota.
+	// Subsequent Allow calls are blocked until the resulting debt drains.
+	//
+	// If force is true, usage is recorded even if quota management is
+	// globally disabled.
+	//
+	// Returns false if the usage went over quota.
+	RecordUsage(ctx context.Context, namespace string, quantity int64, force bool) (withinQuota bool, err error)
 
 	// Reloads the quota buckets, but does not reset their state. This would
 	// remove a bucket that longer applies to a group. It will send a notification

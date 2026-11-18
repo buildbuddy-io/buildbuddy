@@ -27,9 +27,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 )
 

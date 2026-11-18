@@ -36,9 +36,9 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (

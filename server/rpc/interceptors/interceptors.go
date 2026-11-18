@@ -502,7 +502,7 @@ func groupStatusStreamServerInterceptor(env environment.Env) grpc.StreamServerIn
 func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if qm := env.GetQuotaManager(); qm != nil {
-			err := qm.Allow(ctx, rpcQuotaPrefix+info.FullMethod, 1)
+			err := qm.Allow(ctx, rpcQuotaPrefix+info.FullMethod, 1, false /* force */)
 			if err != nil {
 				return nil, err
 			}
@@ -514,7 +514,7 @@ func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercepto
 func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if qm := env.GetQuotaManager(); qm != nil {
-			err := qm.Allow(stream.Context(), rpcQuotaPrefix+info.FullMethod, 1)
+			err := qm.Allow(stream.Context(), rpcQuotaPrefix+info.FullMethod, 1, false /* force */)
 			if err != nil {
 				return err
 			}
@@ -603,12 +603,25 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 
 func propagateMetadataFromIncomingToOutgoing(keys ...string) func(context.Context) context.Context {
 	return func(ctx context.Context) context.Context {
+		var kv []string
 		for _, key := range keys {
-			if values := metadata.ValueFromIncomingContext(ctx, key); len(values) > 0 {
-				ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
+			values := metadata.ValueFromIncomingContext(ctx, key)
+			// TODO: forward every value of the headers in headerContextKeys too,
+			// once we know that it doesn't change which value servers use.
+			// Servers read only one value of these headers and don't agree on
+			// which one. For example, the cache proxy authenticates with the
+			// last JWT, while copyHeadersToContext uses the first.
+			if _, ok := headerContextKeys[key]; ok && len(values) > 1 {
+				values = values[len(values)-1:]
+			}
+			for _, value := range values {
+				kv = append(kv, key, value)
 			}
 		}
-		return ctx
+		if len(kv) == 0 {
+			return ctx
+		}
+		return metadata.AppendToOutgoingContext(ctx, kv...)
 	}
 }
 

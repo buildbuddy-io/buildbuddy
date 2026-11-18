@@ -32,6 +32,12 @@ func Configure(verboseFlagVal string) {
 	log.SetFlags(0)
 }
 
+// DebugEnabled returns whether debug logs are printed. Callers can use it to
+// skip expensive work that is only needed for debug logs.
+func DebugEnabled() bool {
+	return verbose
+}
+
 func Debug(v ...any) {
 	if !verbose {
 		return

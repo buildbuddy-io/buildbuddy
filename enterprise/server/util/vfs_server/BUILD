@@ -60,15 +60,19 @@ go_library(
 go_test(
     name = "vfs_server_test",
     size = "small",
-    srcs = ["vfs_server_test.go"],
+    srcs = [
+        "vfs_server_internal_test.go",
+        "vfs_server_test.go",
+    ],
+    embed = [":vfs_server"],
     target_compatible_with = [
         "@platforms//os:linux",
     ],
     deps = [
-        ":vfs_server",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/util/vfscommon",
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:vfs_go_proto",
@@ -87,7 +91,6 @@ go_test(
         "@com_github_hanwen_go_fuse_v2//fuse",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

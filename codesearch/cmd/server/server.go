@@ -22,8 +22,8 @@ import (
 
 	"google.golang.org/grpc"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -49,8 +49,6 @@ func main() {
 	if err := config.Load(); err != nil {
 		log.Fatalf("Could not load config: %s", err)
 	}
-
-	config.ReloadOnSIGHUP()
 
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)

@@ -62,6 +62,9 @@ message VMConfiguration {
   bool enable_vfs = 16;
   bool enable_pci = 20;
 
+  // Whether the guest uses kvm-clock as its clocksource instead of the TSC.
+  bool enable_kvm_clock = 21;
+
   // TODO: add container_image here?
 }
 

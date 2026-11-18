@@ -59,7 +59,7 @@ func TestUsageViewMigration_CreateNoopAndReplace(t *testing.T) {
 }
 
 func openClickHouseDB(t *testing.T) *gorm.DB {
-	dsn := testclickhouse.Start(t)
+	dsn := testclickhouse.Start(t).DSN()
 	options, err := clickhouse.ParseDSN(dsn)
 	require.NoError(t, err)
 	sqlDB := clickhouse.OpenDB(options)

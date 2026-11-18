@@ -34,7 +34,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
@@ -46,6 +48,7 @@ import (
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
@@ -53,7 +56,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	bbflag "github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -92,6 +94,7 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+	gitFetchURL             = RemoteFlagset.String("git_fetch_url", "", "The URL the remote runner should fetch the git repo from. Defaults to the fetch URL of the git remote. Useful for non-interactive runs if there are multiple fetch URLs configured.")
 	gitFetchDepth           = RemoteFlagset.Int("git_fetch_depth", -1, "Git fetch depth. Defaults to 'smart' behavior chosen by the remote runner. Can be set to 0 to fetch the full history, or N >= 1 to fetch the last N commits.")
 	// From a shell, pass the JSON in single quotes.
 	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
@@ -365,7 +368,10 @@ func Config() (*RepoConfig, error) {
 		return nil, status.WrapError(err, "determine remote")
 	}
 	fetchURL := remote.url
-	log.Debugf("Using fetch URL: %s", fetchURL)
+	if *gitFetchURL != "" {
+		fetchURL = *gitFetchURL
+	}
+	log.Debugf("Using fetch URL: %s", redactedRepoURL(fetchURL))
 
 	defaultBranch, err := determineDefaultBranch(remote.name)
 	if err != nil {
@@ -1068,6 +1074,42 @@ func workingDirectory(repoRootPath, workspaceFilePath string) (string, error) {
 	return relPath, nil
 }
 
+func redactedRepoURL(repoURL string) string {
+	// Tokens don't appear in SSH URLs, as they authenticate via SSH keys.
+	// `StripRepoURLCredentials` can trigger false positives on the `git@` username prefix.
+	if strings.HasPrefix(repoURL, "https://") || strings.HasPrefix(repoURL, "http://") {
+		repoURL = git.StripRepoURLCredentials(repoURL)
+	}
+	return redact.RedactText(repoURL)
+}
+
+func redactedRunRequest(req *rnpb.RunRequest) (string, error) {
+	redacted := req.CloneVT()
+	if redacted.GetGitRepo() != nil {
+		redacted.GitRepo.RepoUrl = redactedRepoURL(redacted.GetGitRepo().GetRepoUrl())
+	}
+	for i, header := range redacted.GetRemoteHeaders() {
+		name, _, _ := strings.Cut(header, "=")
+		redacted.RemoteHeaders[i] = name + "=REDACTED"
+	}
+	encoded, err := json.Marshal(redacted)
+	if err != nil {
+		return "", err
+	}
+	// Also redact sensitive values from the local environment, since they may be expanded into the command
+	// via another flag, not just being passed as an env var.
+	sensitiveValues := append(sensitiveEnvValues(req.GetEnv()), redact.CollectSensitiveEnvValues(os.Environ())...)
+	return redact.RedactTextWithValues(string(encoded), sensitiveValues), nil
+}
+
+func sensitiveEnvValues(envVars map[string]string) []string {
+	environ := make([]string, 0, len(envVars))
+	for name, value := range envVars {
+		environ = append(environ, name+"="+value)
+	}
+	return redact.CollectSensitiveEnvValues(environ)
+}
+
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
 	env := real_environment.NewBatchEnv()
 
@@ -1181,12 +1223,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		req.Timeout = timeout.String()
 	}
 
-	encodedReq, err := json.Marshal(req)
-	if err != nil {
-		log.Debugf("Failed to marshall req: %s", err)
-	}
-	if len(encodedReq) > 0 {
-		log.Debugf("Run request: %s", string(encodedReq))
+	if log.DebugEnabled() {
+		if encodedReq, err := redactedRunRequest(req); err != nil {
+			log.Debugf("Failed to marshall req: %s", err)
+		} else {
+			log.Debugf("Run request: %s", encodedReq)
+		}
 	}
 	log.Printf("\nWaiting for available remote runner...\n")
 

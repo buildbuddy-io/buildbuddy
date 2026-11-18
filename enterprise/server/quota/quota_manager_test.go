@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
@@ -22,14 +23,15 @@ import (
 
 type testBucket struct {
 	config *bucketConfig
+	err    error
 }
 
 func (tb *testBucket) Config() bucketConfig {
 	return *tb.config
 }
 
-func (tb *testBucket) Allow(ctx context.Context, key string, quantity int64) (bool, error) {
-	return true, nil
+func (tb *testBucket) Allow(ctx context.Context, key string, quantity int64, recordUsageOverages bool) (bool, error) {
+	return tb.err == nil, tb.err
 }
 
 func createTestBucket(env environment.Env, config *bucketConfig) (Bucket, error) {
@@ -48,9 +50,12 @@ func (tb *testLimitingBucket) Config() bucketConfig {
 	return *tb.config
 }
 
-func (tb *testLimitingBucket) Allow(ctx context.Context, key string, quantity int64) (bool, error) {
-	tb.numRequests += quantity
-	return tb.numRequests <= tb.maxRequests, nil
+func (tb *testLimitingBucket) Allow(ctx context.Context, key string, quantity int64, recordUsageOverages bool) (bool, error) {
+	withinQuota := tb.numRequests+quantity <= tb.maxRequests
+	if withinQuota || recordUsageOverages {
+		tb.numRequests += quantity
+	}
+	return withinQuota, nil
 }
 
 func createTestLimitingBucket(env environment.Env, config *bucketConfig, limit int64) (Bucket, error) {
@@ -59,6 +64,35 @@ func createTestLimitingBucket(env environment.Env, config *bucketConfig, limit i
 		numRequests: 0,
 		maxRequests: limit,
 	}, nil
+}
+
+func TestQuotaService_Errors(t *testing.T) {
+	flags.Set(t, "app.enable_quota_management", true)
+	for _, failure := range []string{"missing key", "missing provider", "bucket error"} {
+		t.Run(failure, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			users := testauth.TestUsers("US001", "GR001")
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
+			ctx := testauth.WithAuthenticatedUserInfo(t.Context(), users["US001"])
+			fp, err := experiments.NewFlagProvider(t.Name())
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+			qm := &QuotaManager{env: env}
+			bucketErr := fmt.Errorf("quota storage unavailable")
+			ns := &namespace{name: "test"}
+			ns.bucketsByKey.Store("GR001", &testBucket{err: bucketErr})
+			qm.namespaces.Store("test", ns)
+			switch failure {
+			case "missing key":
+				ctx = t.Context()
+			case "missing provider":
+				env.SetExperimentFlagProvider(nil)
+			}
+
+			// Allow should not fail open on quota service errors.
+			require.NoError(t, qm.Allow(ctx, "test", 1, false /* force */))
+		})
+	}
 }
 
 func TestQuotaFlagdBuckets(t *testing.T) {
@@ -120,20 +154,29 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 
 	qm, err := newQuotaManager(env, customBucketCreator)
 	require.NoError(t, err)
+	usageOperation := "rpc:/google.bytestream.ByteStream/Read"
 
-	assert.NoError(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
+	// Read-only checks do not consume quota.
+	assert.NoError(t, qm.Allow(ctx, usageOperation, 0, false /* force */))
+	assert.NoError(t, qm.Allow(ctx, usageOperation, 0, false /* force */))
 
-	// The next 4 requests are allowed, but the 5th is blocked.
-	for range 4 {
-		assert.NoError(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
+	// The first 5 requests are allowed, but the 6th is blocked.
+	for range 5 {
+		assert.NoError(t, qm.Allow(ctx, usageOperation, 1, false /* force */))
 	}
-	assert.Error(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
+	assert.Error(t, qm.Allow(ctx, usageOperation, 1, false /* force */))
 
-	bucket := qm.findBucket("rpc:/google.bytestream.ByteStream/Read", "GR001")
+	// Usage is recorded even when over quota.
+	fit, err := qm.RecordUsage(ctx, usageOperation, 1, false /* force */)
+	require.NoError(t, err)
+	assert.False(t, fit)
+	assert.Error(t, qm.Allow(ctx, usageOperation, 0, false /* force */))
+
+	bucket := qm.findBucket(usageOperation, "GR001")
 	require.NotNil(t, bucket)
 	config := bucket.Config()
-	assert.Equal(t, "rpc:/google.bytestream.ByteStream/Read", config.namespace)
-	assert.Equal(t, "flagd:rpc:/google.bytestream.ByteStream/Read:10:60000000:5", config.name)
+	assert.Equal(t, usageOperation, config.namespace)
+	assert.Equal(t, "flagd:"+usageOperation+":10:60000000:5", config.name)
 	assert.Equal(t, int64(10), config.numRequests)
 	assert.Equal(t, int64(60000000), config.periodDurationUsec)
 	assert.Equal(t, int64(5), config.maxBurst)
@@ -318,6 +361,37 @@ func TestBucketRowFromMap(t *testing.T) {
 	}
 }
 
+func TestForced(t *testing.T) {
+	flags.Set(t, "app.enable_quota_management", false)
+	env := testenv.GetTestEnv(t)
+	users := testauth.TestUsers("US001", "GR001")
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
+	ctx := testauth.WithAuthenticatedUserInfo(t.Context(), users["US001"])
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+	qm := &QuotaManager{env: env}
+	bucket := &testLimitingBucket{maxRequests: 1}
+	ns := &namespace{name: "test"}
+	ns.bucketsByKey.Store("GR001", bucket)
+	qm.namespaces.Store("test", ns)
+
+	// Quota is not applied when globally disabled.
+	require.NoError(t, qm.Allow(ctx, "test", 2, false /* force */))
+	withinQuota, err := qm.RecordUsage(ctx, "test", 2, false /* force */)
+	require.NoError(t, err)
+	require.True(t, withinQuota)
+	require.Equal(t, int64(0), bucket.numRequests)
+
+	// Forcing applies quota even when globally disabled.
+	err = qm.Allow(ctx, "test", 2, true /* force */)
+	require.True(t, status.IsResourceExhaustedError(err), "expected ResourceExhausted, got %v", err)
+	withinQuota, err = qm.RecordUsage(ctx, "test", 2, true /* force */)
+	require.NoError(t, err)
+	require.False(t, withinQuota)
+	require.Equal(t, int64(2), bucket.numRequests)
+}
+
 func TestConcurrentBucketAccess(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("US001", "GR001")
@@ -395,21 +469,73 @@ func TestCreateGCRABucket_RateLimit(t *testing.T) {
 		maxBurst:           2,
 	})
 	require.NoError(t, err)
-
 	ctx := t.Context()
+
+	// Read-only checks shouldn't create the key in redis.
+	allowed, err := bucket.Allow(ctx, "key", 0, false /* recordUsageOverages */)
+	require.NoError(t, err)
+	require.True(t, allowed)
+	count, err := rdb.Exists(ctx, "quota:test-namespace:test-bucket:key").Result()
+	require.NoError(t, err)
+	require.Zero(t, count)
+
 	for range 3 {
-		allowed, err := bucket.Allow(ctx, "key", 1)
+		allowed, err := bucket.Allow(ctx, "key", 1, false /* recordUsageOverages */)
 		require.NoError(t, err)
 		require.True(t, allowed)
 	}
-	allowed, err := bucket.Allow(ctx, "key", 1)
+	allowed, err = bucket.Allow(ctx, "key", 1, false /* recordUsageOverages */)
 	require.NoError(t, err)
 	require.False(t, allowed)
 
 	// Rate limit state is independent for each key.
-	allowed, err = bucket.Allow(ctx, "other-key", 1)
+	allowed, err = bucket.Allow(ctx, "other-key", 1, false /* recordUsageOverages */)
 	require.NoError(t, err)
 	require.True(t, allowed)
+}
+
+func TestCreateGCRABucket_RecordUsageBeyondQuota(t *testing.T) {
+	rdb := testredis.Start(t).Client()
+	env := testenv.GetTestEnv(t)
+	env.SetDefaultRedisClient(rdb)
+	bucket, err := createGCRABucket(env, &bucketConfig{
+		namespace: "test", name: "test", numRequests: 1,
+		periodDurationUsec: time.Hour.Microseconds(), maxBurst: 2,
+	})
+	require.NoError(t, err)
+	ctx := t.Context()
+
+	// Calling Allow with recordUsageOverages=false should not consume quota if it's blocked.
+	allowed, err := bucket.Allow(ctx, "allow-key", 10, false /* recordUsageOverages */)
+	require.NoError(t, err)
+	require.False(t, allowed)
+	// Subsequent calls to Allow should fit, if the lower request is within quota.
+	allowed, err = bucket.Allow(ctx, "allow-key", 1, false /* recordUsageOverages */)
+	require.NoError(t, err)
+	require.True(t, allowed)
+
+	// Calling Allow with recordUsageOverages=true should consume quota if it's blocked.
+	withinQuota, err := bucket.Allow(ctx, "record-key", 10, true /* recordUsageOverages */)
+	require.NoError(t, err)
+	require.False(t, withinQuota)
+	// Subsequent calls to Allow should not fit, even if they are small or read-only checks, because the previous
+	// request consumed all available quota.
+	allowed, err = bucket.Allow(ctx, "record-key", 1, false /* recordUsageOverages */)
+	require.NoError(t, err)
+	require.False(t, allowed)
+	allowed, err = bucket.Allow(ctx, "record-key", 0, false /* recordUsageOverages */)
+	require.NoError(t, err)
+	require.False(t, allowed)
+
+	// When recordUsageOverages=true, the usage is still counted even while already over quota.
+	before, err := rdb.Get(ctx, "quota:test:test:record-key").Int64()
+	require.NoError(t, err)
+	withinQuota, err = bucket.Allow(ctx, "record-key", 5, true /* recordUsageOverages */)
+	require.NoError(t, err)
+	require.False(t, withinQuota)
+	after, err := rdb.Get(ctx, "quota:test:test:record-key").Int64()
+	require.NoError(t, err)
+	require.Equal(t, int64(5*time.Hour), after-before)
 }
 
 func TestCreateGCRABucket_VeryLargePeriod(t *testing.T) {

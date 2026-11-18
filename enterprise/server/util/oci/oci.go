@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -35,7 +36,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -48,6 +48,7 @@ var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	useOCIFetcherEnabled   = flag.Bool("executor.use_oci_fetcher", false, "Whether to use the OCI fetcher service for pulling container images.")
+	ociFetcherRequired     = flag.Bool("executor.oci_fetcher_required", false, "Require all OCI image pulls to use the OCI fetcher service, regardless of the task's use-oci-fetcher platform property.")
 
 	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 )
@@ -206,6 +207,7 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
+	remote.SetAllowedPrivateIPs(allowedPrivateIPNets)
 	imageTagToDigestLRU, err := lru.New[string](&lru.Config[string]{
 		SizeFn:     func(_ string) int64 { return 1 },
 		MaxSize:    int64(resolveImageDigestLRUMaxEntries),
@@ -278,9 +280,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 }
 
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (ctr.Image, error) {
-	if !*useOCIFetcherEnabled {
-		useOCIFetcher = false
-	}
+	useOCIFetcher = *ociFetcherRequired || (*useOCIFetcherEnabled && useOCIFetcher)
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 

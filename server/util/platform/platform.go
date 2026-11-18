@@ -75,14 +75,18 @@ const (
 	// dockerReuse is treated as an alias for recycle-runner.
 	dockerReusePropertyName = "dockerReuse"
 
-	RunnerRecyclingKey                       = "runner-recycling-key"
-	RunnerRecyclingMaxWaitPropertyName       = "runner-recycling-max-wait"
-	runnerCrashedExitCodesPropertyName       = "runner-crashed-exit-codes"
-	transientErrorExitCodes                  = "transient-error-exit-codes"
-	AllowRemoteSnapshotsPropertyName         = "allow-remote-snapshots"
-	EnableUniversalSnapshotPropertyName      = "allow-universal-snapshot"
-	SnapshotSavePolicyPropertyName           = "remote-snapshot-save-policy"
-	SnapshotReadPolicyPropertyName           = "snapshot-read-policy"
+	RunnerRecyclingKey                  = "runner-recycling-key"
+	RunnerRecyclingMaxWaitPropertyName  = "runner-recycling-max-wait"
+	runnerCrashedExitCodesPropertyName  = "runner-crashed-exit-codes"
+	transientErrorExitCodes             = "transient-error-exit-codes"
+	AllowRemoteSnapshotsPropertyName    = "allow-remote-snapshots"
+	EnableUniversalSnapshotPropertyName = "allow-universal-snapshot"
+	SnapshotSavePolicyPropertyName      = "remote-snapshot-save-policy"
+	SnapshotReadPolicyPropertyName      = "snapshot-read-policy"
+	SkipLocalSnapshotSavePropertyName   = "skip-local-snapshot-save"
+	SkipRemoteSnapshotSavePropertyName  = "skip-remote-snapshot-save"
+	// Warning: Do not manually set the `snapshot-salt` property. It may be automatically overwritten by the server.
+	SnapshotSaltPropertyName                 = "snapshot-salt"
 	MaxStaleFallbackSnapshotAgePropertyName  = "max-stale-fallback-snapshot-age"
 	MinTimeBetweenSnapshotWritesPropertyName = "min-time-between-snapshot-writes"
 	PreserveWorkspacePropertyName            = "preserve-workspace"
@@ -474,6 +478,9 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		}
 		envOverrides = append(envOverrides, string(b))
 	}
+	if err := validateEnvAssignments(EnvOverridesPropertyName, envOverrides); err != nil {
+		return nil, err
+	}
 
 	secretEnvOverrides := stringListProp(m, SecretEnvOverridesPropertyName)
 	for _, prop := range stringListProp(m, SecretEnvOverridesBase64PropertyName) {
@@ -482,6 +489,9 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 			return nil, status.InvalidArgumentErrorf("decode secret env override as base64: %s", err)
 		}
 		secretEnvOverrides = append(secretEnvOverrides, string(b))
+	}
+	if err := validateEnvAssignments(SecretEnvOverridesPropertyName, secretEnvOverrides); err != nil {
+		return nil, err
 	}
 
 	timeout, err := durationProp(m, DefaultTimeoutPropertyName, 0*time.Second)
@@ -618,6 +628,15 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
 		RunUnder:                  stringProp(m, RunUnderPropertyName, ""),
 	}, nil
+}
+
+func validateEnvAssignments(propertyName string, assignments []string) error {
+	for _, assignment := range assignments {
+		if _, _, ok := strings.Cut(assignment, "="); !ok {
+			return status.InvalidArgumentErrorf("%q entries must be NAME=VALUE assignments", propertyName)
+		}
+	}
+	return nil
 }
 
 // RemoteHeaderOverrides returns the platform properties that should override

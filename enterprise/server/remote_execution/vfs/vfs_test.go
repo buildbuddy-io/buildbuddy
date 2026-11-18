@@ -36,10 +36,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func TestSymlinkTargetAfterRemount(t *testing.T) {
@@ -1597,6 +1597,42 @@ func TestLayoutUpdate(t *testing.T) {
 		children := getDirChildren(t, filepath.Join(fsPath, "foo/bar/newfile"))
 		require.Equal(t, []string{"hello.txt"}, children)
 	}
+}
+
+func TestLayoutUpdateInvalidatesUncachedEntry(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+
+	tree := createInputTree(t, ctx, env, map[string]string{
+		"foo/bar": "bar-content-v1",
+	})
+	server, client, fsPath := setupVFSWithInputTree(t, env, tree)
+
+	// Look up "foo" without ever looking up "bar" under it.
+	_, err = os.Stat(filepath.Join(fsPath, "foo"))
+	require.NoError(t, err)
+
+	newTree := createInputTree(t, ctx, env, map[string]string{
+		"foo/bar": "bar-content-v2",
+	})
+	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, newTree, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+	invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+	require.NoError(t, err)
+	require.NotEmpty(t, invalidated.Entry)
+
+	// PrepareForTask asks the kernel to drop the cached entries for inputs that
+	// changed. This should succeed even though "bar" was never looked up by the
+	// previous action and therefore not cached.
+	err = client.PrepareForTask(ctx, "task", invalidated)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(fsPath, "foo/bar"))
+	require.NoError(t, err)
+	require.Equal(t, "bar-content-v2", string(data))
 }
 
 func TestComputeStats(t *testing.T) {

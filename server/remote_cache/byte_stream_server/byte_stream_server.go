@@ -39,11 +39,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/peer"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const defaultChunkedReadMaxInFlight = 32
@@ -198,7 +198,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 
 	// Check quota before reading - use digest size as expected transfer size
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), r.GetDigest().GetSizeBytes(), false /* force */); err != nil {
 			return err
 		}
 	}
@@ -604,7 +604,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 
 	// Check quota before writing - use digest size as expected upload size
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes(), false /* force */); err != nil {
 			return nil, err
 		}
 	}

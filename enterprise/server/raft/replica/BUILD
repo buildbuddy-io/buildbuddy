@@ -34,7 +34,10 @@ go_library(
 go_test(
     name = "replica_test",
     size = "medium",
-    srcs = ["replica_test.go"],
+    srcs = [
+        "replica_benchmark_test.go",
+        "replica_test.go",
+    ],
     deps = [
         ":replica",
         "//enterprise/server/filestore",

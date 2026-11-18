@@ -192,6 +192,19 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 			}}},
 		},
 		{
+			name: "redact passwords in urls in target complete failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:passwordthatshouldberedacted@repo.example.com/package.tar.gz",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:<REDACTED>@repo.example.com/package.tar.gz",
+				},
+			}}},
+		},
+		{
 			name: "redact passwords in urls in aborted description",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Aborted{Aborted: &bespb.Aborted{
 				Description: "Build aborted due to error: failed to fetch https://username:passwordthatshouldberedacted@example.com/resource",
@@ -524,11 +537,15 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
 			"--flag=@repo//package",
+			"--url=https://user:abc/def@example.com",
+			"--url=https://user:two words@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
 			"--flag=@repo//package",
+			"--url=https://user:abc/def@example.com",
+			"--url=https://user:two words@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
@@ -543,6 +560,8 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		t,
 		[]string{
 			"--flag=@repo//package",
+			"--url=https://user:<REDACTED>@example.com",
+			"--url=https://user:<REDACTED>@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
@@ -551,6 +570,8 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		t,
 		[]string{
 			"--flag=@repo//package",
+			"--url=https://user:<REDACTED>@example.com",
+			"--url=https://user:<REDACTED>@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
@@ -761,6 +782,44 @@ func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
 
 	require.Equal(t, 1, len(workspaceStatus.Item))
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", workspaceStatus.Item[0].Value)
+}
+
+func TestRedactMetadata_Progress_StripsURLSecrets(t *testing.T) {
+	redactor := redact.NewStreamingRedactor()
+	progress := &bespb.Progress{
+		Stdout: "Fetching https://stdout-user:STDOUT_TOKEN@example.com/repo.git\n",
+		Stderr: "ERROR: failed to fetch https://stderr-user:STDERR_TOKEN@example.com/archive.tar.gz\n",
+	}
+
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Progress{Progress: progress},
+	})
+	require.NoError(t, err)
+
+	assert.NotContains(t, progress.Stdout, "STDOUT_TOKEN")
+	assert.Contains(t, progress.Stdout, "<REDACTED>@example.com/repo.git")
+	assert.NotContains(t, progress.Stderr, "STDERR_TOKEN")
+	assert.Contains(t, progress.Stderr, "<REDACTED>@example.com/archive.tar.gz")
+
+	for _, input := range []string{
+		"ERROR: downloading https://repo.example.com/guava.jar: failed to fetch @maven//:guava\n",
+		"ERROR: https://host:8080 unavailable; contact user@example.com\n",
+		"ERROR: failed to fetch @maven//:guava; contact user@example.com\n",
+		"https://host\tfailed: contact user@example.com\n",
+		"https://host:8080\tcontact user@example.com\n",
+		"https://host/path:part@example.com\n",
+		"https://host:8080/path@example.com\n",
+	} {
+		t.Run(input, func(t *testing.T) {
+			progress := &bespb.Progress{Stdout: input, Stderr: input}
+			err := redactor.RedactMetadata(&bespb.BuildEvent{
+				Payload: &bespb.BuildEvent_Progress{Progress: progress},
+			})
+			require.NoError(t, err)
+			assert.Equal(t, input, progress.Stdout)
+			assert.Equal(t, input, progress.Stderr)
+		})
+	}
 }
 
 func TestRedactAPIKey(t *testing.T) {

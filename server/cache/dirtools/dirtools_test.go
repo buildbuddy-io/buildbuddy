@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -33,14 +34,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func TestUploadTree(t *testing.T) {
@@ -655,6 +658,33 @@ func TestUploadTree(t *testing.T) {
 				BytesTransferred: 8,
 			},
 		},
+		{
+			name: "SymlinkOutOfRootInOutputPaths",
+			cmd: &repb.Command{
+				OutputPaths: []string{"a"},
+			},
+			symlinkPaths: map[string]string{
+				"a": "/",
+			},
+			// Output symlinks are normally returned in OutputSymlinks and also
+			// in the deprecated OutputFileSymlinks or OutputDirectorySymlinks,
+			// depending on the target type. This symlink is only returned in
+			// OutputSymlinks, because checking whether its target is a
+			// directory would require accessing a path outside of the working
+			// directory.
+			expectedResult: &repb.ActionResult{
+				OutputSymlinks: []*repb.OutputSymlink{
+					{
+						Path:   "a",
+						Target: "/",
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        1,
+				BytesTransferred: 8,
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, ctx := testEnv(t)
@@ -674,7 +704,7 @@ func TestUploadTree(t *testing.T) {
 			dirHelper := dirtools.NewDirHelper(rootDir, tc.cmd, fs.FileMode(0o755))
 
 			actionResult := &repb.ActionResult{}
-			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, tc.cmd, actionResult, true /*=addToFileCache*/, nil /*=chunkingParams*/)
+			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, tc.cmd, actionResult, true /*=addToFileCache*/, nil /*=chunkingParams*/)
 			require.NoError(t, err)
 
 			assert.Equal(t, tc.expectedInfo.FileCount, txInfo.FileCount)
@@ -732,6 +762,28 @@ func TestUploadTree(t *testing.T) {
 	}
 }
 
+func TestUploadTree_WorkingDirectorySymlinkOutOfRoot(t *testing.T) {
+	env, ctx := testEnv(t)
+	inputRoot := testfs.MakeTempDir(t)
+	outsideDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, outsideDir, map[string]string{"secret.txt": "secret"})
+	require.NoError(t, os.Symlink(outsideDir, filepath.Join(inputRoot, "wd")))
+	cmd := &repb.Command{WorkingDirectory: "wd", OutputPaths: []string{"secret.txt"}}
+	dirHelper := dirtools.NewDirHelper(inputRoot, cmd, fs.FileMode(0o755))
+
+	actionResult := &repb.ActionResult{}
+	_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, cmd, actionResult, true /*=addToFileCache*/, nil /*=chunkingParams*/)
+
+	require.Error(t, err)
+	assert.Empty(t, actionResult.GetOutputFiles())
+	has, err := env.GetCache().Contains(ctx, &rspb.ResourceName{
+		CacheType: rspb.CacheType_CAS,
+		Digest:    &repb.Digest{Hash: hash.String("secret"), SizeBytes: int64(len("secret"))},
+	})
+	require.NoError(t, err)
+	assert.False(t, has)
+}
+
 func getDigestForMsg(t *testing.T, in proto.Message) *repb.Digest {
 	d, err := digest.ComputeForMessage(in, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
@@ -773,6 +825,15 @@ func TestCreateOutputDirs(t *testing.T) {
 			},
 			cmd:          &repb.Command{OutputFiles: []string{"gen/out.txt"}},
 			wantSymlinks: []string{"gen"},
+			wantErr:      true,
+		},
+		{
+			name: "FailsOnWorkingDirectorySymlinkOutOfRoot",
+			inputs: func(t *testing.T, rootDir, outsideDir string) {
+				require.NoError(t, os.Symlink(outsideDir, filepath.Join(rootDir, "wd")))
+			},
+			cmd:          &repb.Command{WorkingDirectory: "wd", OutputFiles: []string{"a/out.txt"}},
+			wantSymlinks: []string{"wd"},
 			wantErr:      true,
 		},
 	} {
@@ -1419,6 +1480,10 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 					Name:   "fileB.txt",
 					Digest: fileBDigest,
 				},
+				&repb.FileNode{
+					Name:   "fileB-copy.txt",
+					Digest: fileBDigest,
+				},
 			},
 			Directories: []*repb.DirectoryNode{
 				&repb.DirectoryNode{
@@ -1431,6 +1496,10 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 			childDir,
 		},
 	}
+	hits := metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: "hit"})
+	misses := metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: "miss"})
+	hitsBefore := testutil.ToFloat64(hits)
+	missesBefore := testutil.ToFloat64(misses)
 	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 	if err != nil {
 		t.Fatal(err)
@@ -1438,9 +1507,14 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 	assert.NotNil(t, info, "transfers are not nil")
 	assert.Equal(t, int64(1), info.FileCount, "one file should be transferred, one linked from filecache")
 	assert.Equal(t, int64(len(fileBContents)), info.BytesTransferred, "only file B should be downloaded; file A should be linked from filecache")
+	hitCount := testutil.ToFloat64(hits) - hitsBefore
+	missCount := testutil.ToFloat64(misses) - missesBefore
+	assert.Equal(t, float64(1), hitCount, "file A should count as a filecache hit")
+	assert.Equal(t, float64(2), missCount, "both paths of file B should count as filecache misses")
 	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "fileB-copy.txt"), "fileB-copy.txt should exist")
 }
 
 func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T) {
@@ -2227,7 +2301,7 @@ func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
 				cmd := &repb.Command{OutputPaths: []string{"out"}}
 				dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
 				eg.Go(func() error {
-					_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
+					_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
 					return err
 				})
 			}
@@ -2240,6 +2314,27 @@ func TestUploadTree_OutputUploadConcurrency(t *testing.T) {
 			require.Positive(t, batchWrites)
 			require.Positive(t, streamWrites)
 			require.LessOrEqual(t, maxInFlight, limit)
+		})
+	}
+}
+
+func BenchmarkUploadTree(b *testing.B) {
+	for _, numFiles := range []int{10_000, 100_000} {
+		b.Run(fmt.Sprintf("files=%d", numFiles), func(b *testing.B) {
+			env, ctx := testEnv(b)
+			rootDir := testfs.MakeTempDir(b)
+			outputDir := "bazel-out/k8-fastbuild/bin/pkg/out"
+			testfs.WriteRandomTree(b, filepath.Join(rootDir, outputDir), numFiles, int64(numFiles)*2048 /*=totalBytes*/)
+			cmd := &repb.Command{OutputPaths: []string{outputDir}}
+			dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
+			// Warm remote cache outside the loop since we're not measuring
+			// remote cache performance here.
+			_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
+			require.NoError(b, err)
+			for b.Loop() {
+				_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
+				require.NoError(b, err)
+			}
 		})
 	}
 }
@@ -2257,7 +2352,7 @@ func uploadOutTree(t *testing.T, ctx context.Context, env *testenv.TestEnv, addT
 	cmd := &repb.Command{OutputPaths: []string{"out"}}
 	dirHelper := dirtools.NewDirHelper(rootDir, cmd, fs.FileMode(0o755))
 	actionResult := &repb.ActionResult{}
-	info, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, actionResult, addToFileCache, nil /*=chunkingParams*/)
+	info, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, cmd, actionResult, addToFileCache, nil /*=chunkingParams*/)
 	require.NoError(t, err)
 	require.Len(t, actionResult.OutputDirectories, 1)
 	return info, actionResult
@@ -2362,7 +2457,7 @@ func TestUploadTree_AddsOnlyFilesToFileCache(t *testing.T) {
 	require.Equal(t, fileCount, fileCache.totalAddCount())
 }
 
-func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
+func testEnv(t testing.TB) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 
 	// wrap the cache so we can add artificial delays to operations

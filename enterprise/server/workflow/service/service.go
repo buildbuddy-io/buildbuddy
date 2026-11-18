@@ -610,6 +610,10 @@ func (ws *workflowService) suppressActions(ctx context.Context, wf *tables.Workf
 }
 
 func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID string) (*tables.Workflow, error) {
+	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	isLegacyWorkflow := !isRepositoryWorkflowID(workflowID)
 	if isLegacyWorkflow {
 		if *disableLegacyWorkflows {
@@ -617,8 +621,8 @@ func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID strin
 		}
 		wf := &tables.Workflow{}
 		err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_by_id").Raw(
-			`SELECT * FROM Workflows WHERE workflow_id = ?`,
-			workflowID,
+			`SELECT * FROM Workflows WHERE workflow_id = ? AND group_id = ?`,
+			workflowID, u.GetGroupID(),
 		).Take(wf)
 		if err != nil {
 			if db.IsRecordNotFound(err) {
@@ -634,6 +638,9 @@ func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID strin
 	groupID, repoURL, err := parseRepositoryWorkflowID(workflowID)
 	if err != nil {
 		return nil, err
+	}
+	if groupID != u.GetGroupID() {
+		return nil, status.NotFoundError("workflow not found")
 	}
 	rwf, err := ws.getRepositoryWorkflow(ctx, groupID, repoURL)
 	if err != nil {
@@ -1102,6 +1109,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: ci_runner_env.BuildBuddyActionNameEnvVarName, Value: workflowAction.Name},
 		{Name: ci_runner_env.BuildBuddyTriggerEventEnvVarName, Value: wd.EventName},
 	}
+	envVars = append(envVars, ci_runner_util.ExtraEnvVars(ctx, experiments.WithContext("workflow_action_name", workflowAction.Name))...)
 	for k, v := range workflowAction.Env {
 		envVars = append(envVars, &repb.Command_EnvironmentVariable{
 			Name:  k,
@@ -1673,7 +1681,6 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 	// By default, this query returns up to 15 invocations.
 	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(ctx, &inpb.SearchInvocationRequest{
 		Query: &inpb.InvocationQuery{
-			GroupId:    wf.GroupID,
 			RepoUrl:    wf.RepoURL,
 			BranchName: wd.PushedBranch,
 			Pattern:    action.Name,

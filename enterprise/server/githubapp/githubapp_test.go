@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -21,6 +22,7 @@ import (
 	"github.com/google/go-github/v59/github"
 	"github.com/stretchr/testify/require"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 )
 
@@ -261,6 +263,71 @@ func TestUnlinkGitHubRepo_DeletesScheduledRuns(t *testing.T) {
 		remainingIDs = append(remainingIDs, sr.ScheduleID)
 	}
 	require.ElementsMatch(t, []string{"WFS:3", "WFS:4"}, remainingIDs)
+}
+
+func insertScheduledRunsForInstallationTest(t *testing.T, te *testenv.TestEnv, ctx context.Context) {
+	for _, sr := range []*tables.ScheduledRun{
+		{ScheduleID: "WFS:1", GroupID: testGroupID, RepoURL: testRepoURL, ActionName: "a", CronExpr: "0 * * * *"},
+		// Same group and owner (different casing), different repo.
+		{ScheduleID: "WFS:2", GroupID: testGroupID, RepoURL: "https://github.com/Test-Org/other-repo", ActionName: "a", CronExpr: "0 * * * *"},
+		// Same group, different owner.
+		{ScheduleID: "WFS:3", GroupID: testGroupID, RepoURL: "https://github.com/other-org/repo", ActionName: "a", CronExpr: "0 * * * *"},
+		// Same repo URL, different group.
+		{ScheduleID: "WFS:4", GroupID: "GR2", RepoURL: testRepoURL, ActionName: "a", CronExpr: "0 * * * *"},
+	} {
+		err := te.GetDBHandle().NewQuery(ctx, "test_insert_scheduled_run").Create(sr)
+		require.NoError(t, err)
+	}
+}
+
+func remainingScheduleIDs(t *testing.T, te *testenv.TestEnv, ctx context.Context) []string {
+	remaining, err := db.ScanAll(te.GetDBHandle().NewQuery(ctx, "test_get_scheduled_runs").Raw(`
+		SELECT * FROM "ScheduledRuns"
+	`), &tables.ScheduledRun{})
+	require.NoError(t, err)
+	var ids []string
+	for _, sr := range remaining {
+		ids = append(ids, sr.ScheduleID)
+	}
+	return ids
+}
+
+func TestUninstallApp_CallbackHandler_DeletesScheduledRuns(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	insertScheduledRunsForInstallationTest(t, te, ctx)
+	app := newTestApp(te, &fakeAppClient{t: t})
+
+	err := app.handleInstallationEvent(ctx, "installation", &github.InstallationEvent{
+		Action:       new("deleted"),
+		Installation: &github.Installation{ID: new(testInstallationID)},
+	})
+	require.NoError(t, err)
+
+	require.ElementsMatch(t, []string{"WFS:3", "WFS:4"}, remainingScheduleIDs(t, te, ctx))
+	installations, err := db.ScanAll(te.GetDBHandle().NewQuery(ctx, "test_get_installations").Raw(`
+		SELECT * FROM "GitHubAppInstallations"
+	`), &tables.GitHubAppInstallation{})
+	require.NoError(t, err)
+	require.Empty(t, installations)
+}
+
+func TestUnlinkGitHubAppInstallation_DeletesScheduledRuns(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	user := testauth.User(testUserID, testGroupID)
+	user.GroupMemberships[0].Capabilities = append(user.GroupMemberships[0].Capabilities, cappb.Capability_ORG_ADMIN)
+	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{testUserID: user})
+	te.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), testUserID)
+	require.NoError(t, err)
+	insertInstallation(t, te, ctx)
+	insertScheduledRunsForInstallationTest(t, te, ctx)
+	app := newTestApp(te, &fakeAppClient{t: t})
+
+	_, err = app.UnlinkGitHubAppInstallation(ctx, &ghpb.UnlinkAppInstallationRequest{InstallationId: testInstallationID})
+	require.NoError(t, err)
+
+	require.ElementsMatch(t, []string{"WFS:3", "WFS:4"}, remainingScheduleIDs(t, te, ctx))
 }
 
 func TestValidateWebhookPayload(t *testing.T) {

@@ -274,9 +274,12 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.
 	if err != nil {
 		return nil, status.InternalErrorf("failed to fetch metrics (groupID: %s) from prometheus: %s", groupID, err)
 	}
-	metricFamilies, err := queryResultsToMetrics(vectorMap)
+	metricFamilies, skipped, err := queryResultsToMetrics(vectorMap)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to parse metrics fetched from prometheus (groupID: %s): %s", groupID, err)
+	}
+	if len(skipped) > 0 {
+		recordSkippedSeries(ctx, groupID, skipped)
 	}
 
 	err = q.setMetrics(ctx, groupID, metricFamilies)
@@ -396,8 +399,17 @@ func (q *promQuerier) query(ctx context.Context, metricName string, sumByFields 
 	return resultVector, nil
 }
 
-func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error) {
+// skippedSeriesKey identifies histogram series left out of an export.
+type skippedSeriesKey struct {
+	metricName string
+	reason     string
+}
+
+// queryResultsToMetrics converts query results to metric families. It also
+// returns the number of incomplete histogram series it skipped.
+func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, map[skippedSeriesKey]int, error) {
 	m := make(map[string]*dto.MetricFamily)
+	skipped := make(map[skippedSeriesKey]int)
 
 	for _, config := range MetricConfigs {
 		family, ok := m[config.ExportedFamily.GetName()]
@@ -408,21 +420,21 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 		if config.ExportedFamily.GetType() == dto.MetricType_COUNTER {
 			vector, ok := vectors[config.sourceMetricName]
 			if !ok {
-				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
+				return nil, nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
 			}
 			metric, err := counterVecToMetrics(vector, config.LabelNames)
 			if err != nil {
-				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
+				return nil, nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
 			family.Metric = append(family.GetMetric(), metric...)
 		} else if config.ExportedFamily.GetType() == dto.MetricType_GAUGE {
 			vector, ok := vectors[config.sourceMetricName]
 			if !ok {
-				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
+				return nil, nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
 			}
 			metric, err := gaugeVecToMetrics(vector, config.LabelNames)
 			if err != nil {
-				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
+				return nil, nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
 			family.Metric = append(family.GetMetric(), metric...)
 		} else if config.ExportedFamily.GetType() == dto.MetricType_HISTOGRAM {
@@ -430,11 +442,14 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 			countVector, countExists := vectors[config.sourceMetricName+countSuffix]
 			bucketVector, bucketExists := vectors[config.sourceMetricName+bucketSuffix]
 			if !countExists || !sumExists || !bucketExists {
-				return nil, status.InternalErrorf("missing metric %q for histogram", config.sourceMetricName)
+				return nil, nil, status.InternalErrorf("missing metric %q for histogram", config.sourceMetricName)
 			}
-			metric, err := histogramVecToMetrics(countVector, sumVector, bucketVector, config.LabelNames)
+			metric, skippedByReason, err := histogramVecToMetrics(countVector, sumVector, bucketVector, config.LabelNames)
 			if err != nil {
-				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
+				return nil, nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
+			}
+			for reason, n := range skippedByReason {
+				skipped[skippedSeriesKey{config.sourceMetricName, reason}] += n
 			}
 			family.Metric = append(family.GetMetric(), metric...)
 		}
@@ -446,7 +461,22 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 	for _, mf := range m {
 		res.MetricFamilies = append(res.GetMetricFamilies(), mf)
 	}
-	return res, nil
+	return res, skipped, nil
+}
+
+func recordSkippedSeries(ctx context.Context, groupID string, skipped map[skippedSeriesKey]int) {
+	for k, n := range skipped {
+		metrics.ExportedMetricsSkippedHistogramSeriesCount.With(prometheus.Labels{
+			metrics.ExportedMetricNameLabel:       k.metricName,
+			metrics.ExportedMetricSkipReasonLabel: k.reason,
+		}).Add(float64(n))
+	}
+	parts := make([]string, 0, len(skipped))
+	for k, n := range skipped {
+		parts = append(parts, fmt.Sprintf("%s %s=%d", k.metricName, k.reason, n))
+	}
+	sort.Strings(parts)
+	log.CtxWarningf(ctx, "Skipped incomplete histogram series in metrics export (groupID=%s): %s", groupID, strings.Join(parts, ", "))
 }
 
 func makeLabelPairs(labelNames []string, sample *model.Sample) ([]*dto.LabelPair, error) {
@@ -500,7 +530,11 @@ func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric,
 	return res, nil
 }
 
-func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames []string) ([]*dto.Metric, error) {
+// histogramVecToMetrics builds histograms from count, sum, and bucket series.
+// The three come from separate queries, which can see different data while
+// series appear or disappear (e.g. during pod turnover). A series missing
+// from any of them is skipped, and the skips are returned by reason.
+func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames []string) ([]*dto.Metric, map[string]int, error) {
 	sumByFingerprint := make(map[model.Fingerprint]float64)
 	for _, sample := range sumVec {
 		footprint := sample.Metric.Fingerprint()
@@ -511,11 +545,11 @@ func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames 
 	for _, sample := range bucketVec {
 		leValue, ok := sample.Metric[leLabel]
 		if !ok {
-			return nil, status.InternalErrorf("miss 'le' value for bucket vector, label set: %s", sample.Metric)
+			return nil, nil, status.InternalErrorf("miss 'le' value for bucket vector, label set: %s", sample.Metric)
 		}
 		upperBound, err := strconv.ParseFloat(string(leValue), 64)
 		if err != nil {
-			return nil, status.InternalErrorf("failed to parse %q to float64", leValue)
+			return nil, nil, status.InternalErrorf("failed to parse %q to float64", leValue)
 		}
 		bucket := &dto.Bucket{
 			UpperBound:      proto.Float64(upperBound),
@@ -529,24 +563,30 @@ func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames 
 	}
 
 	res := make([]*dto.Metric, 0, len(countVec))
+	skipped := make(map[string]int)
 
 	for _, sample := range countVec {
-		fingerprint := sample.Metric.Fingerprint()
-		sum, ok := sumByFingerprint[fingerprint]
-		if !ok {
-			return nil, status.InternalErrorf("miss sum value for metric, label set %s", sample.Metric)
-		}
 		labelPairs, err := makeLabelPairs(labelNames, sample)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		buckets, ok := bucketsByFingerprint[fingerprint]
+		fingerprint := sample.Metric.Fingerprint()
+		sum, hasSum := sumByFingerprint[fingerprint]
+		buckets, hasBuckets := bucketsByFingerprint[fingerprint]
+		// Remove matched series so the leftovers are the ones with no count.
+		delete(sumByFingerprint, fingerprint)
+		delete(bucketsByFingerprint, fingerprint)
+		if !hasSum {
+			skipped[metrics.ExportedMetricMissingSumReason]++
+			continue
+		}
+		if !hasBuckets {
+			skipped[metrics.ExportedMetricMissingBucketsReason]++
+			continue
+		}
 		sort.Slice(buckets, func(i, j int) bool {
 			return buckets[i].GetUpperBound() < buckets[j].GetUpperBound()
 		})
-		if !ok {
-			return nil, status.InternalErrorf("miss bucket value for metric, label set %s", sample.Metric)
-		}
 
 		res = append(res, &dto.Metric{
 			Label: labelPairs,
@@ -557,7 +597,19 @@ func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames 
 			},
 		})
 	}
-	return res, nil
+
+	// Series left in either map had no matching count. A series can be in
+	// both maps, so count the union of the two to count it only once.
+	missingCount := len(bucketsByFingerprint)
+	for fingerprint := range sumByFingerprint {
+		if _, ok := bucketsByFingerprint[fingerprint]; !ok {
+			missingCount++
+		}
+	}
+	if missingCount > 0 {
+		skipped[metrics.ExportedMetricMissingCountReason] = missingCount
+	}
+	return res, skipped, nil
 }
 
 func getExportedMetricsKey(groupID string) string {

@@ -272,8 +272,10 @@ message InvocationQuery {
   // The host this build was executed on.
   string host = 2;
 
-  // The group to search. The user must be a member of all named groups or an
-  // error will be returned.
+  // The group to search. Searches are always scoped to the authenticated
+  // group, which clients select using request_context.group_id, so new
+  // clients should leave this unset. If set, it must match the authenticated
+  // group or an error will be returned.
   string group_id = 3;
 
   // The git repo the build was for.

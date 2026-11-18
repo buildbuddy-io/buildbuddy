@@ -2,14 +2,12 @@ package proxy_util_test
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
@@ -20,8 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -34,31 +30,13 @@ const (
 	testClientSocket = "127.0.0.1"
 )
 
-// providerCount makes each env's OpenFeature provider name unique.
-var providerCount int
-
-// newEnv returns an env with the cache_proxy.attest_http_forwarding experiment
-// set to attest.
-func newEnv(t *testing.T, withIdentity, attest bool) *real_environment.RealEnv {
+func newEnv(t *testing.T, withIdentity bool) *real_environment.RealEnv {
 	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker("test"))
 	t.Cleanup(env.GetHealthChecker().Shutdown)
 	if withIdentity {
 		require.NoError(t, clientidentity.Register(env))
 		require.NotNil(t, env.GetClientIdentityService())
 	}
-	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache_proxy.attest_http_forwarding": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "v",
-			Variants:       map[string]any{"v": attest},
-		},
-	})
-	providerCount++
-	domain := fmt.Sprintf("%s/%d", t.Name(), providerCount)
-	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
-	fp, err := experiments.NewFlagProvider(domain)
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
 	return env
 }
 
@@ -122,8 +100,9 @@ func requireIdentity(t *testing.T, env environment.Env, header http.Header, clie
 }
 
 func TestHTTPForwarder_AttestsClientIP(t *testing.T) {
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
 	flags.Set(t, "app.client_identity.key", "test-key")
-	env := newEnv(t, true, true)
+	env := newEnv(t, true)
 
 	var got *http.Request
 	proxyServer := serveForwarder(t, env, capture(&got))
@@ -138,7 +117,8 @@ func TestHTTPForwarder_AttestsClientIP(t *testing.T) {
 }
 
 func TestHTTPForwarder_NoIdentityService(t *testing.T) {
-	env := newEnv(t, false, true)
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
+	env := newEnv(t, false)
 
 	var got *http.Request
 	proxyServer := serveForwarder(t, env, capture(&got))
@@ -155,11 +135,12 @@ func TestHTTPForwarder_NoIdentityService(t *testing.T) {
 // the app sees the proxy's egress IP in X-Forwarded-For (second to last), but
 // must resolve the original client IP from the proxy's attestation.
 func TestHTTPForwarder_ClientIPThroughLoadBalancer(t *testing.T) {
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
 	flags.Set(t, "app.client_identity.key", "test-key")
 	flags.Set(t, "auth.trust_xforwardedfor_header", true)
 	require.NoError(t, clientip.Init())
-	proxyEnv := newEnv(t, true, true)
-	appEnv := newEnv(t, true, false)
+	proxyEnv := newEnv(t, true)
+	appEnv := newEnv(t, true)
 
 	var gotIP string
 	app := interceptors.WrapExternalHandler(appEnv, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +158,8 @@ func TestHTTPForwarder_ClientIPThroughLoadBalancer(t *testing.T) {
 }
 
 func TestHTTPForwarder_SetsForwardingHeaders(t *testing.T) {
-	env := newEnv(t, false, true)
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
+	env := newEnv(t, false)
 
 	var got *http.Request
 	proxyServer := serveForwarder(t, env, capture(&got))
@@ -199,10 +181,11 @@ func TestHTTPForwarder_SetsForwardingHeaders(t *testing.T) {
 // -> proxy -> app: the proxy trusts the XFF set by Envoy and attests the
 // client IP in it, rather than the Envoy peer address.
 func TestHTTPForwarder_ClientIPFromIncomingForwardedFor(t *testing.T) {
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
 	flags.Set(t, "app.client_identity.key", "test-key")
 	flags.Set(t, "auth.trust_xforwardedfor_header", true)
 	require.NoError(t, clientip.Init())
-	proxyEnv := newEnv(t, true, true)
+	proxyEnv := newEnv(t, true)
 
 	var got *http.Request
 	proxyServer := serveForwarder(t, proxyEnv, capture(&got))
@@ -215,8 +198,9 @@ func TestHTTPForwarder_ClientIPFromIncomingForwardedFor(t *testing.T) {
 }
 
 func TestHTTPForwarder_ValidCallerIdentityIsKept(t *testing.T) {
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
 	flags.Set(t, "app.client_identity.key", "test-key")
-	env := newEnv(t, true, true)
+	env := newEnv(t, true)
 	executorHeader := identityHeader(t, env, interfaces.ClientIdentityExecutor)
 
 	var got *http.Request
@@ -232,10 +216,11 @@ func TestHTTPForwarder_ValidCallerIdentityIsKept(t *testing.T) {
 }
 
 func TestHTTPForwarder_InvalidCallerIdentityIsRejected(t *testing.T) {
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
 	flags.Set(t, "app.client_identity.key", "attacker-key")
-	otherKeyHeader := identityHeader(t, newEnv(t, true, false), interfaces.ClientIdentityGRPCProxy)
+	otherKeyHeader := identityHeader(t, newEnv(t, true), interfaces.ClientIdentityGRPCProxy)
 	flags.Set(t, "app.client_identity.key", "test-key")
-	env := newEnv(t, true, true)
+	env := newEnv(t, true)
 
 	for name, identity := range map[string]string{
 		"junk":      "junk",
@@ -255,8 +240,9 @@ func TestHTTPForwarder_InvalidCallerIdentityIsRejected(t *testing.T) {
 // A client can't use the Connection header to make the proxy drop its
 // attestation after setting it.
 func TestHTTPForwarder_ConnectionHeaderCannotDropAttestation(t *testing.T) {
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
 	flags.Set(t, "app.client_identity.key", "test-key")
-	env := newEnv(t, true, true)
+	env := newEnv(t, true)
 
 	var got *http.Request
 	proxyServer := serveForwarder(t, env, capture(&got))
@@ -272,16 +258,17 @@ func TestHTTPForwarder_ConnectionHeaderCannotDropAttestation(t *testing.T) {
 // client -> forwarder A -> forwarder B -> app: the app resolves the original
 // client IP, not a proxy's.
 func TestHTTPForwarder_ClientIPThroughTwoProxyHops(t *testing.T) {
+	flags.Set(t, "cache_proxy.attest_http_forwarding", true)
 	flags.Set(t, "app.client_identity.key", "test-key")
 	flags.Set(t, "auth.trust_xforwardedfor_header", true)
 	require.NoError(t, clientip.Init())
 
 	var gotIP string
-	app := interceptors.WrapExternalHandler(newEnv(t, true, false), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	app := interceptors.WrapExternalHandler(newEnv(t, true), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotIP = clientip.Get(r.Context())
 	}))
-	proxyB := serveForwarder(t, newEnv(t, true, true), app)
-	proxyA := serveForwarderTo(t, newEnv(t, true, true), proxyB.URL)
+	proxyB := serveForwarder(t, newEnv(t, true), app)
+	proxyA := serveForwarderTo(t, newEnv(t, true), proxyB.URL)
 
 	require.Equal(t, http.StatusOK, doRequest(t, proxyA.URL, func(req *http.Request) {
 		req.Header.Set("X-Forwarded-For", "203.0.113.7, 10.9.9.9")
@@ -294,7 +281,7 @@ func TestHTTPForwarder_ClientIPThroughTwoProxyHops(t *testing.T) {
 // attested forwarder would treat differently are counted.
 func TestHTTPForwarder_Legacy(t *testing.T) {
 	flags.Set(t, "app.client_identity.key", "test-key")
-	env := newEnv(t, true, false)
+	env := newEnv(t, true)
 
 	diffs := func() map[string]float64 {
 		m := map[string]float64{}
@@ -341,9 +328,9 @@ func TestHTTPForwarder_Legacy(t *testing.T) {
 // signed with another key.
 func TestAppIgnoresClientIPWithIdentitySignedWithOtherKey(t *testing.T) {
 	flags.Set(t, "app.client_identity.key", "attacker-key")
-	otherKeyHeader := identityHeader(t, newEnv(t, true, false), interfaces.ClientIdentityGRPCProxy)
+	otherKeyHeader := identityHeader(t, newEnv(t, true), interfaces.ClientIdentityGRPCProxy)
 	flags.Set(t, "app.client_identity.key", "test-key")
-	appEnv := newEnv(t, true, false)
+	appEnv := newEnv(t, true)
 	validHeader := identityHeader(t, appEnv, interfaces.ClientIdentityGRPCProxy)
 
 	var gotIP string

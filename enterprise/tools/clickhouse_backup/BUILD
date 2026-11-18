@@ -30,26 +30,22 @@ go_binary(
 go_test(
     name = "clickhouse_backup_test",
     srcs = ["clickhouse_backup_test.go"],
-    data = [
-        ":clickhouse_backup",
-        "//enterprise/tools/clickhouse_cluster",
-    ],
+    data = [":clickhouse_backup"],
     embed = [":clickhouse_backup_lib"],
     exec_properties = {
         "test.EstimatedComputeUnits": "4",
     },
     x_defs = {
-        "clickhouseClusterRlocationpath": "$(rlocationpath //enterprise/tools/clickhouse_cluster:clickhouse_cluster)",
         "clickhouseBackupRlocationpath": "$(rlocationpath :clickhouse_backup)",
     },
     deps = [
+        "//enterprise/server/testutil/testclickhousecluster",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/clickhouse",
         "//server/util/clickhouse/schema",
         "//server/util/testing/flags",
         "//server/util/uuid",
-        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",
     ],

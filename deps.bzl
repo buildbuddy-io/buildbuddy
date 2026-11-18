@@ -51,6 +51,17 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
 
+    # The stock server config.xml, which test servers use as their base config.
+    # The config is the same on every platform, so fetch the amd64 package for
+    # all of them.
+    http_archive(
+        name = "clickhouse_server_config",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-server-25.3.14.14-amd64.tgz"],
+        sha256 = "514bb8e5a8a3532b2b5a772d9bba0dee7e6c6c7a9e84c6cf204004dd3c420861",
+        strip_prefix = "clickhouse-server-25.3.14.14",
+        build_file_content = 'exports_files(["etc/clickhouse-server/config.xml"])',
+    )
+
     http_archive(
         name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
         integrity = "sha256-0Glb6xE/18H8cVTsfolRVmAOX1Rgrm3XAkJMT1W1dkI=",
@@ -66,14 +77,14 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
 
     http_archive(
-        name = "com_github_firecracker_microvm_firecracker",
+        name = "com_github_firecracker_microvm_firecracker_amd64",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.16.2-x86_64"),
-        sha256 = "32e3cdcd4081f91fe2b024a266f57dcb3b4e5fec5033e0cb22467ad7f7820bda",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.2/firecracker-v1.16.2-x86_64.tgz"],
+        ]).format(release = "v1.18.0-x86_64"),
+        sha256 = "1ac8eec866dd5eea14efecf6323e22b23eea24054545338a5b34bc5bca6623cd",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.18.0/firecracker-v1.18.0-x86_64.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
@@ -81,9 +92,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.16.2-aarch64"),
-        sha256 = "751365040ca3dde7616c5a1d97cc1304674fae469ce02993104eab22f5961950",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.2/firecracker-v1.16.2-aarch64.tgz"],
+        ]).format(release = "v1.18.0-aarch64"),
+        sha256 = "2a6130ff0338901ff9d7fbd73ce046c6b1c6123889dc84a34d678aa53bd0c0c2",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.18.0/firecracker-v1.18.0-aarch64.tgz"],
     )
 
     http_file(
@@ -286,20 +297,26 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "c6dd56fff7dada624dcb68db317541f45504261ae6f2aae5dc91848aacbbfda3",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-c6dd56fff7dada624dcb68db317541f45504261ae6f2aae5dc91848aacbbfda3"],
+        sha256 = "17e8688622325bddff42573c55e68fffaabb66aa919ff807b61dbaeddab2e614",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-17e8688622325bddff42573c55e68fffaabb66aa919ff807b61dbaeddab2e614"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-6.18",
-        sha256 = "757012f067c4db854f2a9bea6d76ce30242480c621114da8c07055bf1735819e",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.18-757012f067c4db854f2a9bea6d76ce30242480c621114da8c07055bf1735819e"],
+        sha256 = "b11edb6eee4f6610da49f64011a2544ba54b5ba763a11ecfde8ceb3fcb28dcce",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.18-b11edb6eee4f6610da49f64011a2544ba54b5ba763a11ecfde8ceb3fcb28dcce"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-arm64",
-        sha256 = "957d6da5c7ee7869c8a285784a201ac3928393087e2542131d4d107fc9556b45",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-957d6da5c7ee7869c8a285784a201ac3928393087e2542131d4d107fc9556b45"],
+        sha256 = "436aa1f3a92a2f8bd81260bc81321e960ee1453413180ccb1dd29985b5f883f6",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-436aa1f3a92a2f8bd81260bc81321e960ee1453413180ccb1dd29985b5f883f6"],
+        executable = True,
+    )
+    http_file(
+        name = "org_kernel_git_linux_kernel-vmlinux-arm64-6.18",
+        sha256 = "6de699ddc17edee7eb6c99430924bed4b7aa3b1ee5bcac3c4432e06ed2a88c38",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v6.18-6de699ddc17edee7eb6c99430924bed4b7aa3b1ee5bcac3c4432e06ed2a88c38"],
         executable = True,
     )
 

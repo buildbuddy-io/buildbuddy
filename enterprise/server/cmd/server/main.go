@@ -176,8 +176,6 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
-	config.ReloadOnSIGHUP()
-
 	redisutil.ConfigureLogging()
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
@@ -342,8 +340,9 @@ func main() {
 	executionSearchService := execution_search_service.NewExecutionSearchService(realEnv, realEnv.GetDBHandle(), realEnv.GetOLAPDBHandle())
 	realEnv.SetExecutionSearchService(executionSearchService)
 
-	telemetryServer := telserver.NewTelemetryServer(realEnv, realEnv.GetDBHandle())
-	telemetryServer.StartOrDieIfEnabled()
+	if err := telserver.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	telemetryClient := telemetry.NewTelemetryClient(realEnv)
 	telemetryClient.Start()

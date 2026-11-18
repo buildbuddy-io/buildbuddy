@@ -30,6 +30,8 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 func init() {
@@ -626,7 +628,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			unpushedLocalCommit: true,
 			expectedBranch:      "master",
 			expectedCommit:      originalMasterHeadCommit,
-			expectedPatches:     []string{"local_only_commited_file.txt"},
+			expectedPatches:     []string{"local_only_committed_file.txt"},
 		},
 		{
 			name:            "Detached HEAD without additional commits",
@@ -660,7 +662,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		resetRepoRootPathForTest(t)
 
 		if tc.unpushedLocalCommit {
-			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_only_commited_file.txt": "exit 0"})
+			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_only_committed_file.txt": "exit 0"})
 		} else if tc.localBranchExistsRemotely {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
 		} else {
@@ -717,6 +719,7 @@ func TestGitConfig_FetchURL(t *testing.T) {
 		expectedURL     string
 		multipleRemotes bool
 		isRemoteCached  bool
+		gitFetchURL     string
 	}{
 		{
 			name:        "One remote is configured",
@@ -728,7 +731,13 @@ func TestGitConfig_FetchURL(t *testing.T) {
 			isRemoteCached:  true,
 			expectedURL:     remoteUrl,
 		},
+		{
+			name:        "Fetch URL is set with a flag",
+			gitFetchURL: "https://git.example.com/scm/project/repo.git",
+			expectedURL: "https://git.example.com/scm/project/repo.git",
+		},
 	}
+	t.Cleanup(func() { *gitFetchURL = "" })
 
 	for _, tc := range testCases {
 		// Setup a "local" repo
@@ -743,6 +752,7 @@ func TestGitConfig_FetchURL(t *testing.T) {
 		if tc.isRemoteCached {
 			testshell.Run(t, localRepoPath, fmt.Sprintf("git config --replace-all %s.%s extra", gitConfigSection, gitConfigRemoteBazelRemote))
 		}
+		*gitFetchURL = tc.gitFetchURL
 
 		config, err := Config()
 		require.NoError(t, err, tc.name)
@@ -1141,4 +1151,74 @@ func runPrintLogsWithCapturedStdout(t *testing.T, client bbspb.BuildBuddyService
 	out, err := io.ReadAll(r)
 	require.NoError(t, err)
 	return string(out), printErr
+}
+
+func TestRedactedRunRequest(t *testing.T) {
+	// The shell expands local env vars into the command before bb runs, so the
+	// command contains the value and not the env var name.
+	t.Setenv("GITHUB_TOKEN", "local-secret")
+	req := &rnpb.RunRequest{
+		Steps: []*rnpb.Step{{Run: "bazel run //tools:deploy -- --run_token=local-secret"}},
+		GitRepo: &gitpb.GitRepo{
+			RepoUrl: "https://url-secret@github.com/org/repo.git",
+		},
+		Env: map[string]string{
+			"REPO_USER":  "test-user",
+			"REPO_TOKEN": "env-secret",
+			"OTHER_VAR":  "visible-value",
+		},
+		RemoteHeaders: []string{
+			"x-buildbuddy-platform.secret-env-overrides=TOKEN=header-secret",
+		},
+	}
+	encoded, err := redactedRunRequest(req)
+	require.NoError(t, err)
+	require.NotContains(t, encoded, "env-secret")
+	require.NotContains(t, encoded, "header-secret")
+	require.NotContains(t, encoded, "local-secret")
+	require.NotContains(t, encoded, "url-secret")
+	require.Contains(t, encoded, "github.com/org/repo")
+	require.Contains(t, encoded, "test-user")
+	require.Contains(t, encoded, "visible-value")
+	require.Contains(t, encoded, "x-buildbuddy-platform.secret-env-overrides=REDACTED")
+	// The original request, which is sent to the server, is unchanged.
+	require.Equal(t, "x-buildbuddy-platform.secret-env-overrides=TOKEN=header-secret", req.GetRemoteHeaders()[0])
+}
+
+func TestRedactedRepoURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "HTTPS URL with a token as the user",
+			url:  "https://url-secret@github.com/org/repo.git",
+			want: "https://github.com/org/repo.git",
+		},
+		{
+			name: "HTTPS URL with a user and token",
+			url:  "https://user:url-secret@github.com/org/repo.git",
+			want: "https://github.com/org/repo.git",
+		},
+		{
+			name: "HTTPS URL without credentials is unchanged",
+			url:  "https://github.com/org/repo.git",
+			want: "https://github.com/org/repo.git",
+		},
+		{
+			name: "SSH URL in scp form is unchanged",
+			url:  "git@github.com:org/repo.git",
+			want: "git@github.com:org/repo.git",
+		},
+		{
+			name: "SSH URL with a scheme and port is unchanged",
+			url:  "ssh://git@git.example.com:7999/project/repo.git",
+			want: "ssh://git@git.example.com:7999/project/repo.git",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, redactedRepoURL(tc.url))
+		})
+	}
 }

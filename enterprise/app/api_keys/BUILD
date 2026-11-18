@@ -22,6 +22,7 @@ ts_library(
         "//app/components/dialog",
         "//app/components/input",
         "//app/components/modal",
+        "//app/components/select",
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/format",
@@ -32,5 +33,6 @@ ts_library(
         "//app/util:react",
         "//proto:api_key_ts_proto",
         "//proto:capability_ts_proto",
+        "//proto:duration_ts_proto",
     ],
 )

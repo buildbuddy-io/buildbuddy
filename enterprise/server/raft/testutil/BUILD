@@ -33,6 +33,7 @@ go_library(
         "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_cockroachdb_pebble//vfs",
         "@com_github_google_uuid//:uuid",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_lni_dragonboat_v4//:dragonboat",

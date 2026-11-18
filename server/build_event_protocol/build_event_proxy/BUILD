@@ -9,11 +9,13 @@ go_library(
         "//proto:publish_build_event_go_proto",
         "//server/environment",
         "//server/real_environment",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )
@@ -24,7 +26,9 @@ go_test(
     embed = [":build_event_proxy"],
     deps = [
         "//proto:publish_build_event_go_proto",
+        "//server/util/authutil",
         "//server/util/testing/flags",
+        "//server/util/usageutil",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",

@@ -2724,6 +2724,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	// so it will be closed when the reader is.
 	db, err = p.leaser.DB()
 	if err != nil {
+		rc.Close()
 		return nil, err
 	}
 	return pebble.ReadCloserWithFunc(rc, db.Close), nil

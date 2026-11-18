@@ -83,6 +83,7 @@ var (
 	enableDriver                  = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup              = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload         = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+	enableAutoRatchet             = flag.Bool("cache.raft.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
 	blockCacheSizeBytes           = flag.Int64("cache.raft.block_cache_size_bytes", 1e9, "How much ram to give the block cache")
 	dragonboatBlockCacheSizeBytes = flag.Uint64("cache.raft.dragonboat_block_cache_size_bytes", 1e9, "How much ram to give the block cache in dragonboat")
 )
@@ -330,10 +331,26 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	if pebbleOpts.Cache != nil {
 		defer pebbleOpts.Cache.Unref()
 	}
+	if *enableAutoRatchet {
+		pebbleOpts.FormatMajorVersion = pebble.FormatNewest
+		fs := pebbleOpts.FS
+		if fs == nil {
+			fs = pebble.DefaultFS
+		}
+		// Peek requires RootDir to exist. Callers create it before New, and
+		// dragonboat.NewNodeHost creates subdirectories under it.
+		// Peek is only used for logging; pebble.Open reports real errors.
+		if desc, err := pebble.Peek(cfg.RootDir, fs); err != nil {
+			log.Warningf("Raft store: failed to read pebble format before open: %s", err)
+		} else if desc.Exists && desc.FormatMajorVersion < pebbleOpts.FormatMajorVersion {
+			log.Infof("Raft store: upgrading pebble format from %s to %s", desc.FormatMajorVersion, pebbleOpts.FormatMajorVersion)
+		}
+	}
 	db, err := pebble.Open(cfg.RootDir, "raft_store", pebbleOpts)
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("Raft store: pebble format major version is %s", db.FormatMajorVersion())
 	leaser := pebble.NewDBLeaser(db)
 
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
@@ -1860,13 +1877,17 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 			return nil, err
 		}
 		defer db.Close()
-		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.NoSync); err != nil {
+		// Use Sync, not NoSync: a machine crash can drop NoSync writes. Once
+		// the replica is cleared from the removed list below, neither Raft
+		// replay, RemoveData retries, nor the zombie janitor will redo these
+		// deletes, so lost deletes leave orphaned keys.
+		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.Sync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 
 		// Remove the local range of the replica.
 		localStart, localEnd := keys.Range(replica.LocalKeyPrefix(rd.GetRangeId(), req.GetReplicaId()))
-		if err := db.DeleteRange(localStart, localEnd, pebble.NoSync); err != nil {
+		if err := db.DeleteRange(localStart, localEnd, pebble.Sync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of local range of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 	}

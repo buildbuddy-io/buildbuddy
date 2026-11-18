@@ -353,7 +353,8 @@ func (c *checker) cleanupBazel(outputBase string) {
 
 func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, invocationID, besBackend, besResultsURL string) ([]string, error) {
 	// Clone the base args to avoid mutating the original, because each build has different flags (output base, compact log path, etc.).
-	clonedArgs, err := arg.NewBazelArgsNoResolve(baseArgs.Forwarded())
+	// Resolve rc files so that headers set in a bazelrc are visible.
+	clonedArgs, err := arg.NewBazelArgs(baseArgs.Forwarded())
 	if err != nil {
 		return nil, err
 	}
@@ -379,6 +380,9 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, invocati
 		}
 	}
 	if err := login.ConfigureAPIKey(clonedArgs); err != nil {
+		return nil, err
+	}
+	if err := login.ConfigureBESAPIKey(clonedArgs); err != nil {
 		return nil, err
 	}
 	return clonedArgs.Forwarded(), nil

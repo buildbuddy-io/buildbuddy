@@ -49,7 +49,9 @@ go_test(
     embed = [":githubapp"],
     deps = [
         "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:capability_go_proto",
         "//proto:github_go_proto",
+        "//server/interfaces",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

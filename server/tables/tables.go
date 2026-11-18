@@ -374,12 +374,14 @@ func (u *User) ToProto() *uspb.DisplayUser {
 		},
 		ProfileImageUrl: u.ImageURL,
 		Email:           u.Email,
-		AccountType:     subIDToAccountType(u.SubID),
+		AccountType:     AccountTypeFromSubID(u.SubID),
 		Username:        username,
 	}
 }
 
-func subIDToAccountType(s string) uspb.AccountType {
+// AccountTypeFromSubID returns the authentication provider type encoded in a
+// user's persistent subscriber ID.
+func AccountTypeFromSubID(s string) uspb.AccountType {
 	if strings.HasPrefix(s, "https://accounts.google.com/") {
 		return uspb.AccountType_GOOGLE
 	}

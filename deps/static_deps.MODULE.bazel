@@ -5,6 +5,7 @@ use_repo(
     "clickhouse_darwin_arm64",
     "clickhouse_linux_amd64",
     "clickhouse_linux_arm64",
+    "clickhouse_server_config",
     "cloudprober",
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
@@ -18,7 +19,7 @@ use_repo(
     "com_github_containerd_containerd-linux-arm64",
     "com_github_containers_crun_crun-linux-amd64",
     "com_github_containers_crun_crun-linux-arm64",
-    "com_github_firecracker_microvm_firecracker",
+    "com_github_firecracker_microvm_firecracker_amd64",
     "com_github_firecracker_microvm_firecracker_arm64",
     "com_github_googlecloudplatform_docker-credential-gcr-linux-amd64",
     "com_github_googlecloudplatform_docker-credential-gcr-linux-arm64",
@@ -67,5 +68,6 @@ use_repo(
     "org_kernel_git_linux_kernel-vmlinux",
     "org_kernel_git_linux_kernel-vmlinux-6.18",
     "org_kernel_git_linux_kernel-vmlinux-arm64",
+    "org_kernel_git_linux_kernel-vmlinux-arm64-6.18",
     "se_curl_cacert",
 )

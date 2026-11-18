@@ -22,6 +22,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -104,6 +105,7 @@ type fakeAPIKeyGroup struct {
 	useGroupOwnedExecutors bool
 	cacheEncryptionEnabled bool
 	enforceIPRules         bool
+	userAccountType        uidpb.AccountType
 	impersonation          bool
 	groupStatus            grpb.Group_GroupStatus
 }
@@ -140,6 +142,10 @@ func (f *fakeAPIKeyGroup) GetEnforceIPRules() bool {
 	return f.enforceIPRules
 }
 
+func (f *fakeAPIKeyGroup) GetUserAccountType() uidpb.AccountType {
+	return f.userAccountType
+}
+
 func (f *fakeAPIKeyGroup) IsImpersonating() bool {
 	return f.impersonation
 }
@@ -154,9 +160,10 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	baseGroupID := "GR9000"
 	caps := capabilities.AnonymousUserCapabilities
 	akg := &fakeAPIKeyGroup{
-		groupID:      baseGroupID,
-		capabilities: capabilities.ToInt(caps),
-		groupStatus:  grpb.Group_ENTERPRISE_GROUP_STATUS,
+		groupID:         baseGroupID,
+		capabilities:    capabilities.ToInt(caps),
+		userAccountType: uidpb.AccountType_SAML,
+		groupStatus:     grpb.Group_ENTERPRISE_GROUP_STATUS,
 	}
 	c, err := claims.APIKeyGroupClaims(ctx, akg)
 	require.NoError(t, err)
@@ -168,6 +175,8 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.Equal(t, []string{baseGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership}, c.GetGroupMemberships())
 	require.Equal(t, grpb.Group_ENTERPRISE_GROUP_STATUS, c.GetGroupStatus())
+	require.True(t, c.IsSAML())
+	require.True(t, c.IsCustomerSSO())
 
 	// Should be able to set group ID to the base group ID via request context which should yield same results
 	// as before.

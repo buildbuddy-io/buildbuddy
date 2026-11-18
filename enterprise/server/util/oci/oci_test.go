@@ -6,12 +6,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -37,16 +39,17 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/validate"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var manifestRequestRegexp = regexp.MustCompile("/v2/.*/manifests/.*")
@@ -1870,9 +1873,24 @@ func (c *countingBSClient) Write(ctx context.Context, opts ...grpc.CallOption) (
 // populate the proxy's local cache under a different key than the one the
 // OCIFetcher proxy uses, so they never produce hits.
 func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
+	flags.Set(t, "executor.use_oci_fetcher", true)
+	flags.Set(t, "executor.oci_fetcher_required", false)
+	testResolveWithOCIFetcherNoDirectCacheAccess(t, true)
+}
+
+func TestResolveWithOCIFetcher_Required_NoDirectCacheAccess(t *testing.T) {
+	flags.Set(t, "executor.use_oci_fetcher", false)
+	flags.Set(t, "executor.oci_fetcher_required", true)
+	testResolveWithOCIFetcherNoDirectCacheAccess(t, false)
+}
+
+func testResolveWithOCIFetcherNoDirectCacheAccess(t *testing.T, useOCIFetcher bool) {
+	t.Helper()
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	resolver, err := oci.NewResolver(te)
+	require.NoError(t, err)
 	counter := testhttp.NewRequestCounter()
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -1893,17 +1911,20 @@ func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
 	te.SetActionCacheClient(acClient)
 	te.SetByteStreamClient(bsClient)
 
-	ctx := contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"})
-	// Pull twice: the first pull populates the OCIFetcher server's cache and
+	// Pull once authenticated, then anonymously (as during startup warmup).
+	// The first pull populates the OCIFetcher server's cache and
 	// the second should be served from it. Neither should touch the AC or BS
 	// from the executor.
-	for pull := range 2 {
-		pulledImage, err := newResolver(t, te).Resolve(
+	for pull, ctx := range []context.Context{
+		contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"}),
+		context.Background(),
+	} {
+		pulledImage, err := resolver.Resolve(
 			ctx,
 			registry.ImageAddress(imageName),
 			&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
 			oci.Credentials{},
-			true, /*=useOCIFetcher*/
+			useOCIFetcher,
 		)
 		require.NoError(t, err)
 		layers, err := pulledImage.Layers()
@@ -1963,5 +1984,76 @@ func TestRegistryETLDPlusOne(t *testing.T) {
 			got := oci.RegistryETLDPlusOne(tt.imageRef)
 			assert.Equal(t, tt.want, got)
 		})
+	}
+}
+
+func TestResolve_BlobRedirectToAllowlistedIP(t *testing.T) {
+	const token = "test-token"
+	for _, allowed := range [][]string{{"127.0.0.1/32"}, nil} {
+		for _, bearer := range []bool{false, true} {
+			for _, useOCIFetcher := range []bool{false, true} {
+				t.Run(fmt.Sprintf("allowed_%v/bearer_%t/use_oci_fetcher_%t", allowed, bearer, useOCIFetcher), func(t *testing.T) {
+					flags.Set(t, "executor.container_registry_allowed_private_ips", allowed)
+					flags.Set(t, "executor.container_registry.use_cache_percent", 0)
+					// Lets the test reach the registry on localhost; redirects are
+					// still subject to ggcr's SSRF check.
+					flags.Set(t, "http.client.allow_localhost", true)
+					te := testenv.GetTestEnv(t)
+					if useOCIFetcher {
+						te = setupTestEnvWithCache(t)
+					}
+					var enabled atomic.Bool
+					registry := testregistry.Run(t, testregistry.Opts{
+						HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+							if !enabled.Load() {
+								return true
+							}
+							if strings.HasPrefix(r.Host, "127.0.0.1:") {
+								if r.URL.Query().Get("token") != "abc" {
+									http.Error(w, "missing signed-URL token", http.StatusForbidden)
+									return false
+								}
+								if r.Header.Get("Authorization") != "" {
+									http.Error(w, "forwarded credentials rejected", http.StatusBadRequest)
+									return false
+								}
+								return true
+							}
+							if bearer {
+								if r.URL.Path == "/token" {
+									fmt.Fprintf(w, `{"token":%q}`, token)
+									return false
+								}
+								if r.Header.Get("Authorization") != "Bearer "+token {
+									w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="http://%s/token",service="test"`, r.Host))
+									w.WriteHeader(http.StatusUnauthorized)
+									return false
+								}
+							}
+							if !strings.Contains(r.URL.Path, "/blobs/") {
+								return true
+							}
+							_, port, _ := net.SplitHostPort(r.Host)
+							loc := "http://127.0.0.1:" + port + r.URL.Path + "?token=abc"
+							http.Redirect(w, r, loc, http.StatusTemporaryRedirect)
+							return false
+						},
+					})
+					registry.PushNamedImageWithFiles(t, "redirect_image", map[string][]byte{"/hello": []byte("world")}, nil)
+					enabled.Store(true)
+
+					pulled, err := newResolver(t, te).Resolve(context.Background(), registry.ImageAddress("redirect_image"),
+						&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS}, oci.Credentials{}, useOCIFetcher)
+					if err == nil {
+						err = validate.Image(pulled)
+					}
+					if allowed == nil {
+						require.ErrorContains(t, err, "SSRF protection")
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		}
 	}
 }

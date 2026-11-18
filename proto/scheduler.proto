@@ -485,7 +485,14 @@ message EnqueueTaskReservationResponse {
 message CancelTaskReservationRequest {
   // The ID of the task to cancel.
   string task_id = 1;
+
+  // The executor to cancel the reservation on. Only used when the request is
+  // forwarded between apps, to name the executor connected to the receiving
+  // app. Not set on requests sent to executors.
+  string executor_id = 2;
 }
+
+message CancelTaskReservationResponse {}
 
 message RegisterExecutorRequest {
   ExecutionNode node = 1;
@@ -555,6 +562,10 @@ service Scheduler {
   // chosen executor.
   rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
       returns (EnqueueTaskReservationResponse) {}
+
+  // Request to cancel a task reservation on an executor connected to this app.
+  rpc CancelTaskReservation(CancelTaskReservationRequest)
+      returns (CancelTaskReservationResponse) {}
 }
 
 message ExecutionNode {

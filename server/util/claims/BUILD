@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:capability_go_proto",
         "//proto:group_go_proto",
+        "//proto:user_id_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -35,6 +36,7 @@ go_test(
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
         "//proto:group_go_proto",
+        "//proto:user_id_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

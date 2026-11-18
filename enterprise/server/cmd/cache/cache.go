@@ -43,10 +43,10 @@ import (
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
 	_ "google.golang.org/grpc/xds"                                   // registers xds:// resolver.
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	channelzservice "google.golang.org/grpc/channelz/service"
 )
 
@@ -76,7 +76,6 @@ func main() {
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
-	config.ReloadOnSIGHUP()
 
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)

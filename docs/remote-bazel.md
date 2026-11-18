@@ -223,6 +223,13 @@ The following configuration options are supported:
 - `--disable_retry`: By default, remote runs are automatically retried on transient
   errors. If your remote command is not idempotent (such as if you're running
   a deploy command), you should set this to true to disable retries.
+- `--git_fetch_url`: The URL the remote runner fetches the repo from. Defaults to the
+  fetch URL of the configured git remote, converted to HTTPS. Set this to override the default.
+  - Authenticating with a token requires an HTTPS URL. This flag is useful if the repo uses an
+    SSH URL by default, and the HTTPS URL differs by more than just the scheme.
+  - If multiple git remotes are configured, `bb remote` uses the remote named by
+    `buildbuddy.remote-bazel-remote-name` in `.git/config`. In non-interactive environments, set
+    `git config buildbuddy.remote-bazel-remote-name <remote name>`.
 
 In order to run the CLI with debug logs enabled, you can add `--verbose=1` between
 `bb` and `remote`. Note that this is a different syntax from the rest of the

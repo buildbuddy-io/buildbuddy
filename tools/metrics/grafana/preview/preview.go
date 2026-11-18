@@ -60,7 +60,7 @@ const (
 	// Keep these in sync with enterprise/deployment/templates/grafana.yaml in
 	// the internal repo, which is what the preview is meant to look like.
 	grafanaImage     = "grafana/grafana:11.6.2"
-	clickhousePlugin = "grafana-clickhouse-datasource@4.11.2"
+	clickhousePlugin = "grafana-clickhouse-datasource@4.23.5"
 
 	// clickhousePasswordsSecret is a Secret that already exists in each
 	// monitor namespace: the internal repo's clickhouse-otel.<env>.yaml creates

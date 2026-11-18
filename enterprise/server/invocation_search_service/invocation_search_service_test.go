@@ -162,7 +162,7 @@ func TestNonOLAPQuery(t *testing.T) {
 	assert.Equal(t, []string{getUUIDString(3)}, getInvocationIDSlice(rsp))
 }
 
-func TestGroupIDDefaultsToAuthenticatedGroupID(t *testing.T) {
+func TestQueryIsScopedToAuthenticatedGroupID(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ta := setUpDB(t.Context(), env, t)
 
@@ -218,10 +218,30 @@ func TestGroupIDDefaultsToAuthenticatedGroupID(t *testing.T) {
 			},
 		},
 		{
+			name:  "query group ID matches authenticated group ID",
+			user:  "US1",
+			query: &inpb.InvocationQuery{GroupId: "GR1"},
+			expectedInvocationIDs: []string{
+				getUUIDString(0),
+				getUUIDString(1),
+				getUUIDString(2),
+				getUUIDString(3),
+				getUUIDString(5),
+				getUUIDString(6),
+				getUUIDString(7),
+			},
+		},
+		{
+			name:          "query group ID does not match authenticated group ID",
+			user:          "US1",
+			query:         &inpb.InvocationQuery{GroupId: "GR2"},
+			expectedError: status.IsInvalidArgumentError,
+		},
+		{
 			name:          "unauthenticated",
 			user:          "",
 			query:         nil,
-			expectedError: status.IsInternalError,
+			expectedError: status.IsUnauthenticatedError,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

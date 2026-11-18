@@ -312,11 +312,8 @@ func openFile(ctx context.Context, fsys fs.FS, fileName string) (io.ReadCloser, 
 	return fsys.Open(fileName)
 }
 
-// Returns the cgroup version available on this machine, which is returned from
-//
-//	stat -fc %T /sys/fs/cgroup/
-//
-// and should be either 'cgroup2fs' (version 2) or 'tmpfs' (version 1)
+// Returns the cgroup version available on this machine, which is determined by
+// reading the filesystem type of /sys/fs/cgroup/.
 //
 // More info here: https://kubernetes.io/docs/concepts/architecture/cgroups/
 // TODO(iain): preemptively get this in a provider a la Provider in podman.go.
@@ -324,18 +321,36 @@ func getCgroupVersion() (string, error) {
 	if *firecrackerCgroupVersion != "" {
 		return *firecrackerCgroupVersion, nil
 	}
-	b, err := exec.Command("stat", "-fc", "%T", "/sys/fs/cgroup/").Output()
-	if err != nil {
+	var stat unix.Statfs_t
+	if err := unix.Statfs("/sys/fs/cgroup/", &stat); err != nil {
 		return "", status.UnavailableErrorf("Error determining system cgroup version: %v", err)
 	}
-	v := strings.TrimSpace(string(b))
-	if v == "cgroup2fs" {
+
+	switch stat.Type {
+	case unix.CGROUP2_SUPER_MAGIC: // 0x63677270
 		return "2", nil
-	} else if v == "tmpfs" {
+	case unix.CGROUP_SUPER_MAGIC /* 0x27e0eb */, unix.TMPFS_MAGIC /* 0x01021994 */ :
 		return "1", nil
-	} else {
-		return "", status.InternalErrorf("No cgroup version found (system reported %s)", v)
+	default:
+		return "", status.InternalErrorf("No cgroup version found (system reported unsupported filesystem magic 0x%x)", stat.Type)
 	}
+}
+
+// vmConfigurationHash computes a hash of the VM configuration.
+// This hash is used in the snapshot key, as it contains details about VM properties
+// that cannot be changed across snapshot/resume cycles.
+func vmConfigurationHash(config *fcpb.VMConfiguration) string {
+	configClone := config.CloneVT()
+	// Exclude the guest kernel version from the snapshot key so workloads can
+	// continue to resume existing snapshots after the default guest kernel changes.
+	// Restoring a snapshot resumes the kernel captured in its memory, so a series of snapshots
+	// will always resume from the same guest kernel the VM was originally created with.
+	configClone.GuestKernelVersion = ""
+	cd, err := digest.ComputeForMessage(configClone, repb.DigestFunction_SHA256)
+	if err != nil {
+		return ""
+	}
+	return cd.GetHash()
 }
 
 // putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
@@ -423,11 +438,14 @@ type ExecutorConfig struct {
 	FirecrackerBinaryPath string
 	JailerBinaryPath      string
 
-	GuestKernelVersion string
-	HostKernelVersion  string
-	FirecrackerVersion string
-	GuestAPIVersion    string
-	InitrdVersion      string
+	// DefaultGuestKernelVersion is the guest kernel version from deps.bzl that we use
+	// to create new VMs.
+	// Workloads can still resume from snapshots built with a different guest kernel version.
+	DefaultGuestKernelVersion string
+	HostKernelVersion         string
+	FirecrackerVersion        string
+	GuestAPIVersion           string
+	InitrdVersion             string
 
 	GuestKernelImagePath6_18 string
 	GuestKernelVersion6_18   string
@@ -458,25 +476,19 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		return nil, fmt.Errorf("put initrd into build root dir: %w", err)
 	}
 
-	var guestKernelPath6_18 string
-	var guestKernelDigest6_18 *repb.Digest
-	// TODO: build a 6.18 kernel for arm64, then remove this conditional.
-	if vmlinux6_18RunfilePath != "" {
-		vmlinuxRunfileLocation6_18, err := runfiles.Rlocation(vmlinux6_18RunfilePath)
-		if err != nil {
-			return nil, fmt.Errorf("get vmlinux 6.18 runfile path: %w", err)
-		}
-		p, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_18, buildRootDir, 0755)
-		if err != nil {
-			return nil, fmt.Errorf("put vmlinux 6.18 into build root dir: %w", err)
-		}
-		guestKernelPath6_18 = p
-		d, err := digest.ComputeForFile(guestKernelPath6_18, repb.DigestFunction_SHA256)
-		if err != nil {
-			return nil, fmt.Errorf("compute digest for vmlinux 6.18: %w", err)
-		}
-		guestKernelDigest6_18 = d
+	vmlinuxRunfileLocation6_18, err := runfiles.Rlocation(vmlinux6_18RunfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("get vmlinux 6.18 runfile path: %w", err)
 	}
+	guestKernelPath6_18, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_18, buildRootDir, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("put vmlinux 6.18 into build root dir: %w", err)
+	}
+	guestKernelDigest6_18, err := digest.ComputeForFile(guestKernelPath6_18, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, fmt.Errorf("compute digest for vmlinux 6.18: %w", err)
+	}
+
 	vmlinuxRunfileLocation5_15, err := runfiles.Rlocation(vmlinuxRunfilePath)
 	if err != nil {
 		return nil, fmt.Errorf("get vmlinux 5.15 runfile path: %w", err)
@@ -521,19 +533,19 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	return &ExecutorConfig{
 		// For now just use the build root dir as the jailer root dir, since
 		// these are guaranteed to be on the same FS.
-		JailerRoot:               buildRootDir,
-		CacheRoot:                cacheRootDir,
-		InitrdImagePath:          initrdPath,
-		GuestKernelImagePath:     guestKernelImagePath,
-		FirecrackerBinaryPath:    firecrackerPath,
-		JailerBinaryPath:         jailerPath,
-		GuestKernelVersion:       guestKernelVersion,
-		HostKernelVersion:        hostKernelVersion,
-		FirecrackerVersion:       firecrackerDigest.GetHash(),
-		InitrdVersion:            initrdDigest.GetHash(),
-		GuestAPIVersion:          GuestAPIVersion,
-		GuestKernelImagePath6_18: guestKernelPath6_18,
-		GuestKernelVersion6_18:   guestKernelDigest6_18.GetHash(),
+		JailerRoot:                buildRootDir,
+		CacheRoot:                 cacheRootDir,
+		InitrdImagePath:           initrdPath,
+		GuestKernelImagePath:      guestKernelImagePath,
+		FirecrackerBinaryPath:     firecrackerPath,
+		JailerBinaryPath:          jailerPath,
+		DefaultGuestKernelVersion: guestKernelVersion,
+		HostKernelVersion:         hostKernelVersion,
+		FirecrackerVersion:        firecrackerDigest.GetHash(),
+		InitrdVersion:             initrdDigest.GetHash(),
+		GuestAPIVersion:           GuestAPIVersion,
+		GuestKernelImagePath6_18:  guestKernelPath6_18,
+		GuestKernelVersion6_18:    guestKernelDigest6_18.GetHash(),
 	}, nil
 }
 
@@ -652,18 +664,19 @@ func GenericSnapshotShape(size *scpb.TaskSize) *scpb.TaskSize {
 }
 
 // genericVMConfig returns the configuration for generic snapshot VMs with the given shape.
-func genericVMConfig(shape *scpb.TaskSize, networkMode fcpb.NetworkMode) *fcpb.VMConfiguration {
+func genericVMConfig(ctx context.Context, shape *scpb.TaskSize, networkMode fcpb.NetworkMode) *fcpb.VMConfiguration {
 	// Generic VMs always have a network interface, so one snapshot serves
 	// every network mode.
 	if networkMode == fcpb.NetworkMode_NETWORK_MODE_OFF {
 		networkMode = fcpb.NetworkMode_NETWORK_MODE_LOCAL
 	}
 	return &fcpb.VMConfiguration{
-		NumCpus:     vcpuCount(shape.GetEstimatedMilliCpu()),
-		MemSizeMb:   shape.GetEstimatedMemoryBytes() / mib,
-		NetworkMode: networkMode,
-		HostCpuid:   getCPUID(),
-		EnablePci:   *enablePCI,
+		NumCpus:        vcpuCount(shape.GetEstimatedMilliCpu()),
+		MemSizeMb:      shape.GetEstimatedMemoryBytes() / mib,
+		NetworkMode:    networkMode,
+		HostCpuid:      getCPUID(),
+		EnablePci:      *enablePCI,
+		EnableKvmClock: execution_experiments.FirecrackerGuestKvmClock.Get(ctx),
 	}
 }
 
@@ -685,7 +698,7 @@ func (p *Provider) buildGenericSnapshots(ctx context.Context, cgroupParent strin
 			break
 		}
 		eg.Go(func() error {
-			vmConfig := genericVMConfig(shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
+			vmConfig := genericVMConfig(ctx, shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
 			vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
 			p.buildGenericSnapshot(ctx, cgroupParent, nil /*=experiments*/, vmConfig)
 			return nil
@@ -744,6 +757,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnableVfs:         args.Props.EnableVFS,
 		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
 		EnablePci:         *enablePCI,
+		EnableKvmClock:    execution_experiments.FirecrackerGuestKvmClock.Get(ctx),
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig, false /*=deferRootfsMount*/)
 	opts := ContainerOpts{
@@ -792,7 +806,7 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	if err != nil {
 		return nil, err
 	}
-	vmConfig := genericVMConfig(shape, networkMode)
+	vmConfig := genericVMConfig(ctx, shape, networkMode)
 	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
 	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
 	// The host memory limit is computed from the scheduled size, which the
@@ -1047,10 +1061,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.cgroupSettings = opts.CgroupSettings
 	}
 
-	c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion
-	if c.shouldUpgradeGuestKernel() {
-		c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion6_18
-	}
 	c.vmConfig.HostKernelVersion = c.executorConfig.HostKernelVersion
 	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
 	c.vmConfig.GuestApiVersion = c.executorConfig.GuestAPIVersion
@@ -1089,16 +1099,13 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if err := c.newID(ctx); err != nil {
 			return nil, err
 		}
-		cd, err := digest.ComputeForMessage(c.vmConfig, repb.DigestFunction_SHA256)
-		if err != nil {
-			return nil, err
-		}
 
 		runnerID := c.id
 		if snaputil.IsChunkedSnapshotSharingEnabled() {
 			runnerID = ""
 		}
-		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
+		vmConfigHash := vmConfigurationHash(c.vmConfig)
+		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, vmConfigHash, runnerID)
 		if err != nil {
 			return nil, err
 		}
@@ -1299,6 +1306,10 @@ func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 
 func (c *FirecrackerContainer) genericSnapshotKey() (*fcpb.SnapshotKey, error) {
 	config := c.vmConfig.CloneVT()
+	// When using a generic snapshot, it will already have a running guest kernel.
+	// Include the kernel version in the snapshot key to ensure that workloads
+	// hit snapshots for the intended version.
+	config.GuestKernelVersion = c.defaultGuestKernelVersion()
 	config.ScratchDiskSizeMb = 0
 	// Only the host side of the network depends on the network mode.
 	config.NetworkMode = fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED
@@ -1447,6 +1458,10 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	if !c.supportsRemoteSnapshots || !c.recyclingEnabled {
 		return false
 	}
+	if platform.FindEffectiveValue(c.task, platform.SkipRemoteSnapshotSavePropertyName) == "true" {
+		log.CtxInfof(ctx, "Skipping remote snapshot save: over snapshot save quota")
+		return false
+	}
 
 	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
 
@@ -1488,6 +1503,10 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 
 func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
 	if !*snaputil.EnableLocalSnapshotSharing || !c.recyclingEnabled {
+		return false
+	}
+	if platform.FindEffectiveValue(c.task, platform.SkipLocalSnapshotSavePropertyName) == "true" {
+		log.CtxInfof(ctx, "Skipping local snapshot save: over snapshot save quota")
 		return false
 	}
 	// For RBE actions, we don't save another snapshot if one already exists.
@@ -1590,6 +1609,8 @@ func (c *FirecrackerContainer) loadSnapshot(ctx context.Context, snap *snaploade
 			return err
 		}
 	}
+
+	c.vmConfig.GuestKernelVersion = snap.GetVMConfiguration().GetGuestKernelVersion()
 
 	if err := c.setupCgroup(ctx); err != nil {
 		return status.UnavailableErrorf("setup cgroup: %s", err)
@@ -2020,7 +2041,25 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration, deferRootfsMount bool) string {
 		"i8042.nomux",
 		"i8042.nopnp",
 		"i8042.dumbkbd",
-		"tsc=reliable",
+	}
+	if vmConfig.GetEnableKvmClock() {
+		// Use kvm-clock instead of the TSC as the guest clocksource.
+		//
+		// Firecracker restores the TSC of each vCPU separately when loading a
+		// snapshot. If the restore stalls for more than a second between two
+		// vCPUs (for example on a slow UFFD page fault), KVM gives the remaining
+		// vCPUs a different TSC offset. With the tsc clocksource, CLOCK_MONOTONIC
+		// then runs backwards whenever a thread migrates between vCPUs, which
+		// breaks anything in the guest that measures elapsed time. See
+		// https://github.com/buildbuddy-io/buildbuddy/issues/13988.
+		//
+		// kvm-clock is derived from the host's clock and only uses the vCPU's
+		// TSC for the interval since the host last refreshed it, so per-vCPU
+		// TSC skew cancels out.
+		kernelArgs = append(kernelArgs, "clocksource=kvm-clock")
+	} else {
+		// tsc=reliable disables the guest's own TSC sanity checks.
+		kernelArgs = append(kernelArgs, "tsc=reliable")
 	}
 	if !vmConfig.GetIpv6Enabled() {
 		kernelArgs = append(kernelArgs, "ipv6.disable=1")
@@ -2235,20 +2274,34 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 		return err
 	}
 
+	root, err := os.OpenRoot(c.actionWorkingDir)
+	if err != nil {
+		return fmt.Errorf("open action working dir: %w", err)
+	}
+	defer root.Close()
+
 	walkErr := fs.WalkDir(os.DirFS(wsDir), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		targetLocation := filepath.Join(c.actionWorkingDir, path)
-		alreadyExists, err := disk.FileExists(ctx, targetLocation)
+		_, err = root.Lstat(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		alreadyExists := err == nil
+		if alreadyExists {
+			return nil
+		}
+		if d.IsDir() {
+			return root.Mkdir(path, 0755)
+		}
+		dir, err := root.Open(filepath.Dir(path))
 		if err != nil {
 			return err
 		}
-		if !alreadyExists {
-			if d.IsDir() {
-				return disk.EnsureDirectoryExists(filepath.Join(c.actionWorkingDir, path))
-			}
-			return os.Rename(filepath.Join(wsDir, path), targetLocation)
+		defer dir.Close()
+		if err := unix.Renameat(unix.AT_FDCWD, filepath.Join(wsDir, path), int(dir.Fd()), d.Name()); err != nil {
+			return fmt.Errorf("move %q to action working dir: %w", path, err)
 		}
 		return nil
 	})
@@ -2766,6 +2819,8 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.currentTaskInitTime = time.Now()
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
+
+	c.vmConfig.GuestKernelVersion = c.defaultGuestKernelVersion()
 
 	vmCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	c.vmCtx = vmCtx
@@ -3897,7 +3952,7 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	// Read available memory in the guest to determine the target balloon size.
 	// /proc/meminfo reports amounts in KiB, and we're converting to MiB.
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "awk '/MemAvailable/ {print $2 / 1024}' /proc/meminfo"},
+		Arguments: []string{"awk", "/MemAvailable/ {print $2 / 1024}", "/proc/meminfo"},
 	}
 	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
@@ -4557,6 +4612,14 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 	paths = append(paths, task.GetCommand().GetOutputPaths()...)
 
 	return paths
+}
+
+// defaultGuestKernelVersion returns the guest kernel version used to boot new VMs.
+func (c *FirecrackerContainer) defaultGuestKernelVersion() string {
+	if c.shouldUpgradeGuestKernel() {
+		return c.executorConfig.GuestKernelVersion6_18
+	}
+	return c.executorConfig.DefaultGuestKernelVersion
 }
 
 func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {

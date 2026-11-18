@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -125,13 +126,17 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 		return r, nil
 	})
 	pebbleOptionsGetter := func(mc *pebble.MetricsCollector) *pebble.Options {
-		return &pebble.Options{
+		opts := &pebble.Options{
 			EventListener: &pebble.EventListener{
 				WriteStallBegin: mc.WriteStallBegin,
 				WriteStallEnd:   mc.WriteStallEnd,
 				DiskSlow:        mc.DiskSlow,
 			},
 		}
+		if ts.pebbleFS != nil {
+			opts.FS = ts.pebbleFS
+		}
+		return opts
 	}
 	registryGetter := func() registry.NodeRegistry {
 		return ts.Registry
@@ -170,6 +175,26 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 type StoreOptions struct {
 	Zone             string
 	GrpcServerConfig grpc_server.GRPCServerConfig
+
+	// CrashablePebble lets Crash drop unsynced Pebble writes, preserving Raft logs.
+	CrashablePebble bool
+}
+
+// newCrashableFS syncs dir and its parents so they survive ResetToSyncedState.
+func newCrashableFS(t testing.TB, dir string) *vfs.MemFS {
+	fs := vfs.NewStrictMem()
+	require.NoError(t, fs.MkdirAll(dir, 0755))
+	for {
+		d, err := fs.OpenDir(dir)
+		require.NoError(t, err)
+		require.NoError(t, d.Sync())
+		require.NoError(t, d.Close())
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return fs
+		}
+		dir = parent
+	}
 }
 
 func (sf *StoreFactory) NewStore(t *testing.T, opts StoreOptions) *TestingStore {
@@ -190,6 +215,9 @@ func (sf *StoreFactory) NewStore(t *testing.T, opts StoreOptions) *TestingStore 
 		nhid:             id.String(),
 		Zone:             opts.Zone,
 		GRPCServerConfig: opts.GrpcServerConfig,
+	}
+	if opts.CrashablePebble {
+		ts.pebbleFS = newCrashableFS(t, ts.RootDir)
 	}
 	sf.RecreateStore(t, ts)
 	t.Cleanup(func() {
@@ -233,6 +261,8 @@ type TestingStore struct {
 	GRPCServerConfig grpc_server.GRPCServerConfig
 	GossipAddress    string
 	closed           bool
+
+	pebbleFS *vfs.MemFS
 }
 
 func (ts *TestingStore) DB() pebble.IPebbleDB {
@@ -260,6 +290,16 @@ func (ts *TestingStore) Stop() {
 	require.NoError(ts.t, ts.gm.Leave())
 	require.NoError(ts.t, ts.gm.Shutdown())
 	ts.closed = true
+}
+
+// Crash drops unsynced Pebble writes, ignoring shutdown syncs.
+// Requires CrashablePebble; restart with StoreFactory.RecreateStore.
+func (ts *TestingStore) Crash() {
+	require.NotNil(ts.t, ts.pebbleFS, "Crash requires StoreOptions.CrashablePebble")
+	ts.pebbleFS.SetIgnoreSyncs(true)
+	ts.Stop()
+	ts.pebbleFS.ResetToSyncedState()
+	ts.pebbleFS.SetIgnoreSyncs(false)
 }
 
 func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {

@@ -281,7 +281,7 @@ func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
 	log.CtxDebugf(ctx, "Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
 	cmd := task.GetCommand()
-	ws.dirHelper = dirtools.NewDirHelper(filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, ws.dirPerms)
+	ws.dirHelper = dirtools.NewDirHelper(ws.inputRoot(), cmd, ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -651,7 +651,6 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			ws.dirHelper,
 			instanceName,
 			digestFunction,
-			filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()),
 			cmd,
 			executeResponse.Result,
 			addToFileCache,

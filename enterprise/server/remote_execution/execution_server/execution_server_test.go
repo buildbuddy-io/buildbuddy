@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/exptest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
@@ -41,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -111,6 +114,10 @@ func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.Schedu
 		return nil, s.scheduleErr
 	}
 	return &scpb.ScheduleTaskResponse{}, nil
+}
+
+func (s *schedulerServerMock) AuthorizeTaskWrites(ctx context.Context, taskID string) error {
+	return nil
 }
 
 func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bool, error) {
@@ -355,6 +362,8 @@ func TestDispatch_ValidateRunnerSize(t *testing.T) {
 		maxCPU         float64
 		maxMemoryBytes int64
 		props          map[string]string
+		mnemonic       string
+		actionName     string
 		wantErr        bool
 	}{
 		{
@@ -414,22 +423,126 @@ func TestDispatch_ValidateRunnerSize(t *testing.T) {
 			maxMemoryBytes: -1,
 			wantErr:        true,
 		},
+		{
+			name:           "matching workflow",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "64GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Expensive benchmarks",
+		},
+		{
+			name:           "other workflow cpu",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "16GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Other workflow",
+			wantErr:        true,
+		},
+		{
+			name:           "other workflow memory",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "8", "EstimatedMemory": "64GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Other workflow",
+			wantErr:        true,
+		},
+		{
+			name:           "workflow missing name",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "64GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			wantErr:        true,
+		},
+		{
+			name:           "ordinary action",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "64GB"},
+			mnemonic:       "TestRunner",
+			actionName:     "Expensive benchmarks",
+			wantErr:        true,
+		},
+		{
+			name:           "remote bazel",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "64GB"},
+			mnemonic:       "RemoteBazelRun",
+			actionName:     "Expensive benchmarks",
+			wantErr:        true,
+		},
+		{
+			name:           "workflow cpu exceeds limit",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "17", "EstimatedMemory": "64GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Expensive benchmarks",
+			wantErr:        true,
+		},
+		{
+			name:           "workflow memory exceeds limit",
+			maxCPU:         8,
+			maxMemoryBytes: 16 * tasksize.GiB,
+			props:          map[string]string{"EstimatedCPU": "16", "EstimatedMemory": "65GB"},
+			mnemonic:       "BuildBuddyWorkflowRun",
+			actionName:     "Expensive benchmarks",
+			wantErr:        true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "remote_execution.runner.max_cpu", tc.maxCPU)
 			flags.Set(t, "remote_execution.runner.max_memory_bytes", tc.maxMemoryBytes)
 			env, _, _ := setupEnv(t)
+			if tc.mnemonic != "" {
+				exptest.Setup(t, env)
+				evaluator := func(flag memprovider.InMemoryFlag, attrs openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
+					variant := flag.DefaultVariant
+					if attrs["workflow_action_name"] == "Expensive benchmarks" {
+						variant = "workflow"
+					}
+					return flag.Variants[variant], openfeature.ProviderResolutionDetail{Variant: variant}
+				}
+				provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+					"remote_execution.runner.max_cpu": {
+						State:            memprovider.Enabled,
+						DefaultVariant:   "default",
+						Variants:         map[string]any{"default": tc.maxCPU, "workflow": float64(16)},
+						ContextEvaluator: &evaluator,
+					},
+					"remote_execution.runner.max_memory_bytes": {
+						State:            memprovider.Enabled,
+						DefaultVariant:   "default",
+						Variants:         map[string]any{"default": int(tc.maxMemoryBytes), "workflow": 64 * tasksize.GiB},
+						ContextEvaluator: &evaluator,
+					},
+				})
+				require.NoError(t, openfeature.SetProviderAndWait(provider))
+			}
 			s := env.GetRemoteExecutionService()
 			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
 			require.NoError(t, err)
 			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 			require.NoError(t, err)
 
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{ActionMnemonic: tc.mnemonic})
+			cmd := &repb.Command{Arguments: []string{"test"}}
+			if tc.actionName != "" {
+				cmd.EnvironmentVariables = []*repb.Command_EnvironmentVariable{{
+					Name:  ci_runner_env.BuildBuddyActionNameEnvVarName,
+					Value: tc.actionName,
+				}}
+			}
+
 			action := &repb.Action{Platform: &repb.Platform{}}
 			for name, value := range tc.props {
 				action.Platform.Properties = append(action.Platform.Properties, &repb.Platform_Property{Name: name, Value: value})
 			}
-			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			arn := uploadActionWithCommand(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action, cmd)
 			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
 
 			sched := env.GetSchedulerService().(*schedulerServerMock)
@@ -1668,6 +1781,39 @@ func TestPublishOperation_RetriedStream(t *testing.T) {
 	}
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
 	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec, "usage should be recorded exactly once")
+}
+
+func TestPublishOperation_RejectsOperationNameChange(t *testing.T) {
+	for _, statsFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("statsFirst=%t", statsFirst), func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			client := repb.NewExecutionClient(conn)
+			ctx := context.Background()
+
+			publishStream, err := client.PublishOperation(ctx)
+			require.NoError(t, err)
+			for i, arg := range []string{"a", "b"} {
+				arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, &repb.Action{}, &repb.Command{Arguments: []string{arg}})
+				executeStream, err := client.Execute(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest(), DigestFunction: arn.GetDigestFunction()})
+				require.NoError(t, err)
+				op, err := executeStream.Recv()
+				require.NoError(t, err)
+				publishOp, err := operation.Assemble(op.GetName(), operation.Metadata(repb.ExecutionStage_EXECUTING, arn.GetDigest()), nil)
+				require.NoError(t, err)
+				if statsFirst && i == 0 {
+					statsAny, err := anypb.New(&espb.PostCompletionStats{})
+					require.NoError(t, err)
+					publishOp, err = operation.Assemble(op.GetName(), operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+						Result: &repb.ActionResult{ExecutionMetadata: &repb.ExecutedActionMetadata{AuxiliaryMetadata: []*anypb.Any{statsAny}}},
+					})
+					require.NoError(t, err)
+				}
+				_ = publishStream.Send(publishOp)
+			}
+			_, err = publishStream.CloseAndRecv()
+			require.True(t, status.IsInvalidArgumentError(err), "PublishOperation error: %v", err)
+		})
+	}
 }
 
 // TestPublishOperation_FlushWithEmptyLinks pins down the contract:
@@ -3059,6 +3205,234 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 					protocmp.Transform(),
 				))
 			}
+		})
+	}
+}
+
+// fakeQuotaManager reports the configured namespaces as over quota and
+// records all usage charged to it.
+type fakeQuotaManager struct {
+	mu           sync.Mutex
+	exhausted    map[string]bool
+	recorded     map[string]int64
+	allowForced  map[string]bool
+	recordForced map[string]bool
+}
+
+func newFakeQuotaManager(exhausted ...string) *fakeQuotaManager {
+	qm := &fakeQuotaManager{exhausted: map[string]bool{}, recorded: map[string]int64{}, allowForced: map[string]bool{}, recordForced: map[string]bool{}}
+	for _, ns := range exhausted {
+		qm.exhausted[ns] = true
+	}
+	return qm
+}
+
+func (qm *fakeQuotaManager) Allow(ctx context.Context, namespace string, quantity int64, force bool) error {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	qm.allowForced[namespace] = force
+	if qm.exhausted[namespace] {
+		return status.ResourceExhaustedErrorf("quota exceeded for %q", namespace)
+	}
+	return nil
+}
+
+func (qm *fakeQuotaManager) RecordUsage(ctx context.Context, namespace string, quantity int64, force bool) (bool, error) {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	qm.recordForced[namespace] = force
+	qm.recorded[namespace] += quantity
+	return !qm.exhausted[namespace], nil
+}
+
+func (qm *fakeQuotaManager) ReloadBucketsAndNotify(ctx context.Context) error {
+	return nil
+}
+
+func (qm *fakeQuotaManager) Recorded(namespace string) int64 {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	return qm.recorded[namespace]
+}
+
+func (qm *fakeQuotaManager) Forced(namespace string) (allow, record bool) {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	return qm.allowForced[namespace], qm.recordForced[namespace]
+}
+
+var (
+	localSnapshotQuotaKey  = quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes)
+	remoteSnapshotQuotaKey = quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes)
+)
+
+func TestDispatch_SnapshotSaveQuotaOverridesUserProperties(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		exhausted  []string
+		wantLocal  string
+		wantRemote string
+	}{
+		{name: "within quota", wantLocal: "false", wantRemote: "false"},
+		{name: "local exhausted", exhausted: []string{localSnapshotQuotaKey}, wantLocal: "true", wantRemote: "false"},
+		{name: "remote exhausted", exhausted: []string{remoteSnapshotQuotaKey}, wantLocal: "false", wantRemote: "true"},
+		{name: "both exhausted", exhausted: []string{localSnapshotQuotaKey, remoteSnapshotQuotaKey}, wantLocal: "true", wantRemote: "true"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			env.SetQuotaManager(newFakeQuotaManager(tc.exhausted...))
+
+			// The user tries to opt back into snapshot saves via both the
+			// action platform and remote header overrides.
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+				platform.OverrideHeaderPrefix+platform.SkipLocalSnapshotSavePropertyName, "false",
+				platform.OverrideHeaderPrefix+platform.SkipRemoteSnapshotSavePropertyName, "false",
+			))
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+			action := &repb.Action{Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: platform.SkipLocalSnapshotSavePropertyName, Value: "false"},
+				{Name: platform.SkipRemoteSnapshotSavePropertyName, Value: "false"},
+			}}}
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			// FindEffectiveValue is what the executor uses to decide.
+			assert.Equal(t, tc.wantLocal, platform.FindEffectiveValue(task, platform.SkipLocalSnapshotSavePropertyName))
+			assert.Equal(t, tc.wantRemote, platform.FindEffectiveValue(task, platform.SkipRemoteSnapshotSavePropertyName))
+		})
+	}
+}
+
+func TestPublishOperation_RecordsSnapshotSaveQuotaUsage(t *testing.T) {
+	flags.Set(t, "remote_execution.enable_workflows_quota", true)
+	const savedBytes = 12345
+	for _, tc := range []struct {
+		name                    string
+		stats                   *espb.FirecrackerPostExecStats
+		wantLocalBytesRecorded  int64
+		wantRemoteBytesRecorded int64
+		args                    []string
+		reconnect               bool
+		wantForce               bool
+	}{
+		{
+			name:                    "non CI runner",
+			stats:                   &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedRemotely: true, SnapshotSavedBytes: savedBytes},
+			wantLocalBytesRecorded:  savedBytes,
+			wantRemoteBytesRecorded: savedBytes,
+			wantForce:               false,
+		},
+		{
+			name:                   "CI runner local only",
+			args:                   []string{"./buildbuddy_ci_runner"},
+			stats:                  &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedBytes: savedBytes},
+			wantLocalBytesRecorded: savedBytes,
+			wantForce:              true,
+		},
+		{
+			name:                    "CI runner local and remote",
+			args:                    []string{"./buildbuddy_ci_runner"},
+			stats:                   &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedRemotely: true, SnapshotSavedBytes: savedBytes},
+			wantLocalBytesRecorded:  savedBytes,
+			wantRemoteBytesRecorded: savedBytes,
+			wantForce:               true,
+		},
+		{
+			name:      "CI runner no save",
+			args:      []string{"./buildbuddy_ci_runner"},
+			stats:     &espb.FirecrackerPostExecStats{SnapshotSavedBytes: savedBytes},
+			wantForce: true,
+		},
+		{
+			name:                   "quota not recorded on reconnected publish stream",
+			args:                   []string{"./buildbuddy_ci_runner"},
+			reconnect:              true,
+			stats:                  &espb.FirecrackerPostExecStats{SnapshotSavedLocally: true, SnapshotSavedRemotely: true, SnapshotSavedBytes: savedBytes},
+			wantLocalBytesRecorded: savedBytes, wantRemoteBytesRecorded: savedBytes, wantForce: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			qm := newFakeQuotaManager()
+			env.SetQuotaManager(qm)
+			client := repb.NewExecutionClient(conn)
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(context.Background(), "US1")
+			require.NoError(t, err)
+
+			args := tc.args
+			if args == nil {
+				args = []string{"test"}
+			}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, &repb.Action{}, &repb.Command{Arguments: args})
+			executionClient, err := client.Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest:   arn.GetDigest(),
+				DigestFunction: arn.GetDigestFunction(),
+			})
+			require.NoError(t, err)
+			require.NoError(t, executionClient.CloseSend())
+			op, err := executionClient.Recv()
+			require.NoError(t, err)
+			taskID := op.GetName()
+
+			executorCtx := metadata.AppendToOutgoingContext(ctx, usageutil.ClientHeaderName, "executor")
+			stream, err := client.PublishOperation(executorCtx)
+			require.NoError(t, err)
+
+			// First COMPLETED: the execution result, without snapshot stats.
+			start := time.Unix(100, 0)
+			firstOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+				Result: &repb.ActionResult{ExecutionMetadata: &repb.ExecutedActionMetadata{
+					WorkerStartTimestamp:     tspb.New(start),
+					WorkerCompletedTimestamp: tspb.New(start.Add(time.Second)),
+				}},
+			})
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(firstOp))
+			if tc.reconnect {
+				_, err := stream.CloseAndRecv()
+				require.NoError(t, err)
+				stream, err = client.PublishOperation(executorCtx)
+				require.NoError(t, err)
+			}
+
+			// Second COMPLETED: sent after the snapshot is saved.
+			statsAny, err := anypb.New(&espb.PostCompletionStats{FirecrackerPostExecStats: tc.stats})
+			require.NoError(t, err)
+			secondOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+				Result: &repb.ActionResult{ExecutionMetadata: &repb.ExecutedActionMetadata{
+					AuxiliaryMetadata: []*anypb.Any{statsAny},
+				}},
+			})
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(secondOp))
+			_, err = stream.CloseAndRecv()
+			require.NoError(t, err)
+
+			for {
+				_, err := executionClient.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.wantLocalBytesRecorded, qm.Recorded(localSnapshotQuotaKey))
+			assert.Equal(t, tc.wantRemoteBytesRecorded, qm.Recorded(remoteSnapshotQuotaKey))
+
+			allowForced, recordForced := qm.Forced(localSnapshotQuotaKey)
+			assert.Equal(t, tc.wantForce, allowForced)
+			// Snapshot usage is recorded by the second COMPLETED. Reconnecting
+			// loses the command, so workflow quota is not forced in that case.
+			// No usage is recorded (and so nothing is forced) if nothing was saved.
+			assert.Equal(t, tc.wantForce && !tc.reconnect && tc.wantLocalBytesRecorded > 0, recordForced)
 		})
 	}
 }
