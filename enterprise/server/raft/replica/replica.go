@@ -2443,6 +2443,14 @@ func TestingSetSnapshotBatchSizeBytes(n int) int {
 	return prev
 }
 
+// TestingSetAtimeIndexCleanupCommitSizeBytes overrides the batch size of
+// DeleteRangeDataAndAtimeIndexEntries.
+func TestingSetAtimeIndexCleanupCommitSizeBytes(n int) int {
+	prev := atimeIndexCleanupCommitSizeBytes
+	atimeIndexCleanupCommitSizeBytes = n
+	return prev
+}
+
 // Close closes the IOnDiskStateMachine instance. Close is invoked when the
 // state machine is in a ready-to-exit state in which there will be no further
 // call to the Update, Sync, PrepareSnapshot, SaveSnapshot and the

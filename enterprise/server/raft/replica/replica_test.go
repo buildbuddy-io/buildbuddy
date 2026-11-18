@@ -193,6 +193,69 @@ func randomRecord(t *testing.T, partition string, sizeBytes int64) (*sgpb.FileRe
 	}, buf
 }
 
+// inlinePayloadSize approximates a typical record's inline payload.
+const inlinePayloadSize = 100
+
+var inlinePayload = make([]byte, inlinePayloadSize)
+
+// openTestReplica opens a replica whose range covers the whole data keyspace.
+func openTestReplica(t testing.TB) (*testutil.TestingReplica, *entryMaker) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	t.Cleanup(func() {
+		require.NoError(t, repl.Close())
+	})
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+	return repl, em
+}
+
+// testRecords returns n records with distinct digests, and their keys, in key
+// order.
+func testRecords(t testing.TB, n int) ([]*sgpb.FileRecord, [][]byte) {
+	fs := filestore.New()
+	records := make([]*sgpb.FileRecord, 0, n)
+	recordKeys := make([][]byte, 0, n)
+	for i := range n {
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:   rspb.CacheType_CAS,
+				PartitionId: defaultPartition,
+				GroupId:     interfaces.AuthAnonymousUser,
+			},
+			Digest:         &repb.Digest{Hash: fmt.Sprintf("%064x", i+1), SizeBytes: inlinePayloadSize},
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		pk, err := fs.PebbleKey(fr)
+		require.NoError(t, err)
+		kb, err := pk.Bytes(filestore.Version5)
+		require.NoError(t, err)
+		records = append(records, fr)
+		recordKeys = append(recordKeys, kb)
+	}
+	return records, recordKeys
+}
+
+// setRequest returns a request that writes the record with an inline payload.
+func setRequest(fr *sgpb.FileRecord, key []byte, atimeUsec int64) *rfpb.SetRequest {
+	md := &sgpb.FileMetadata{
+		FileRecord: fr,
+		StorageMetadata: &sgpb.StorageMetadata{
+			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{Data: inlinePayload},
+		},
+		StoredSizeBytes: inlinePayloadSize,
+		LastAccessUsec:  atimeUsec,
+		LastModifyUsec:  atimeUsec,
+	}
+	return &rfpb.SetRequest{
+		Key:          key,
+		FileMetadata: md,
+	}
+}
+
 func directRead(t *testing.T, repl *testutil.TestingReplica, key []byte) (*rfpb.DirectReadResponse, error) {
 	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: key,
@@ -3379,38 +3442,22 @@ func TestUpdateATimeGCSCustomTime(t *testing.T) {
 	}
 }
 
-// writeRecordViaSet applies a SetRequest for the record and returns its key.
-func writeRecordViaSet(t *testing.T, em *entryMaker, repl *testutil.TestingReplica, fileRecord *sgpb.FileRecord, atimeUsec int64) []byte {
-	fs := filestore.New()
-	key, err := fs.PebbleKey(fileRecord)
-	require.NoError(t, err)
-	fileMetadataKey, err := key.Bytes(filestore.Version5)
-	require.NoError(t, err)
-
-	md := &sgpb.FileMetadata{
-		FileRecord: fileRecord,
-		StorageMetadata: &sgpb.StorageMetadata{
-			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{Data: []byte("x")},
-		},
-		StoredSizeBytes: 1,
-		LastAccessUsec:  atimeUsec,
+// applyRequests applies the requests to the replica as one batch and requires
+// them all to succeed.
+func applyRequests(t testing.TB, em *entryMaker, repl *testutil.TestingReplica, reqs ...proto.Message) {
+	batch := rbuilder.NewBatchBuilder()
+	for _, req := range reqs {
+		batch.Add(req)
 	}
-	applyBatch(t, em, repl, rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
-		Key:          fileMetadataKey,
-		FileMetadata: md,
-	}))
-	return fileMetadataKey
-}
-
-func applyBatch(t *testing.T, em *entryMaker, repl *testutil.TestingReplica, batch *rbuilder.BatchBuilder) {
 	rsp, err := repl.Update([]dbsm.Entry{em.makeEntry(batch)})
 	require.NoError(t, err)
 	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 }
 
-// readAtimeIndex returns the partition's atime-index entries as atime->fileKey.
-func readAtimeIndex(t *testing.T, repl *testutil.TestingReplica, partitionID string) map[int64]string {
-	start, end := keys.AtimeIndexPartitionRange(partitionID)
+// readAtimeIndex returns the default partition's atime-index entries as
+// atime->fileKey.
+func readAtimeIndex(t testing.TB, repl *testutil.TestingReplica) map[int64]string {
+	start, end := keys.AtimeIndexPartitionRange(defaultPartition)
 	iter, err := repl.DB().NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 	require.NoError(t, err)
 	defer iter.Close()
@@ -3424,104 +3471,78 @@ func readAtimeIndex(t *testing.T, repl *testutil.TestingReplica, partitionID str
 }
 
 func TestAtimeIndexMaintenance(t *testing.T) {
-	repl := testutil.NewTestingReplica(t, 1, 1)
-	require.NotNil(t, repl)
-	t.Cleanup(func() {
-		require.NoError(t, repl.Close())
-	})
-	stopc := make(chan struct{})
-	_, err := repl.Open(stopc)
-	require.NoError(t, err)
+	repl, em := openTestReplica(t)
+	records, recordKeys := testRecords(t, 1)
+	fr, key := records[0], recordKeys[0]
+	entryAt := func(atimeUsec int64) map[int64]string {
+		return map[int64]string{atimeUsec: string(key)}
+	}
 
-	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl.Replica)
-
-	// Set adds an entry.
-	fr, _ := randomRecord(t, defaultPartition, 100)
-	t0 := int64(1_000_000)
-	fileMetadataKey := writeRecordViaSet(t, em, repl, fr, t0)
-	require.Equal(t, map[int64]string{t0: string(fileMetadataKey)}, readAtimeIndex(t, repl, defaultPartition))
-
-	// An overwriting Set moves the entry.
-	t1 := t0 + 1_000_000
-	writeRecordViaSet(t, em, repl, fr, t1)
-	require.Equal(t, map[int64]string{t1: string(fileMetadataKey)}, readAtimeIndex(t, repl, defaultPartition))
-
-	// UpdateAtime moves the entry.
-	t2 := t1 + 5_000_000
-	applyBatch(t, em, repl, rbuilder.NewBatchBuilder().Add(&rfpb.UpdateAtimeRequest{
-		Key:            fileMetadataKey,
-		AccessTimeUsec: t2,
-	}))
-	require.Equal(t, map[int64]string{t2: string(fileMetadataKey)}, readAtimeIndex(t, repl, defaultPartition))
-
-	// A backwards UpdateAtime changes nothing.
-	applyBatch(t, em, repl, rbuilder.NewBatchBuilder().Add(&rfpb.UpdateAtimeRequest{
-		Key:            fileMetadataKey,
-		AccessTimeUsec: t1,
-	}))
-	require.Equal(t, map[int64]string{t2: string(fileMetadataKey)}, readAtimeIndex(t, repl, defaultPartition))
-
-	// Delete removes the entry.
-	applyBatch(t, em, repl, rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
-		Key: fileMetadataKey,
-	}))
-	require.Empty(t, readAtimeIndex(t, repl, defaultPartition))
+	const t0, t1, t2 = int64(1_000_000), int64(2_000_000), int64(3_000_000)
+	for _, step := range []struct {
+		name string
+		req  proto.Message
+		want map[int64]string
+	}{
+		{"Set adds an entry", setRequest(fr, key, t0), entryAt(t0)},
+		{"an overwriting Set moves it", setRequest(fr, key, t1), entryAt(t1)},
+		{"UpdateAtime moves it", &rfpb.UpdateAtimeRequest{Key: key, AccessTimeUsec: t2}, entryAt(t2)},
+		{"a backwards UpdateAtime changes nothing", &rfpb.UpdateAtimeRequest{Key: key, AccessTimeUsec: t1}, entryAt(t2)},
+		{"Delete removes it", &rfpb.DeleteRequest{Key: key}, map[int64]string{}},
+	} {
+		applyRequests(t, em, repl, step.req)
+		require.Equal(t, step.want, readAtimeIndex(t, repl), step.name)
+	}
 }
 
 // The atime index is not part of a snapshot. Recovering from one indexes the
 // snapshot's records and drops the entries of the records it replaces.
 func TestAtimeIndexSnapshotRestore(t *testing.T) {
-	repl := testutil.NewTestingReplica(t, 1, 1)
-	require.NotNil(t, repl)
-	t.Cleanup(func() {
-		require.NoError(t, repl.Close())
-	})
-	stopc := make(chan struct{})
-	_, err := repl.Open(stopc)
+	records, recordKeys := testRecords(t, 1)
+	fr, key := records[0], recordKeys[0]
+	const staleAtime, snapshotAtime = int64(1_000_000), int64(2_000_000)
+
+	src, em := openTestReplica(t)
+	applyRequests(t, em, src, setRequest(fr, key, snapshotAtime))
+	snapI, err := src.PrepareSnapshot()
+	require.NoError(t, err)
+	snap := &bytes.Buffer{}
+	require.NoError(t, src.SaveSnapshot(snapI, snap, nil /*=quitChan*/))
+
+	// The recovering replica holds an older copy of the record.
+	dst, em := openTestReplica(t)
+	applyRequests(t, em, dst, setRequest(fr, key, staleAtime))
+
+	require.NoError(t, dst.RecoverFromSnapshot(snap, nil /*=quitChan*/))
+	require.Equal(t, map[int64]string{snapshotAtime: string(key)}, readAtimeIndex(t, dst))
+}
+
+func TestDeleteRangeDataAndAtimeIndexEntries(t *testing.T) {
+	// Commit a chunk every few records.
+	prev := replica.TestingSetAtimeIndexCleanupCommitSizeBytes(256)
+	t.Cleanup(func() { replica.TestingSetAtimeIndexCleanupCommitSizeBytes(prev) })
+
+	repl, em := openTestReplica(t)
+	const n = 10
+	records, recordKeys := testRecords(t, n)
+	atime := func(i int) int64 { return int64(1_000_000 + i) }
+	reqs := make([]proto.Message, n)
+	for i := range n {
+		reqs[i] = setRequest(records[i], recordKeys[i], atime(i))
+	}
+	applyRequests(t, em, repl, reqs...)
+
+	// Delete all but the first and last record.
+	err := replica.DeleteRangeDataAndAtimeIndexEntries(repl.DB(), recordKeys[1], recordKeys[n-1], pebble.NoSync)
 	require.NoError(t, err)
 
-	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl.Replica)
-
-	fr, _ := randomRecord(t, defaultPartition, 100)
-	t0, t1, t2 := int64(1_000_000), int64(2_000_000), int64(3_000_000)
-	fileMetadataKey := writeRecordViaSet(t, em, repl, fr, t2)
-
-	snapI, err := repl.PrepareSnapshot()
+	iter, err := repl.DB().NewIter(&pebble.IterOptions{LowerBound: recordKeys[1], UpperBound: recordKeys[n-1]})
 	require.NoError(t, err)
-
-	snapFile, err := os.CreateTemp(testfs.MakeTempDir(t), "snapfile-*")
-	require.NoError(t, err)
-	defer snapFile.Close()
-
-	err = repl.SaveSnapshot(snapI, snapFile, nil /*=quitChan*/)
-	require.NoError(t, err)
-	_, err = snapFile.Seek(0, io.SeekStart)
-	require.NoError(t, err)
-
-	repl2 := testutil.NewTestingReplica(t, 2, 2)
-	require.NotNil(t, repl2)
-	t.Cleanup(func() {
-		require.NoError(t, repl2.Close())
-	})
-	_, err = repl2.Open(stopc)
-	require.NoError(t, err)
-
-	// The recovering replica holds an older copy of the snapshot's record,
-	// and a record that the snapshot doesn't contain.
-	em2 := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em2, repl2.Replica)
-	writeRecordViaSet(t, em2, repl2, fr, t0)
-	staleRecord, _ := randomRecord(t, defaultPartition, 100)
-	staleKey := writeRecordViaSet(t, em2, repl2, staleRecord, t1)
+	defer iter.Close()
+	require.False(t, iter.First(), "records left in the deleted span")
+	require.Equal(t, 2, countPresentKeys(t, repl, [][]byte{recordKeys[0], recordKeys[n-1]}))
 	require.Equal(t, map[int64]string{
-		t0: string(fileMetadataKey),
-		t1: string(staleKey),
-	}, readAtimeIndex(t, repl2, defaultPartition))
-
-	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
-	require.NoError(t, err)
-
-	require.Equal(t, map[int64]string{t2: string(fileMetadataKey)}, readAtimeIndex(t, repl2, defaultPartition))
+		atime(0):     string(recordKeys[0]),
+		atime(n - 1): string(recordKeys[n-1]),
+	}, readAtimeIndex(t, repl))
 }
