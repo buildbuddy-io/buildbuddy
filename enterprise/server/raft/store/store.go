@@ -454,14 +454,14 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	// StartOnDiskReplica can be blocked when the the buffered leaderChangeListener channel is full.
 	s.leaseKeeper.Start()
 
-	s.updateTagsWorker.Start()
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	s.egCancel = cancelFunc
 
 	eg, gctx := errgroup.WithContext(ctx)
 	s.eg = eg
 	s.egCtx = gctx
+	// The worker uses egCtx, so start it after that is set.
+	s.updateTagsWorker.Start()
 	eg.Go(func() error {
 		s.queryForMetarange(gctx)
 		return nil
@@ -798,7 +798,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	buf.WriteString("<pre>")
 	buf.WriteString(s.liveness.String() + "\n")
 
-	su := s.Usage()
+	su := s.usage(ctx)
 	buf.WriteString(fmt.Sprintf("%36s | Replicas: %4d | Leases: %7d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
@@ -2610,7 +2610,7 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 	}
 }
 
-func (s *Store) Usage() *rfpb.StoreUsage {
+func (s *Store) usage(ctx context.Context) *rfpb.StoreUsage {
 	su := &rfpb.StoreUsage{
 		Node: s.NodeDescriptor(),
 	}
@@ -2619,7 +2619,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	su.ReplicaCount = int64(len(s.openRanges))
 	s.rangeMu.RUnlock()
 
-	su.LeaseCount = s.leaseKeeper.LeaseCount(context.TODO())
+	su.LeaseCount = s.leaseKeeper.LeaseCount(ctx)
 	s.replicas.Range(func(key, value any) bool {
 		r, _ := value.(*replica.Replica)
 		ru, err := r.Usage()
@@ -2856,7 +2856,7 @@ func (w *updateTagsWorker) updateTags() error {
 
 	storeTags[constants.GRPCAddressTag] = w.store.grpcAddr
 
-	su := w.store.Usage()
+	su := w.store.usage(w.store.egCtx)
 	buf, err := proto.Marshal(su)
 	if err != nil {
 		return err

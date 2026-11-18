@@ -272,7 +272,7 @@ func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
 }
 
 func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) *leaseAgent {
-	ctx, cancel := context.WithCancel(context.TODO())
+	ctx, cancel := context.WithCancel(lk.egCtx)
 	updates, err := boundedstack.New[*leaseInstruction](1)
 	eg, gctx := errgroup.WithContext(ctx)
 	if err != nil {
