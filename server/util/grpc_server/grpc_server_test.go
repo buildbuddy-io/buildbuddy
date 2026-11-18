@@ -137,7 +137,8 @@ func TestTraceTasks(t *testing.T) {
 				want = map[string]traceCounts{
 					pingMethod:   {1, 1, 1, 1},
 					streamMethod: {1, 1, 1, 1},
-					// No Begin/End for unknown methods.
+					// gRPC never ends unknown methods, so their task stays
+					// open.
 					unknownMethod: {1, 0, 0, 0},
 				}
 			}

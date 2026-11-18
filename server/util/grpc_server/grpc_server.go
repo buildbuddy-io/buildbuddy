@@ -266,7 +266,8 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 	for _, h := range config.ExtraStatsHandlers {
 		opts = append(opts, grpc.StatsHandler(h))
 	}
-	// First and last, so the trace region covers the other stats handlers.
+	// Registered first and last so that the trace region covers the other
+	// stats handlers.
 	opts = append([]grpc.ServerOption{grpc.StatsHandler(traceTaskStartHandler{})}, opts...)
 	opts = append(opts, grpc.StatsHandler(traceTaskEndHandler{}))
 	return opts
@@ -325,9 +326,10 @@ func (traceTaskStartHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	if _, ok := s.(*stats.Begin); !ok {
 		return
 	}
-	// go tool trace breaks down time per region, not per task. Started on
-	// Begin, not in TagRPC: unknown methods get TagRPC but no Begin/End, and
-	// an unclosed region would leak onto the reused stream worker.
+	// go tool trace only breaks down time per region, so each RPC needs one as
+	// well as a task. It's started here rather than in TagRPC because gRPC
+	// calls TagRPC for unknown methods but never ends them, so their region
+	// would never be closed.
 	if rt, ok := ctx.Value(requestTraceKey{}).(*requestTrace); ok {
 		rt.region = trace.StartRegion(ctx, rt.method)
 	}
