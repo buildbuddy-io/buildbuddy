@@ -229,7 +229,7 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = r.Run(ctx, &rnpb.RunRequest{
-		GitRepo:       &gitpb.GitRepo{RepoUrl: "sample"},
+		GitRepo:       &gitpb.GitRepo{RepoUrl: "sample", AccessToken: "repo-token"},
 		RepoState:     &gitpb.RepoState{Branch: "test"},
 		RemoteHeaders: []string{"x-buildbuddy-platform.env-overrides=PWD=supersecret,USERNAME=bb"},
 		Steps:         []*rnpb.Step{{Run: "test-val"}},
@@ -469,6 +469,35 @@ func TestCredentialEnvOverrides_PrivateRepo(t *testing.T) {
 
 	// Assert that REPO_TOKEN is set to the fake token.
 	require.Contains(t, envOverrides, "REPO_TOKEN="+fakeToken)
+}
+
+func TestRun_GitTokenFromSecrets(t *testing.T) {
+	te, ctx := getEnv(t)
+	r, err := New(te)
+	require.NoError(t, err)
+
+	_, err = r.Run(ctx, &rnpb.RunRequest{
+		GitRepo:   &gitpb.GitRepo{RepoUrl: "https://ghe.example.com/org/repo"},
+		RepoState: &gitpb.RepoState{Branch: "main"},
+		ExecProperties: []*repb.Platform_Property{
+			{Name: platform.EnvSecretsPropertyName, Value: "REPO_TOKEN"},
+		},
+		Steps: []*rnpb.Step{{Run: "echo hello"}},
+	})
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	require.Len(t, execClient.executeRequests, 1)
+	execReq := execClient.executeRequests[0]
+	overrides := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	require.NotEmpty(t, overrides)
+	for _, override := range overrides {
+		require.NotContains(t, override, "REPO_TOKEN=")
+	}
+	command := getExecution(t, ctx, te, execReq.Payload).Command
+	require.Contains(t, command.GetPlatform().GetProperties(), &repb.Platform_Property{
+		Name: platform.EnvSecretsPropertyName, Value: "REPO_TOKEN",
+	})
 }
 
 func TestRun_GitCredentialsFromEnv(t *testing.T) {
