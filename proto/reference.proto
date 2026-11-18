@@ -21,10 +21,8 @@ message Reference {
   // Set if the stored blob is encrypted.
   EncryptionInfo encryption = 4;
 
-  // Where the blob is stored.
-  oneof location {
-    GCSLocation gcs = 5;
-  }
+  // Where the blob is stored in GCS.
+  GCSLocation gcs = 5;
 }
 
 message EncryptionInfo {
