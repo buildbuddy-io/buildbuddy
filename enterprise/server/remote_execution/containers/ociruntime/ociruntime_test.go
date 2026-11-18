@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/fileaccess"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -268,6 +270,9 @@ func TestRunRecordFileAccesses(t *testing.T) {
 
 	buildRoot := testfs.MakeTempDir(t)
 	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	if errors.Is(err, fileaccess.ErrBPFLSMNotActive) {
+		t.Skip(err)
+	}
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 	testfs.WriteAllFileContents(t, wd, map[string]string{

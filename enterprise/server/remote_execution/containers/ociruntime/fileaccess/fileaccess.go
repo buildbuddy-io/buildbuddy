@@ -1,5 +1,5 @@
 // Package fileaccess records which files are opened by processes in a cgroup,
-// using an eBPF program attached to security_file_open.
+// using an eBPF program attached to the BPF LSM hook file_open.
 package fileaccess
 
 import (
@@ -8,6 +8,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -53,9 +57,16 @@ type Tracker struct {
 	flushed chan struct{}
 }
 
-// NewTracker loads and attaches the eBPF program. It requires CAP_BPF and
-// CAP_PERFMON (or root) and a kernel with BTF.
+// ErrBPFLSMNotActive is returned by NewTracker when the kernel's BPF LSM is not
+// active, so the program would never run.
+var ErrBPFLSMNotActive = errors.New("BPF LSM is not active")
+
+// NewTracker loads and attaches the eBPF program. It requires CAP_SYS_ADMIN,
+// Linux 6.10 or later with BTF, and the BPF LSM to be active.
 func NewTracker() (*Tracker, error) {
+	if err := checkBPFLSM(); err != nil {
+		return nil, err
+	}
 	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(bpfObject))
 	if err != nil {
 		return nil, fmt.Errorf("load eBPF spec: %w", err)
@@ -67,10 +78,7 @@ func NewTracker() (*Tracker, error) {
 	if err := spec.LoadAndAssign(&t.objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
 	}
-	t.link, err = link.AttachTracing(link.TracingOptions{
-		Program:    t.objs.FileOpen,
-		AttachType: ebpf.AttachTraceFEntry,
-	})
+	t.link, err = link.AttachLSM(link.LSMOptions{Program: t.objs.FileOpen})
 	if err != nil {
 		t.closeObjs()
 		return nil, fmt.Errorf("attach eBPF program: %w", err)
@@ -83,6 +91,31 @@ func NewTracker() (*Tracker, error) {
 	}
 	go t.readEvents()
 	return t, nil
+}
+
+// checkBPFLSM returns ErrBPFLSMNotActive unless "bpf" is in the kernel's list
+// of active LSMs. securityfs, which exposes that list, is mounted at a
+// temporary directory because it is usually not mounted in containers.
+func checkBPFLSM() error {
+	dir, err := os.MkdirTemp("", "securityfs-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(dir)
+	flags := uintptr(unix.MS_RDONLY | unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC)
+	if err := unix.Mount("securityfs", dir, "securityfs", flags, ""); err != nil {
+		return fmt.Errorf("mount securityfs: %w", err)
+	}
+	defer unix.Unmount(dir, 0)
+	b, err := os.ReadFile(filepath.Join(dir, "lsm"))
+	if err != nil {
+		return fmt.Errorf("read active LSMs: %w", err)
+	}
+	lsms := strings.TrimSpace(string(b))
+	if !slices.Contains(strings.Split(lsms, ","), "bpf") {
+		return fmt.Errorf("%w (active LSMs: %s); add bpf to the kernel's lsm= boot parameter", ErrBPFLSMNotActive, lsms)
+	}
+	return nil
 }
 
 func (t *Tracker) closeObjs() {

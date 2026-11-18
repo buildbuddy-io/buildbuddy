@@ -102,7 +102,58 @@ struct {
   __uint(max_entries, 16 << 20);
 } events SEC(".maps");
 
-SEC("fentry/security_file_open")
+// Kernel functions (kfuncs, Linux 6.10 and later), resolved by name when the
+// program is loaded.
+extern void bpf_preempt_disable(void) __attribute__((section(".ksyms")));
+extern void bpf_preempt_enable(void) __attribute__((section(".ksyms")));
+
+// report sends the opened file's path to userspace, unless the tracked
+// cgroup already reported it.
+static __attribute__((always_inline)) void report(struct file *file, __u64 cgroup_id, __u64 *dropped) {
+  __u32 zero = 0;
+  struct event *e = bpf_map_lookup_elem(&scratch, &zero);
+  if (!e) {
+    __sync_fetch_and_add(dropped, 1);
+    return;
+  }
+  e->key.cgroup_id = cgroup_id;
+  e->key.dentry = (__u64)file->f_path.dentry;
+  e->key.ino = file->f_inode->i_ino;
+
+  __u8 one = 1;
+  long err = bpf_map_update_elem(&seen, &e->key, &one, BPF_NOEXIST);
+  if (err == -EEXIST) {
+    return;  // Already reported.
+  }
+  if (err != 0) {
+    __sync_fetch_and_add(dropped, 1);  // Map full.
+    return;
+  }
+  long n = bpf_d_path(&file->f_path, e->path, sizeof(e->path));
+  if (n <= 0 || n > PATH_MAX) {
+    bpf_map_delete_elem(&seen, &e->key);
+    __sync_fetch_and_add(dropped, 1);
+    return;
+  }
+  e->path_len = n;
+  __u64 size = __builtin_offsetof(struct event, path) + (__u64)n;
+  if (size > sizeof(*e)) {
+    return;
+  }
+  if (bpf_ringbuf_output(&events, e, size, 0) != 0) {
+    // Ring buffer full: forget the key so a later open can report it.
+    bpf_map_delete_elem(&seen, &e->key);
+    __sync_fetch_and_add(dropped, 1);
+  }
+}
+
+// This is a BPF LSM program rather than fentry/security_file_open because the
+// kernel skips an fentry program on a CPU where another run of it is in
+// progress, which happens when a task is preempted inside the program, and
+// those opens would be lost without a trace. LSM programs have no such check,
+// so two tasks can be inside the program on one CPU; preemption is off while
+// the per-CPU scratch buffer is in use. Returning 0 allows the open.
+SEC("lsm/file_open")
 int file_open(__u64 *ctx) {
   struct file *file = (struct file *)ctx[0];
   if (!(file->f_mode & FMODE_READ)) {
@@ -129,44 +180,12 @@ int file_open(__u64 *ctx) {
     return 0;
   }
 
-  __u32 zero = 0;
-  struct event *e = bpf_map_lookup_elem(&scratch, &zero);
-  if (!e) {
-    __sync_fetch_and_add(dropped, 1);
-    return 0;
-  }
-  e->key.cgroup_id = cgroup_id;
-  e->key.dentry = (__u64)file->f_path.dentry;
-  e->key.ino = file->f_inode->i_ino;
-
-  __u8 one = 1;
-  long err = bpf_map_update_elem(&seen, &e->key, &one, BPF_NOEXIST);
-  if (err == -EEXIST) {
-    return 0;  // Already reported.
-  }
-  if (err != 0) {
-    __sync_fetch_and_add(dropped, 1);  // Map full.
-    return 0;
-  }
-  long n = bpf_d_path(&file->f_path, e->path, sizeof(e->path));
-  if (n <= 0 || n > PATH_MAX) {
-    bpf_map_delete_elem(&seen, &e->key);
-    __sync_fetch_and_add(dropped, 1);
-    return 0;
-  }
-  e->path_len = n;
-  __u64 size = __builtin_offsetof(struct event, path) + (__u64)n;
-  if (size > sizeof(*e)) {
-    return 0;
-  }
-  if (bpf_ringbuf_output(&events, e, size, 0) != 0) {
-    // Ring buffer full: forget the key so a later open can report it.
-    bpf_map_delete_elem(&seen, &e->key);
-    __sync_fetch_and_add(dropped, 1);
-  }
+  bpf_preempt_disable();
+  report(file, cgroup_id, dropped);
+  bpf_preempt_enable();
   return 0;
 }
 
-// "Dual MIT/GPL" is GPL-compatible, which tracing programs and bpf_d_path
+// "Dual MIT/GPL" is GPL-compatible, which LSM programs and bpf_d_path
 // require.
 char LICENSE[] SEC("license") = "Dual MIT/GPL";

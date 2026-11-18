@@ -107,6 +107,7 @@ go_test(
         ":ociruntime",
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/containers/ociruntime/fileaccess",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/workspace",

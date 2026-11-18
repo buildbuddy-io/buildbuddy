@@ -1,6 +1,7 @@
 package fileaccess_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,9 @@ func TestRecording(t *testing.T) {
 		t.Skip("requires kernel BTF")
 	}
 	tracker, err := fileaccess.NewTracker()
+	if errors.Is(err, fileaccess.ErrBPFLSMNotActive) {
+		t.Skip(err)
+	}
 	require.NoError(t, err)
 	t.Cleanup(func() { tracker.Close() })
 
