@@ -42,6 +42,10 @@ jobs:
           cp buildbuddy/buildpatches/bazel_dep/* buildbuddy-internal/buildpatches/bazel_dep/
           mkdir -p buildbuddy-internal/deps
           cp buildbuddy/deps/* buildbuddy-internal/deps/
+          # deps/apt.MODULE.bazel refers to these as root-module labels.
+          mkdir -p buildbuddy-internal/apt/keys
+          cp buildbuddy/apt/BUILD buildbuddy/apt/package.BUILD.tmpl buildbuddy-internal/apt/
+          cp buildbuddy/apt/keys/* buildbuddy-internal/apt/keys/
           cp buildbuddy/MODULE.bazel.lock buildbuddy-internal/MODULE.bazel.lock
 
       - name: Update SHA and lockfile
@@ -72,6 +76,7 @@ jobs:
           git add bazel_downloader.cfg
           git add buildpatches
           git add deps
+          git add apt
           git add MODULE.bazel.lock
           cat <<EOF > message.txt
           🔄 $COMMIT_MESSAGE
