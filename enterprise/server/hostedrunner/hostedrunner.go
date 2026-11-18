@@ -494,26 +494,37 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, status.WrapError(err, "get credentials")
 	}
 
+	// Combine repeated env override headers into a single comma-separated value per key,
+	// since platform parsing otherwise only uses the last value.
+	envOverridesByProperty := map[string][]string{
+		platform.EnvOverridesPropertyName: envOverrides,
+	}
+
 	for _, h := range req.GetRemoteHeaders() {
 		parts := strings.SplitN(h, "=", 2)
 		if len(parts) != 2 {
 			return nil, status.InvalidArgumentErrorf("malformed remote header %s: key-value pairs should be separated by '='", h)
 		}
-		headerKey := parts[0]
+		headerKey := strings.ToLower(parts[0])
 		headerVal := parts[1]
 
-		// We must set all env overrides in a single platform property, so add them
-		// to credential-related env overrides that were set above.
-		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName {
-			envOverrides = append(envOverrides, headerVal)
+		propertyName := strings.TrimPrefix(headerKey, platform.OverrideHeaderPrefix)
+
+		switch propertyName {
+		case platform.EnvOverridesPropertyName,
+			platform.EnvOverridesBase64PropertyName,
+			platform.SecretEnvOverridesPropertyName,
+			platform.SecretEnvOverridesBase64PropertyName:
+			envOverridesByProperty[propertyName] = append(envOverridesByProperty[propertyName], headerVal)
 			continue
 		}
 
 		execCtx = metadata.AppendToOutgoingContext(execCtx, headerKey, headerVal)
 	}
 
-	execCtx = platform.WithRemoteHeaderOverride(
-		execCtx, platform.EnvOverridesPropertyName, strings.Join(envOverrides, ","))
+	for property, values := range envOverridesByProperty {
+		execCtx = platform.WithRemoteHeaderOverride(execCtx, property, strings.Join(values, ","))
+	}
 
 	executionClient := r.env.GetRemoteExecutionClient()
 	if executionClient == nil {

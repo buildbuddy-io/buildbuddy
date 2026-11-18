@@ -2,6 +2,7 @@ package hostedrunner
 
 import (
 	"context"
+	"encoding/base64"
 	"path/filepath"
 	"testing"
 	"time"
@@ -223,34 +224,144 @@ func TestTimeout(t *testing.T) {
 }
 
 func TestRemoteHeaders_EnvOverrides(t *testing.T) {
-	te, ctx := getEnv(t)
+	encode := func(value string) string { return base64.StdEncoding.EncodeToString([]byte(value)) }
+	for _, tc := range []struct {
+		name          string
+		headers       []string
+		wantOverrides []string
+	}{
+		{
+			name:          "plain overrides",
+			headers:       []string{"x-buildbuddy-platform.env-overrides=PWD=supersecret,USERNAME=bb"},
+			wantOverrides: []string{"PWD=supersecret", "USERNAME=bb"},
+		},
+		{
+			name: "repeated plain overrides",
+			headers: []string{
+				"x-buildbuddy-platform.env-overrides=K1=first",
+				"x-buildbuddy-platform.env-overrides=K2=other,K1=last",
+			},
+			wantOverrides: []string{"K1=first", "K2=other", "K1=last"},
+		},
+		{
+			name: "repeated base64 overrides",
+			headers: []string{
+				"x-buildbuddy-platform.env-overrides-base64=" + encode("K1=V1,V2"),
+				"x-buildbuddy-platform.env-overrides-base64=" + encode("K2=V3=V4"),
+				"x-buildbuddy-platform.env-overrides-base64=" + encode("K1=last"),
+			},
+			wantOverrides: []string{"K1=V1,V2", "K2=V3=V4", "K1=last"},
+		},
+		{
+			name: "base64 overrides follow plain overrides",
+			headers: []string{
+				"x-buildbuddy-platform.env-overrides-base64=" + encode("K1=encoded-first"),
+				"x-buildbuddy-platform.env-overrides=K1=plain,K2=other",
+				"x-buildbuddy-platform.env-overrides-base64=" + encode("K1=encoded-last"),
+			},
+			wantOverrides: []string{"K1=plain", "K2=other", "K1=encoded-first", "K1=encoded-last"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te, ctx := getEnv(t)
+			r, err := New(te)
+			require.NoError(t, err)
+			_, err = r.Run(ctx, &rnpb.RunRequest{
+				GitRepo:       &gitpb.GitRepo{RepoUrl: "sample"},
+				RepoState:     &gitpb.RepoState{Branch: "test"},
+				RemoteHeaders: tc.headers,
+				Steps:         []*rnpb.Step{{Run: "test-val"}},
+			})
+			require.NoError(t, err)
 
-	r, err := New(te)
-	require.NoError(t, err)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			require.Len(t, execClient.executeRequests, 1)
+			md := execClient.executeRequests[0].Metadata
+			// Platform parsing only applies the last header per property, so each must be merged.
+			plainOverrides := md.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+			require.Len(t, plainOverrides, 1)
+			require.LessOrEqual(t, len(md.Get(platform.OverrideHeaderPrefix+platform.EnvOverridesBase64PropertyName)), 1)
+			props, err := platform.ParseProperties(&repb.ExecutionTask{
+				PlatformOverrides: &repb.Platform{Properties: platform.RemoteHeaderOverrides(metadata.NewIncomingContext(ctx, md))},
+			})
+			require.NoError(t, err)
+			// User overrides follow the runner's credential overrides and retain their order.
+			require.Greater(t, len(props.EnvOverrides), len(tc.wantOverrides))
+			require.Equal(t, tc.wantOverrides, props.EnvOverrides[len(props.EnvOverrides)-len(tc.wantOverrides):])
+			for _, expectedCredential := range []string{"BUILDBUDDY_API_KEY", "REPO_TOKEN", "REPO_USER"} {
+				require.Contains(t, plainOverrides[0], expectedCredential+"=")
+			}
+		})
+	}
+}
 
-	_, err = r.Run(ctx, &rnpb.RunRequest{
-		GitRepo:       &gitpb.GitRepo{RepoUrl: "sample"},
-		RepoState:     &gitpb.RepoState{Branch: "test"},
-		RemoteHeaders: []string{"x-buildbuddy-platform.env-overrides=PWD=supersecret,USERNAME=bb"},
-		Steps:         []*rnpb.Step{{Run: "test-val"}},
-	})
-	require.NoError(t, err)
+func TestRemoteHeaders_SecretEnvOverrides(t *testing.T) {
+	encode := func(value string) string { return base64.StdEncoding.EncodeToString([]byte(value)) }
+	for _, tc := range []struct {
+		name          string
+		headers       []string
+		wantOverrides []string
+	}{
+		{
+			name: "repeated secrets",
+			headers: []string{
+				"x-buildbuddy-platform.secret-env-overrides=K1=V1",
+				"x-buildbuddy-platform.secret-env-overrides=K2=V2",
+			},
+			wantOverrides: []string{"K1=V1", "K2=V2"},
+		},
+		{
+			name: "repeated base64 secrets",
+			headers: []string{
+				"x-buildbuddy-platform.secret-env-overrides-base64=" + encode("K1=V1,V2"),
+				"x-buildbuddy-platform.secret-env-overrides-base64=" + encode("K2=V3=V4"),
+			},
+			wantOverrides: []string{"K1=V1,V2", "K2=V3=V4"},
+		},
+		{
+			name: "base64 overrides follow plain overrides",
+			headers: []string{
+				"x-buildbuddy-platform.secret-env-overrides-base64=" + encode("K1=encoded-first"),
+				"x-buildbuddy-platform.secret-env-overrides=K1=plain,K2=other",
+				"x-buildbuddy-platform.secret-env-overrides-base64=" + encode("K1=encoded-last"),
+			},
+			wantOverrides: []string{"K1=plain", "K2=other", "K1=encoded-first", "K1=encoded-last"},
+		},
+		{
+			name: "case insensitive header names",
+			headers: []string{
+				"X-BuildBuddy-Platform.Secret-Env-Overrides=K1=V1",
+				"x-buildbuddy-platform.secret-env-overrides=K2=V2",
+			},
+			wantOverrides: []string{"K1=V1", "K2=V2"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te, ctx := getEnv(t)
+			r, err := New(te)
+			require.NoError(t, err)
+			_, err = r.Run(ctx, &rnpb.RunRequest{
+				GitRepo:       &gitpb.GitRepo{RepoUrl: "sample"},
+				RepoState:     &gitpb.RepoState{Branch: "test"},
+				RemoteHeaders: tc.headers,
+				Steps:         []*rnpb.Step{{Run: "test-val"}},
+			})
+			require.NoError(t, err)
 
-	// Check that the specified env overrides are set on the execution context
-	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
-	require.Equal(t, 1, len(execClient.executeRequests))
-	execReq := execClient.executeRequests[0]
-	envOverridesMetadata := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
-	require.Greater(t, len(envOverridesMetadata), 0)
-	// If a platform property is specified multiple times, the latest value is applied.
-	// Check that value to simulate what would actually be applied.
-	appliedEnvOverrides := envOverridesMetadata[len(envOverridesMetadata)-1]
-	require.Contains(t, appliedEnvOverrides, "PWD=supersecret")
-	require.Contains(t, appliedEnvOverrides, "USERNAME=bb")
-
-	// Check that credential-related overrides were not overwritten
-	for _, expectedCredential := range []string{"BUILDBUDDY_API_KEY", "REPO_TOKEN", "REPO_USER"} {
-		require.Contains(t, appliedEnvOverrides, expectedCredential)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			require.Len(t, execClient.executeRequests, 1)
+			md := execClient.executeRequests[0].Metadata
+			for _, property := range []string{platform.SecretEnvOverridesPropertyName, platform.SecretEnvOverridesBase64PropertyName} {
+				require.LessOrEqual(t, len(md.Get(platform.OverrideHeaderPrefix+property)), 1)
+			}
+			props, err := platform.ParseProperties(&repb.ExecutionTask{
+				PlatformOverrides: &repb.Platform{Properties: platform.RemoteHeaderOverrides(metadata.NewIncomingContext(ctx, md))},
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.wantOverrides, props.SecretEnvOverrides)
+			// Env overrides set by the runner, like REPO_TOKEN and BUILDBUDDY_API_KEY, should continue to be set.
+			require.NotEmpty(t, props.EnvOverrides)
+		})
 	}
 }
 
