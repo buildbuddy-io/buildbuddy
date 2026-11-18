@@ -2,15 +2,18 @@ package usage_test
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/exptest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
@@ -26,6 +29,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -98,6 +103,7 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 		// are non-deterministic.
 		tu.Model = tables.Model{}
 		tu.UsageID = ""
+		tu.FlushID = ""
 		usages = append(usages, tu)
 		return nil
 	})
@@ -446,6 +452,130 @@ func TestClickHouseUsageView_DedupesDuplicateRawUsageRows(t *testing.T) {
 			Count: 7,
 		},
 	}, queryAllOLAPUsages(t, te))
+}
+
+func TestUsageTracker_FlushToDB_LateIncrementAddsToFlushedPeriod(t *testing.T) {
+	te := setupEnv(t)
+	enableFlushIDs(t, te)
+	ctx := authContext(te, "US1")
+
+	flushClock := clockwork.NewFakeClockAt(period1Start)
+	lateClock := clockwork.NewFakeClockAt(period1Start)
+	flusher, err := usage.NewTracker(te, flushClock, newFlushLock(t, te))
+	require.NoError(t, err)
+	late, err := usage.NewTracker(te, lateClock, newFlushLock(t, te))
+	require.NoError(t, err)
+
+	incrementCASHits(t, te, ctx, flusher, 100)
+	flushClock.Advance(period3Start.Sub(flushClock.Now()))
+	require.NoError(t, flusher.FlushToDB(context.Background()))
+
+	incrementCASHits(t, te, ctx, late, 1)
+	flushClock.Advance(periodDuration)
+	require.NoError(t, flusher.FlushToDB(context.Background()))
+
+	assertCASHits(t, te, 101)
+}
+
+func TestUsageTracker_FlushToDB_RetryAfterFailedCleanupDoesNotDoubleCount(t *testing.T) {
+	te := setupEnv(t)
+	enableFlushIDs(t, te)
+	ctx := authContext(te, "US1")
+	clock := clockwork.NewFakeClockAt(period1Start)
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
+	require.NoError(t, err)
+	hook := &deleteHook{}
+	te.GetDefaultRedisClient().AddHook(hook)
+
+	incrementCASHits(t, te, ctx, ut, 100)
+	clock.Advance(2 * periodDuration)
+
+	hook.fail.Store(true)
+	require.Error(t, ut.FlushToDB(context.Background()))
+	hook.fail.Store(false)
+	require.NoError(t, ut.FlushToDB(context.Background()))
+
+	assertCASHits(t, te, 100)
+}
+
+func enableFlushIDs(t *testing.T, te *testenv.TestEnv) {
+	exptest.Setup(t, te)
+	require.NoError(t, openfeature.SetProviderAndWait(memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"usage.flush_ids_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": true},
+		},
+	})))
+}
+
+var casHitsOLAPLabels = sku.Labels{
+	sku.Origin: sku.OriginInternal,
+	sku.Client: sku.ClientBazel,
+}
+
+func incrementCASHits(t *testing.T, te *testenv.TestEnv, ctx context.Context, ut interfaces.UsageTracker, n int64) {
+	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+	require.NoError(t, ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: n}))
+	require.NoError(t, ut.IncrementOLAP(ctx, casHitsOLAPLabels, map[sku.SKU]int64{sku.RemoteCacheCASHits: n}))
+	require.NoError(t, te.GetMetricsCollector().Flush(context.Background()))
+}
+
+func assertCASHits(t *testing.T, te *testenv.TestEnv, n int64) {
+	assert.Equal(t, n, sumCASCacheHits(queryAllUsages(t, te), period1Start))
+	if *clickhouseEnabled {
+		assert.Equal(t, []*olaptables.Usage{
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheCASHits,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Client: "bazel",
+					sku.Origin: "internal",
+				},
+				Count: n,
+			},
+		}, queryAllOLAPUsages(t, te))
+	}
+}
+
+type deleteHook struct {
+	fail atomic.Bool
+}
+
+func (h *deleteHook) check(cmds ...redis.Cmder) error {
+	for _, cmd := range cmds {
+		if cmd.Name() == "del" && h.fail.Load() {
+			return errors.New("injected redis delete failure")
+		}
+	}
+	return nil
+}
+
+func (h *deleteHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	return ctx, h.check(cmd)
+}
+
+func (h *deleteHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	return nil
+}
+
+func (h *deleteHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	return ctx, h.check(cmds...)
+}
+
+func (h *deleteHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	return nil
+}
+
+func sumCASCacheHits(usages []*tables.Usage, periodStart time.Time) int64 {
+	var sum int64
+	for _, u := range usages {
+		if u.PeriodStartUsec == periodStart.UnixMicro() {
+			sum += u.CASCacheHits
+		}
+	}
+	return sum
 }
 
 func TestUsageTracker_Increment_ImpersonationSuppressesUsage(t *testing.T) {

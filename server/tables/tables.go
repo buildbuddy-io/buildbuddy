@@ -917,6 +917,10 @@ type Usage struct {
 	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
 	FinalBeforeUsec int64 `gorm:"default:0"`
 
+	// Usage that arrives after its period was flushed is written as a new row
+	// with a new FlushID; a retry of the same flush is skipped.
+	FlushID string `gorm:"not null;default:''"`
+
 	UsageCounts
 
 	UsageLabels

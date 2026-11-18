@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -36,6 +37,8 @@ import (
 var (
 	writeToOLAP = flag.Bool("app.write_usage_to_olap_db", false, "If true, write usage data to OLAP DB in addition to the primary DB write.")
 )
+
+const flushIDsExperiment = "usage.flush_ids_enabled"
 
 const (
 	// periodDuration determines the length of time for usage data
@@ -98,6 +101,9 @@ const (
 	redisOLAPCollectionsKeyPrefix = redisUsageKeyPrefix + "v2/collections/"
 	redisOLAPCountsKeyPrefix      = redisUsageKeyPrefix + "v2/counts/"
 
+	redisFlushingKeyPrefix = redisUsageKeyPrefix + "flushing/"
+	flushIDField           = "_flush_id"
+
 	// Time format used to store Redis keys.
 	// Example: 2020-01-01T00:00:00Z
 	redisTimeKeyFormat = time.RFC3339
@@ -121,6 +127,20 @@ const (
 
 var (
 	periodZeroValue = periodStartingAt(time.Unix(0, 0))
+
+	// KEYS[1]: counts key, KEYS[2]: flushing key
+	// ARGV[1]: new flush ID, ARGV[2]: flushing key TTL in seconds
+	takeCountsScript = redis.NewScript(`
+if redis.call("EXISTS", KEYS[2]) == 0 then
+	if redis.call("EXISTS", KEYS[1]) == 0 then
+		return {}
+	end
+	redis.call("RENAME", KEYS[1], KEYS[2])
+	redis.call("HSET", KEYS[2], "` + flushIDField + `", ARGV[1])
+	redis.call("EXPIRE", KEYS[2], ARGV[2])
+end
+return redis.call("HGETALL", KEYS[2])
+`)
 )
 
 // NewFlushLock returns a distributed lock that can be used with NewTracker
@@ -391,13 +411,23 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	ctx, cancel = context.WithDeadline(ctx, deadline.Add(-5*time.Second))
 	defer cancel()
 
+	// Evaluated once so that the whole flush takes the same code path.
+	flushID := ""
+	if fp := ut.env.GetExperimentFlagProvider(); fp != nil && fp.Boolean(ctx, flushIDsExperiment, false) {
+		id, err := random.RandomString(16)
+		if err != nil {
+			return err
+		}
+		flushID = id
+	}
+
 	// Perform MySQL and ClickHouse flushes concurrently, so that if the MySQL
 	// flush takes too long we can still try to flush to ClickHouse.
 	var eg errgroup.Group
 
 	// Flush MySQL buffer (v1 keys)
 	eg.Go(func() error {
-		if err := ut.flushPrimaryDBBuffer(ctx, redisCleanupCtx); err != nil {
+		if err := ut.flushPrimaryDBBuffer(ctx, redisCleanupCtx, flushID); err != nil {
 			return fmt.Errorf("flush buffered usage data to primary DB: %w", err)
 		}
 		return nil
@@ -406,7 +436,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	// Flush ClickHouse buffer (v2 keys) if enabled
 	if *writeToOLAP {
 		eg.Go(func() error {
-			if err := ut.flushOLAPBuffer(ctx, redisCleanupCtx); err != nil {
+			if err := ut.flushOLAPBuffer(ctx, redisCleanupCtx, flushID); err != nil {
 				return fmt.Errorf("flush buffered usage data to ClickHouse: %w", err)
 			}
 			return nil
@@ -417,7 +447,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 }
 
 // flushPrimaryDBBuffer reads from the v1 Redis buffer and writes to MySQL.
-func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx context.Context) error {
+func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx context.Context, newFlushID string) error {
 	// Loop through usage periods starting from the oldest period
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a period which is not yet "settled".
@@ -433,7 +463,9 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 			continue
 		}
 
-		if p.Equal(oldestPeriod) {
+		// With flush IDs, collections stay in the set after they're flushed,
+		// so only alert below if there are counts left to flush.
+		if p.Equal(oldestPeriod) && newFlushID == "" {
 			alert.UnexpectedEvent("usage_flush_not_keeping_up", "Flushing usage data that is close to redis TTL - some usage data may be lost")
 		}
 
@@ -457,6 +489,32 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 			}
 			// Read usage counts from Redis
 			countsKey := countsRedisKey(p, encodedCollection)
+			if newFlushID != "" {
+				flushID, h, err := ut.takeCountsForFlush(ctx, countsKey, newFlushID)
+				if err != nil {
+					return err
+				}
+				if len(h) == 0 {
+					continue
+				}
+				if p.Equal(oldestPeriod) {
+					alert.UnexpectedEvent("usage_flush_not_keeping_up", "Flushing usage data that is close to redis TTL - some usage data may be lost")
+				}
+				counts, err := stringMapToCounts(h)
+				if err != nil {
+					return err
+				}
+				if err := ut.flushCountsToPrimaryDB(ctx, collection.GroupID, p, collection.UsageLabels(), counts, flushID); err != nil {
+					return err
+				}
+				// Leave the collection in the set (it expires with the
+				// period), since increments that arrived during this flush
+				// may have recreated countsKey.
+				if err := ut.rdb.Del(redisCleanupCtx, flushingRedisKey(countsKey)).Err(); err != nil {
+					return err
+				}
+				continue
+			}
 			h, err := ut.rdb.HGetAll(ctx, countsKey).Result()
 			if err != nil {
 				return err
@@ -480,7 +538,7 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 			// Update counts in the DB
 			groupID := collection.GroupID
 			labels := collection.UsageLabels()
-			if err := ut.flushCountsToPrimaryDB(ctx, groupID, p, labels, counts); err != nil {
+			if err := ut.flushCountsToPrimaryDB(ctx, groupID, p, labels, counts, "" /*=flushID*/); err != nil {
 				return err
 			}
 
@@ -499,7 +557,7 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 
 // flushOLAPBuffer reads from the v2 Redis buffer and writes to ClickHouse.
 // The v2 buffer stores data in OLAP format (SKU + labels map).
-func (ut *tracker) flushOLAPBuffer(ctx context.Context, redisCleanupCtx context.Context) error {
+func (ut *tracker) flushOLAPBuffer(ctx context.Context, redisCleanupCtx context.Context, newFlushID string) error {
 	var olapRows []*olaptables.RawUsage
 	cleanupPipe := ut.rdb.Pipeline()
 
@@ -518,7 +576,9 @@ func (ut *tracker) flushOLAPBuffer(ctx context.Context, redisCleanupCtx context.
 			continue
 		}
 
-		if p.Equal(oldestPeriod) {
+		// With flush IDs, collections stay in the set after they're flushed,
+		// so only alert below if there are counts left to flush.
+		if p.Equal(oldestPeriod) && newFlushID == "" {
 			alert.UnexpectedEvent("usage_olap_flush_not_keeping_up", "Flushing OLAP usage data that is close to redis TTL - some usage data may be lost")
 		}
 
@@ -530,13 +590,27 @@ func (ut *tracker) flushOLAPBuffer(ctx context.Context, redisCleanupCtx context.
 
 			// Read the counts from Redis (hash of SKU => count)
 			countsKey := olapCountsRedisKey(p, encodedCollection)
-			counts, err := ut.rdb.HGetAll(ctx, countsKey).Result()
-			if err != nil {
-				if err == redis.Nil {
-					alert.UnexpectedEvent("usage_unexpected_empty_olap_count_in_redis", "OLAP usage count in Redis is unexpectedly empty for key %q", countsKey)
-					continue
+			bufferID := ut.bufferID
+			var counts map[string]string
+			if newFlushID != "" {
+				var flushID string
+				flushID, counts, err = ut.takeCountsForFlush(ctx, countsKey, newFlushID)
+				if err != nil {
+					return err
 				}
-				return err
+				if len(counts) > 0 && p.Equal(oldestPeriod) {
+					alert.UnexpectedEvent("usage_olap_flush_not_keeping_up", "Flushing OLAP usage data that is close to redis TTL - some usage data may be lost")
+				}
+				bufferID += ":" + flushID
+			} else {
+				counts, err = ut.rdb.HGetAll(ctx, countsKey).Result()
+				if err != nil {
+					if err == redis.Nil {
+						alert.UnexpectedEvent("usage_unexpected_empty_olap_count_in_redis", "OLAP usage count in Redis is unexpectedly empty for key %q", countsKey)
+						continue
+					}
+					return err
+				}
 			}
 
 			for key, countStr := range counts {
@@ -549,11 +623,17 @@ func (ut *tracker) flushOLAPBuffer(ctx context.Context, redisCleanupCtx context.
 					SKU:         sku.SKU(key),
 					Labels:      orderedmap.FromMap(collection.Labels),
 					PeriodStart: p.Start(),
-					BufferID:    ut.bufferID,
+					BufferID:    bufferID,
 					Count:       count,
 				})
 			}
 
+			if newFlushID != "" {
+				if len(counts) > 0 {
+					cleanupPipe.Del(redisCleanupCtx, flushingRedisKey(countsKey))
+				}
+				continue
+			}
 			cleanupPipe.SRem(redisCleanupCtx, collectionsKey, encodedCollection)
 			cleanupPipe.Del(redisCleanupCtx, countsKey)
 		}
@@ -576,13 +656,39 @@ func (ut *tracker) flushOLAPBuffer(ctx context.Context, redisCleanupCtx context.
 	return nil
 }
 
-func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
+// takeCountsForFlush atomically moves the counts hash at countsKey to a key
+// owned by the flush, assigns it newFlushID, and returns its flush ID and
+// counts. If an earlier flush already took the counts but failed to delete
+// them, it returns that flush's ID and counts instead, so that the retry
+// writes the same rows and the DB can dedupe them. Increments that arrive
+// after the counts are taken recreate countsKey, and a later flush writes
+// them with a new ID, so the DB adds them up.
+func (ut *tracker) takeCountsForFlush(ctx context.Context, countsKey, newFlushID string) (string, map[string]string, error) {
+	keys := []string{countsKey, flushingRedisKey(countsKey)}
+	res, err := takeCountsScript.Run(ctx, ut.rdb, keys, newFlushID, int(RedisKeyTTL.Seconds())).StringSlice()
+	if err != nil {
+		return "", nil, err
+	}
+	counts := make(map[string]string, len(res)/2)
+	for i := 0; i+1 < len(res); i += 2 {
+		counts[res[i]] = res[i+1]
+	}
+	flushID := counts[flushIDField]
+	delete(counts, flushIDField)
+	return flushID, counts, nil
+}
+
+// flushCountsToPrimaryDB writes counts to the primary DB. If flushID is
+// empty, it skips the write if a row for the same period and labels exists.
+// Otherwise, it skips the write only if this flush ID already wrote the row.
+func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts, flushID string) error {
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx interfaces.DB) error {
 		tu := &tables.Usage{
 			GroupID:         groupID,
 			PeriodStartUsec: p.Start().UnixMicro(),
 			Region:          ut.region,
+			FlushID:         flushID,
 			UsageCounts:     *counts,
 			UsageLabels:     *labels,
 		}
@@ -602,7 +708,7 @@ func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p
 		defer unlock()
 
 		// First check whether the row already exists.
-		err = tx.NewQuery(ctx, "usage_check_exists").Raw(`
+		q := `
 			SELECT *
 			FROM "Usages"
 			WHERE
@@ -613,17 +719,18 @@ func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p
 				AND client = ?
 				AND server = ?
 				AND proxy = ?
-			`+dbh.SelectForUpdateModifier(),
-			tu.Region,
-			tu.GroupID,
-			tu.PeriodStartUsec,
-			tu.Origin,
-			tu.Client,
-			tu.Server,
-			tu.Proxy,
-		).Take(&tables.Usage{})
+			`
+		args := []any{tu.Region, tu.GroupID, tu.PeriodStartUsec, tu.Origin, tu.Client, tu.Server, tu.Proxy}
+		if flushID != "" {
+			q += " AND flush_id = ?"
+			args = append(args, flushID)
+		}
+		err = tx.NewQuery(ctx, "usage_check_exists").Raw(q+dbh.SelectForUpdateModifier(), args...).Take(&tables.Usage{})
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err
+		}
+		if err == nil && flushID != "" {
+			return nil
 		}
 		if err == nil {
 			alert.UnexpectedEvent("usage_update_skipped", "Usage flush skipped since the row already exists. Usage row: %s", json)
@@ -733,6 +840,13 @@ func collectionsRedisKey(c period) string {
 
 func countsRedisKey(c period, encodedCollection string) string {
 	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, c, encodedCollection)
+}
+
+// flushingRedisKey returns the key that a flush moves countsKey to. The
+// braces make sharded Redis clients hash only countsKey, so both keys are on
+// the same shard and can be renamed atomically.
+func flushingRedisKey(countsKey string) string {
+	return redisFlushingKeyPrefix + "{" + countsKey + "}"
 }
 
 func olapCollectionsRedisKey(c period) string {

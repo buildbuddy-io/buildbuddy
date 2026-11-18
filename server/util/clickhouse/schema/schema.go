@@ -566,7 +566,9 @@ type RawUsage struct {
 	// rows are flushed more than once (e.g. due to transient errors), the
 	// flushed usage data is deduplicated when using a FINAL query over the
 	// table. Currently, we buffer in Redis, in each cluster where the app is
-	// located. So an appropriate value here might be "<cluster-name>:redis".
+	// located, and (with the usage.flush_ids_enabled experiment) give each
+	// flush its own ID, so an appropriate value here might be
+	// "<cluster-name>:redis:<id>".
 	BufferID string `gorm:"type:LowCardinality(String)"`
 
 	// Count is the number of units of usage measured.

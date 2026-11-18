@@ -21,6 +21,7 @@ go_library(
         "//server/util/db",
         "//server/util/log",
         "//server/util/platform",
+        "//server/util/random",
         "//server/util/region",
         "//server/util/status",
         "//server/util/usageutil",
@@ -39,6 +40,7 @@ go_test(
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",
+        "//enterprise/server/testutil/exptest",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//server/interfaces",
@@ -55,6 +57,8 @@ go_test(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",
@@ -71,11 +75,12 @@ go_test(
         # TODO(bduffany): Remove test filter, add ClickHouse test logic to all
         # test cases, and enable test sharding before we fully enable
         # ClickHouse in prod.
-        "-test.run=TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod|TestClickHouseUsageView_DedupesDuplicateRawUsageRows",
+        "-test.run=TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod|TestClickHouseUsageView_DedupesDuplicateRawUsageRows|TestUsageTracker_FlushToDB_LateIncrementAddsToFlushedPeriod|TestUsageTracker_FlushToDB_RetryAfterFailedCleanupDoesNotDoubleCount",
     ],
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",
+        "//enterprise/server/testutil/exptest",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//server/environment",
@@ -94,6 +99,8 @@ go_test(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",
@@ -123,6 +130,7 @@ go_test(
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",
+        "//enterprise/server/testutil/exptest",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//server/environment",
@@ -141,6 +149,8 @@ go_test(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",
@@ -170,6 +180,7 @@ go_test(
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",
+        "//enterprise/server/testutil/exptest",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//server/environment",
@@ -188,6 +199,8 @@ go_test(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",
