@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -53,6 +55,7 @@ const (
 
 var (
 	reproducibleImages = flag.Bool("executor.reproducible_ext4_images", false, "If true, fix the filesystem UUID and directory hash seed of ext4 images created from directories, skip copying extended attributes, and clamp all timestamps newer than 2026-01-01 to that date, so that a freshly extracted directory tree produces a byte-identical image on every run. Files newer than that date lose their mtime, which breaks pre-warmed Bazel install bases. Requires e2fsprogs 1.47.2 or later.", flag.Internal)
+	debugfsJailEnabled = flag.Bool("executor.debugfs_jail_enabled", true, "If true, run debugfs in a separate mount namespace where only the output directory is writable when unpacking ext4 images. Requires CAP_SYS_ADMIN.", flag.Internal)
 )
 
 // EnsureDependencies verifies that all external binaries required for ext4
@@ -244,6 +247,9 @@ func isDirEmpty(dir string) (bool, error) {
 // Only the given paths are unpacked. Paths are unpacked recursively, which
 // means that they can reference either directories or files. Non-existent
 // paths are silently ignored.
+//
+// If executor.debugfs_jail_enabled is set, debugfs runs in a separate mount
+// namespace where only outputDir is writable, which requires CAP_SYS_ADMIN.
 func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []string) error {
 	empty, err := isDirEmpty(outputDir)
 	if err != nil {
@@ -252,10 +258,155 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []
 	if !empty {
 		return status.FailedPreconditionError("Unpacking image in non-empty directory is unsupported.")
 	}
+	if !*debugfsJailEnabled {
+		return rdump(ctx, inputFile, outputDir, paths)
+	}
+	newRoot, err := os.MkdirTemp("", "debugfs-root-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(newRoot)
+
+	errCh := make(chan error, 1)
+	go func() {
+		// Lock this goroutine to the OS thread for its lifetime since it
+		// runs unpackImage in a new mount namespace.
+		runtime.LockOSThread()
+		errCh <- unpackImage(ctx, newRoot, inputFile, outputDir, paths)
+	}()
+	return <-errCh
+}
+
+// bindMount creates target and bind-mounts source on it.
+func bindMount(source, target string, readOnly bool) error {
+	info, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		if err := os.MkdirAll(target, 0755); err != nil {
+			return err
+		}
+	} else {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("%q is not a regular file or directory", source)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		// Create the mount point with a read-only fd. This avoids EBUSY when
+		// enterChrootJail remounts the tmpfs at newRoot read-only, in case the
+		// executor forks while the fd is open and the child still holds a
+		// copy of it.
+		f, err := os.OpenFile(target, os.O_CREATE|os.O_RDONLY, 0644)
+		if err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+	}
+	if err := unix.Mount(source, target, "", unix.MS_BIND, ""); err != nil {
+		return err
+	}
+	// Keep the flags of the source mount when remounting, because the kernel
+	// rejects a remount that clears flags locked by a user namespace.
+	var stat unix.Statfs_t
+	if err := unix.Statfs(source, &stat); err != nil {
+		return err
+	}
+	flags := uintptr(stat.Flags) & (unix.MS_RDONLY | unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_NOATIME | unix.MS_NODIRATIME)
+	flags |= unix.MS_BIND | unix.MS_REMOUNT | unix.MS_NODEV | unix.MS_NOSUID
+	if readOnly {
+		flags |= unix.MS_RDONLY
+	}
+	return unix.Mount("", target, "", flags, "")
+}
+
+// jailMount is a bind mount of source at target inside the jail.
+type jailMount struct {
+	source   string
+	target   string
+	readOnly bool
+}
+
+// enterChrootJail moves the calling thread into a new mount namespace whose
+// root directory is a read-only tmpfs at newRoot, holding only the given
+// mounts. The caller must run it on a locked thread that no other goroutine
+// uses afterwards.
+//
+// TODO: run the entire action (including input/output handling) in a jail
+// instead.
+func enterChrootJail(newRoot string, mounts []jailMount) error {
+	if err := unix.Unshare(unix.CLONE_NEWNS); err != nil {
+		return fmt.Errorf("unshare mount namespace: %w", err)
+	}
+	// Stop mounts and unmounts in this namespace from propagating to the
+	// executor's namespace.
+	if err := unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""); err != nil {
+		return fmt.Errorf("make mounts private: %w", err)
+	}
+	if err := unix.Mount("tmpfs", newRoot, "tmpfs", unix.MS_NODEV|unix.MS_NOSUID, "mode=0755"); err != nil {
+		return fmt.Errorf("mount jail root: %w", err)
+	}
+	for _, m := range mounts {
+		if err := bindMount(m.source, filepath.Join(newRoot, m.target), m.readOnly); err != nil {
+			return fmt.Errorf("mount %q: %w", m.source, err)
+		}
+	}
+	oldRoot := filepath.Join(newRoot, "oldroot")
+	if err := os.Mkdir(oldRoot, 0700); err != nil {
+		return err
+	}
+	if err := unix.Mount("", newRoot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_NODEV|unix.MS_NOSUID, ""); err != nil {
+		return fmt.Errorf("remount jail root read-only: %w", err)
+	}
+	if err := unix.PivotRoot(newRoot, oldRoot); err != nil {
+		return fmt.Errorf("pivot_root: %w", err)
+	}
+	if err := unix.Chdir("/"); err != nil {
+		return err
+	}
+	// Detach the mounts copied from the executor's namespace. While this
+	// namespace holds a copy of a FUSE mount, the kernel keeps the filesystem
+	// running even after the executor unmounts it.
+	if err := unix.Unmount("/oldroot", unix.MNT_DETACH); err != nil {
+		return fmt.Errorf("unmount old root: %w", err)
+	}
+	return nil
+}
+
+// unpackImage runs debugfs in a chroot jail that holds debugfs and its
+// libraries, the image at /image, and outputDir at /output, which is the only
+// writable mount. The caller must run it on a locked thread that no other
+// goroutine uses afterwards.
+func unpackImage(ctx context.Context, newRoot, inputFile, outputDir string, paths []string) error {
+	// Set up mounts individually instead of making the executor's mount tree
+	// read-only, to avoid holding on to the executor's existing mounts while
+	// debugfs runs, which adds too much overhead.
+	var mounts []jailMount
+	for _, dir := range []string{"/lib", "/lib64", "/usr/lib", "/usr/lib64"} {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			continue
+		}
+		mounts = append(mounts, jailMount{source: dir, target: dir, readOnly: true})
+	}
+	mounts = append(mounts,
+		jailMount{source: debugfsPath, target: debugfsPath, readOnly: true},
+		jailMount{source: inputFile, target: "/image", readOnly: true},
+		jailMount{source: outputDir, target: "/output", readOnly: false},
+	)
+	if err := enterChrootJail(newRoot, mounts); err != nil {
+		return err
+	}
+	return rdump(ctx, "/image", "/output", paths)
+}
+
+// rdump runs debugfs to unpack the given paths from inputFile into outputDir.
+func rdump(ctx context.Context, inputFile, outputDir string, paths []string) error {
 	requests := make([]string, 0, len(paths))
 	for _, p := range paths {
-		p = filepath.Clean(filepath.Join(outputDir, p))
-		p = strings.TrimPrefix(p, filepath.Clean(outputDir))
+		p = filepath.Clean("/" + p)
 		parent := filepath.Dir(p)
 		if err := os.MkdirAll(filepath.Join(outputDir, parent), 0755); err != nil {
 			return status.InternalErrorf("make parent dir %q: %s", parent, err)

@@ -3,9 +3,12 @@
 package ext4_test
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,12 +18,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmount"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+func TestMain(m *testing.M) {
+	testmount.RunWithLimitedMountPermissions(m)
+}
 
 func randomDir(subDirs []string) string {
 	pathParts := []string{}
@@ -309,6 +317,66 @@ func TestImageToDirectory(t *testing.T) {
 			require.NoError(t, err)
 
 			testfs.AssertExactFileContents(t, outputDir, test.expected)
+		})
+	}
+}
+
+func TestImageToDirectory_EditedDirectoryEntries(t *testing.T) {
+	// These test cases create an invalid file name by directly editing the
+	// block contents of the EXT4 FS. ImageToDirectory must then leave
+	// other.txt, which is next to outputDir, unchanged.
+	for _, tc := range []struct {
+		name       string
+		fileName   string
+		editedName string
+	}{
+		{
+			name:       "InvalidDuplicateName",
+			fileName:   "LINK",
+			editedName: "link",
+		},
+		{
+			name:       "InvalidNameContainingSlash",
+			fileName:   "xxxother.txt",
+			editedName: "../other.txt",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			root := testfs.MakeTempDir(t)
+			outputDir := testfs.MakeDirAll(t, root, "output")
+			testfs.WriteAllFileContents(t, root, map[string]string{
+				"other.txt": "original",
+				"data.txt":  "data",
+			})
+			imagePath := filepath.Join(root, "image.ext4")
+			// Disable checksums for convenience (realistically, checksums would
+			// also need to be computed in order for debugfs to accept the
+			// invalid file name).
+			cmd := exec.CommandContext(ctx, "/sbin/mke2fs", "-t", "ext4", "-O", "^metadata_csum", imagePath, "8M")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", out)
+			requests := []string{
+				"symlink /link ../other.txt",
+				fmt.Sprintf("write %s /%s", filepath.Join(root, "data.txt"), tc.fileName),
+			}
+			cmd = exec.CommandContext(ctx, "/sbin/debugfs", "-w", imagePath)
+			cmd.Stdin = strings.NewReader(strings.Join(requests, "\n"))
+			out, err = cmd.CombinedOutput()
+			require.NoError(t, err, "%s", out)
+			image, err := os.ReadFile(imagePath)
+			require.NoError(t, err)
+			count := bytes.Count(image, []byte(tc.fileName))
+			require.Equal(t, 1, count)
+			image = bytes.Replace(image, []byte(tc.fileName), []byte(tc.editedName), 1)
+			err = os.WriteFile(imagePath, image, 0644)
+			require.NoError(t, err)
+
+			err = ext4.ImageToDirectory(ctx, imagePath, outputDir, []string{"/"})
+			require.NoError(t, err)
+
+			other := testfs.ReadFileAsString(t, root, "other.txt")
+			require.Equal(t, "original", other)
 		})
 	}
 }
