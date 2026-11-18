@@ -50,10 +50,14 @@ type traceCounts struct {
 }
 
 // traceRPCs makes a unary RPC, a streaming RPC and an RPC to an unknown method
-// while recording a trace, and returns the trace's counts by method.
-func traceRPCs(t *testing.T) map[string]traceCounts {
+// while recording a trace, and returns the trace's counts by method. The server
+// is built with trace tasks set to the opposite of enabled, to check that the
+// flag takes effect without a restart.
+func traceRPCs(t *testing.T, enabled bool) map[string]traceCounts {
 	env := testenv.GetTestEnv(t)
+	flags.Set(t, "monitoring.enable_trace_tasks", !enabled)
 	s := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+	flags.Set(t, "monitoring.enable_trace_tasks", enabled)
 	pspb.RegisterApiServer(s, pingServer{})
 	s.RegisterService(&grpc.ServiceDesc{
 		ServiceName: "test.Streamer",
@@ -133,9 +137,7 @@ func traceRPCs(t *testing.T) map[string]traceCounts {
 func TestTraceTasks(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
-			flags.Set(t, "monitoring.enable_trace_tasks", enabled)
-
-			counts := traceRPCs(t)
+			counts := traceRPCs(t, enabled)
 
 			want := map[string]traceCounts{}
 			if enabled {

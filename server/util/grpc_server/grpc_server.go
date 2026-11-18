@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -57,7 +58,7 @@ var (
 
 	serverWorkerMultiplier = flag.Int("grpc_server_worker_multiplier", 2, "Multiplier applied to GOMAXPROCS to determine the number of gRPC server workers. 0 disables workers")
 
-	enableTraceTasks = flag.Bool("monitoring.enable_trace_tasks", false, "If true, wrap each gRPC request in a runtime/trace task and region, so execution traces can be broken down per request.")
+	enableTraceTasks = expflag.Bool("monitoring.enable_trace_tasks", false, "If true, wrap each gRPC request in a runtime/trace task and region, so execution traces can be broken down per request. Evaluated before authentication, so group targeting doesn't apply.")
 )
 
 func GRPCPort() int {
@@ -265,13 +266,11 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 	for _, h := range config.ExtraStatsHandlers {
 		opts = append(opts, grpc.StatsHandler(h))
 	}
-	if *enableTraceTasks {
-		// gRPC calls stats handlers in registration order, so the task and
-		// region are started by the first handler and ended by the last one,
-		// to cover the other handlers' work too.
-		opts = append([]grpc.ServerOption{grpc.StatsHandler(traceTaskStartHandler{})}, opts...)
-		opts = append(opts, grpc.StatsHandler(traceTaskEndHandler{}))
-	}
+	// gRPC calls stats handlers in registration order, so the task and region
+	// are started by the first handler and ended by the last one, to cover the
+	// other handlers' work too.
+	opts = append([]grpc.ServerOption{grpc.StatsHandler(traceTaskStartHandler{})}, opts...)
+	opts = append(opts, grpc.StatsHandler(traceTaskEndHandler{}))
 	return opts
 }
 
@@ -322,8 +321,8 @@ type traceTaskStartHandler struct{}
 
 func (traceTaskStartHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
 	// Tasks and regions are only recorded while a trace is being collected, so
-	// skip the allocations otherwise.
-	if !trace.IsEnabled() {
+	// skip the allocations and the experiment lookup otherwise.
+	if !trace.IsEnabled() || !enableTraceTasks.Get(ctx) {
 		return ctx
 	}
 	ctx, task := trace.NewTask(ctx, info.FullMethodName)
@@ -339,9 +338,10 @@ func (traceTaskStartHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	// inside a region. Begin and End run on the same goroutine, so the region
 	// can span the whole RPC. It's started on Begin rather than in TagRPC
 	// because gRPC calls TagRPC for unknown methods too, but then sends
-	// neither Begin nor End, which would leave the region open on a reused
-	// stream worker goroutine. Their tasks are never ended either, but an open
-	// task doesn't affect other RPCs' tasks.
+	// neither Begin nor End (unless an UnknownServiceHandler is installed, as
+	// with grpc_forward), which would leave the region open on a reused stream
+	// worker goroutine. Their tasks are never ended either, but an open task
+	// doesn't affect other RPCs' tasks.
 	if rt, ok := ctx.Value(requestTraceKey{}).(*requestTrace); ok {
 		rt.region = trace.StartRegion(ctx, rt.method)
 	}
@@ -364,7 +364,9 @@ func (traceTaskEndHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 		return
 	}
 	if rt, ok := ctx.Value(requestTraceKey{}).(*requestTrace); ok {
-		rt.region.End()
+		if rt.region != nil {
+			rt.region.End()
+		}
 		rt.task.End()
 	}
 }

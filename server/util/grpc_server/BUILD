@@ -12,6 +12,7 @@ go_library(
         "//server/rpc/interceptors",
         "//server/util/alert",
         "//server/util/clientip",
+        "//server/util/expflag",
         "//server/util/grpc_forward",
         "//server/util/log",
         "//server/util/rpcutil",
