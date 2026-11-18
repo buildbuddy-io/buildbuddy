@@ -199,6 +199,12 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (ret
 		return lastRecord, nil
 	}
 
+	// Callers' contexts can outlive Stop, so don't let them renew after it.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(h.ctx, cancel)
+	defer stop()
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
