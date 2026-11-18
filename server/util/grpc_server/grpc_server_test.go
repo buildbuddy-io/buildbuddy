@@ -43,16 +43,12 @@ var streamDesc = grpc.StreamDesc{
 	Handler:       func(any, grpc.ServerStream) error { return nil },
 }
 
-// traceCounts counts the begin and end events of tasks of a given type, and of
-// regions of the same type inside them.
 type traceCounts struct {
 	taskBegins, taskEnds, regionBegins, regionEnds int
 }
 
-// traceRPCs makes a unary RPC, a streaming RPC and an RPC to an unknown method
-// while recording a trace, and returns the trace's counts by method. The server
-// is built with trace tasks set to the opposite of enabled, to check that the
-// flag takes effect without a restart.
+// The server is built with the flag flipped, to check it applies without a
+// restart.
 func traceRPCs(t *testing.T, enabled bool) map[string]traceCounts {
 	env := testenv.GetTestEnv(t)
 	flags.Set(t, "monitoring.enable_trace_tasks", !enabled)
@@ -74,7 +70,6 @@ func traceRPCs(t *testing.T, enabled bool) map[string]traceCounts {
 
 	var buf bytes.Buffer
 	require.NoError(t, trace.Start(&buf))
-	// Make sure the trace is stopped even if the test fails.
 	var once sync.Once
 	stop := func() { once.Do(trace.Stop) }
 	t.Cleanup(stop)
@@ -87,9 +82,7 @@ func traceRPCs(t *testing.T, enabled bool) map[string]traceCounts {
 	require.NoError(t, err)
 	require.NoError(t, cs.CloseSend())
 	require.Equal(t, io.EOF, cs.RecvMsg(&pspb.PingResponse{}))
-	// The client can see an RPC finish before the server has sent the End
-	// stats event. GracefulStop waits for the handler goroutines, which send
-	// it, to return.
+	// Waits for the server goroutines that send the End stats events.
 	require.NoError(t, conn.Close())
 	s.GracefulStop()
 	stop()
@@ -144,9 +137,7 @@ func TestTraceTasks(t *testing.T) {
 				want = map[string]traceCounts{
 					pingMethod:   {1, 1, 1, 1},
 					streamMethod: {1, 1, 1, 1},
-					// gRPC sends no End event for unknown methods, so their
-					// task is never ended. Their region must not be left
-					// open, though.
+					// No Begin/End for unknown methods.
 					unknownMethod: {1, 0, 0, 0},
 				}
 			}

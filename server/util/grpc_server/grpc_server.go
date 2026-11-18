@@ -266,9 +266,7 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 	for _, h := range config.ExtraStatsHandlers {
 		opts = append(opts, grpc.StatsHandler(h))
 	}
-	// gRPC calls stats handlers in registration order, so the task and region
-	// are started by the first handler and ended by the last one, to cover the
-	// other handlers' work too.
+	// First and last, so the trace region covers the other stats handlers.
 	opts = append([]grpc.ServerOption{grpc.StatsHandler(traceTaskStartHandler{})}, opts...)
 	opts = append(opts, grpc.StatsHandler(traceTaskEndHandler{}))
 	return opts
@@ -305,23 +303,17 @@ func connectionAgeOption() (grpc.ServerOption, error) {
 
 type requestTraceKey struct{}
 
-// requestTrace is the runtime/trace task and region covering one RPC.
 type requestTrace struct {
 	method string
 	task   *trace.Task
 	region *trace.Region
 }
 
-// traceTaskStartHandler and traceTaskEndHandler wrap each RPC in a
-// runtime/trace task and region, so that execution traces can be broken down
-// per RPC in go tool trace. They are stats handlers rather than interceptors
-// because the Begin and End events run on the RPC's goroutine before unary
-// request decoding and after response encoding, so that work is covered too.
+// Stats handlers rather than interceptors, so the region also covers request
+// decoding and response encoding.
 type traceTaskStartHandler struct{}
 
 func (traceTaskStartHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
-	// Tasks and regions are only recorded while a trace is being collected, so
-	// skip the allocations and the experiment lookup otherwise.
 	if !trace.IsEnabled() || !enableTraceTasks.Get(ctx) {
 		return ctx
 	}
@@ -333,15 +325,9 @@ func (traceTaskStartHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	if _, ok := s.(*stats.Begin); !ok {
 		return
 	}
-	// go tool trace breaks down running, waiting and blocked time only per
-	// region, and attributes goroutines to the task only if they're started
-	// inside a region. Begin and End run on the same goroutine, so the region
-	// can span the whole RPC. It's started on Begin rather than in TagRPC
-	// because gRPC calls TagRPC for unknown methods too, but then sends
-	// neither Begin nor End (unless an UnknownServiceHandler is installed, as
-	// with grpc_forward), which would leave the region open on a reused stream
-	// worker goroutine. Their tasks are never ended either, but an open task
-	// doesn't affect other RPCs' tasks.
+	// go tool trace breaks down time per region, not per task. Started on
+	// Begin, not in TagRPC: unknown methods get TagRPC but no Begin/End, and
+	// an unclosed region would leak onto the reused stream worker.
 	if rt, ok := ctx.Value(requestTraceKey{}).(*requestTrace); ok {
 		rt.region = trace.StartRegion(ctx, rt.method)
 	}
