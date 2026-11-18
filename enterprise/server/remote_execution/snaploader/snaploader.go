@@ -173,14 +173,13 @@ func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string)
 
 	// NOTE: keep these names in sync with workflow service
 	branchRef = getEnv(task, "GIT_BRANCH")
-	if branchRef == "" {
-		// Workflow actions should always have GIT_BRANCH set, so if we don't
-		// see this env var then assume we're not dealing with a workflow, and
-		// so we shouldn't respect fallback refs.
+	baseBranch := getEnv(task, "GIT_BASE_BRANCH")
+	defaultBranch := getEnv(task, "GIT_REPO_DEFAULT_BRANCH")
+	if branchRef == "" && baseBranch == "" && defaultBranch == "" {
+		// If there is no git branch metadata, don't allow falling back to a universal snapshot.
 		return "", nil
 	}
-	for _, fallback := range []string{"GIT_BASE_BRANCH", "GIT_REPO_DEFAULT_BRANCH"} {
-		v := getEnv(task, fallback)
+	for _, v := range []string{baseBranch, defaultBranch} {
 		if v != "" && v != branchRef && !slices.Contains(fallbackRefs, v) {
 			fallbackRefs = append(fallbackRefs, v)
 		}
