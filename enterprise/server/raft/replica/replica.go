@@ -1280,9 +1280,12 @@ func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse
 		prevAtimeUsec, err = recordAtimeUsec(prevBuf)
 		closer.Close()
 		if err != nil {
-			return nil, status.InternalErrorf("[%s] failed to decode stored FileMetadata for key %q: %w", sm.name(), req.GetKey(), err)
+			// Assume the index didn't exist. It if it, we will clean it up
+			// later.
+			log.Warningf("[%s] failed to decode stored FileMetadata for key %q: %v", sm.name(), req.GetKey(), err)
+		} else {
+			hasPrev = true
 		}
-		hasPrev = true
 	} else if err != pebble.ErrNotFound {
 		return nil, fatal(err)
 	}
