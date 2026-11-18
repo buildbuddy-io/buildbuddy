@@ -83,7 +83,8 @@ var (
 	enableDriver                  = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup              = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload         = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
-	enableAutoRatchet             = flag.Bool("cache.raft.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
+	enableAutoRatchet             = flag.Bool("cache.raft.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to the version set by cache.raft.auto_ratchet_format_major_version.")
+	autoRatchetFormatMajorVersion = flag.Uint64("cache.raft.auto_ratchet_format_major_version", uint64(pebble.FormatVirtualSSTables), "The pebble format major version to upgrade to when cache.raft.enable_auto_ratchet is set. The default, 16 (FormatVirtualSSTables), is the newest format pebble v1 supports. Upgrades cannot be undone, and versions above 16 require pebble v2.")
 	blockCacheSizeBytes           = flag.Int64("cache.raft.block_cache_size_bytes", 1e9, "How much ram to give the block cache")
 	dragonboatBlockCacheSizeBytes = flag.Uint64("cache.raft.dragonboat_block_cache_size_bytes", 1e9, "How much ram to give the block cache in dragonboat")
 )
@@ -312,6 +313,10 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	if !*enableDriver && raftConfig.TargetRangeSizeBytes() > 0 {
 		return nil, status.FailedPreconditionError("misconfigured: enable_driver is false but target_range_size_bytes is set; splitting requires the driver to be enabled")
 	}
+	ratchetFormat := pebble.FormatMajorVersion(*autoRatchetFormatMajorVersion)
+	if *enableAutoRatchet && (ratchetFormat < pebble.FormatMostCompatible || ratchetFormat > pebble.FormatNewest) {
+		return nil, status.InvalidArgumentErrorf("misconfigured: auto_ratchet_format_major_version %d is outside the supported range [%s, %s]", *autoRatchetFormatMajorVersion, pebble.FormatMostCompatible, pebble.FormatNewest)
+	}
 
 	raftListener := listener.NewRaftListener()
 
@@ -332,7 +337,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		defer pebbleOpts.Cache.Unref()
 	}
 	if *enableAutoRatchet {
-		pebbleOpts.FormatMajorVersion = pebble.FormatNewest
+		pebbleOpts.FormatMajorVersion = ratchetFormat
 		fs := pebbleOpts.FS
 		if fs == nil {
 			fs = pebble.DefaultFS
