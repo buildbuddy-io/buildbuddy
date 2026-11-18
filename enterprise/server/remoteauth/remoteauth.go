@@ -379,7 +379,12 @@ func (a *RemoteAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) str
 }
 
 func (a *RemoteAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
-	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+	c, err := a.claimsParser.Parse(ctx, jwt)
+	if err != nil {
+		// Nil claims hide any inherited from ctx.
+		return authutil.AuthContextWithError(authContext(ctx, jwt, nil), err)
+	}
+	return authContext(ctx, jwt, c)
 }
 
 func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) {

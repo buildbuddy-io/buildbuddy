@@ -598,3 +598,46 @@ func TestAuthFailureCacheExpiresAndIsPerKey(t *testing.T) {
 	require.Equal(t, goodJwt, ctx.Value(authutil.ContextTokenStringKey))
 	require.Equal(t, 3, fakeAuth.getAuthenticateCalls())
 }
+
+func TestAuthContextFromTrustedJWTWithoutLocalES256Key(t *testing.T) {
+	t.Cleanup(func() { require.NoError(t, claims.Init()) })
+	flags.Set(t, "auth.remote.use_es256_jwts", true)
+	flags.Set(t, "auth.remote.key_refresh_interval", time.Hour)
+	authenticator, _ := setupES256(t)
+	es256Jwt, err := claims.AssembleJWT(&claims.Claims{UserID: "US1", GroupID: "GR1"}, jwt.SigningMethodES256)
+	require.NoError(t, err)
+	hs256Jwt, err := claims.AssembleJWT(&claims.Claims{UserID: "US2", GroupID: "GR2"}, jwt.SigningMethodHS256)
+	require.NoError(t, err)
+
+	flags.Set(t, "auth.jwt_es256_private_key", "")
+	require.NoError(t, claims.Init())
+	require.Empty(t, claims.GetES256PublicKeys())
+
+	for _, reparse := range []bool{true, false} {
+		flags.Set(t, "auth.reparse_jwts", reparse)
+		ctx := authenticator.AuthContextFromTrustedJWT(context.Background(), es256Jwt)
+		user, err := authenticator.AuthenticatedUser(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "GR1", user.GetGroupID())
+		require.Equal(t, es256Jwt, authenticator.TrustedJWTFromAuthContext(ctx))
+	}
+
+	flags.Set(t, "auth.reparse_jwts", true)
+	parent := authenticator.AuthContextFromTrustedJWT(context.Background(), es256Jwt)
+	ctx := authenticator.AuthContextFromTrustedJWT(parent, hs256Jwt)
+	_, err = authenticator.AuthenticatedUser(ctx)
+	require.Error(t, err)
+	require.Equal(t, hs256Jwt, authenticator.TrustedJWTFromAuthContext(ctx))
+}
+
+func TestAuthContextFromTrustedJWT_HS256(t *testing.T) {
+	flags.Set(t, "auth.remote.use_es256_jwts", false)
+	authenticator, _ := setup(t)
+	hs256Jwt, err := claims.AssembleJWT(&claims.Claims{UserID: "US1", GroupID: "GR1"}, jwt.SigningMethodHS256)
+	require.NoError(t, err)
+
+	ctx := authenticator.AuthContextFromTrustedJWT(context.Background(), hs256Jwt)
+	user, err := authenticator.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "GR1", user.GetGroupID())
+}
