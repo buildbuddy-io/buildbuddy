@@ -116,6 +116,10 @@ func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.Schedu
 	return &scpb.ScheduleTaskResponse{}, nil
 }
 
+func (s *schedulerServerMock) AuthorizeTaskWrites(ctx context.Context, taskID string) error {
+	return nil
+}
+
 func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bool, error) {
 	s.canceledCount++
 	return true, nil
@@ -1777,6 +1781,39 @@ func TestPublishOperation_RetriedStream(t *testing.T) {
 	}
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
 	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec, "usage should be recorded exactly once")
+}
+
+func TestPublishOperation_RejectsOperationNameChange(t *testing.T) {
+	for _, statsFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("statsFirst=%t", statsFirst), func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			client := repb.NewExecutionClient(conn)
+			ctx := context.Background()
+
+			publishStream, err := client.PublishOperation(ctx)
+			require.NoError(t, err)
+			for i, arg := range []string{"a", "b"} {
+				arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, &repb.Action{}, &repb.Command{Arguments: []string{arg}})
+				executeStream, err := client.Execute(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest(), DigestFunction: arn.GetDigestFunction()})
+				require.NoError(t, err)
+				op, err := executeStream.Recv()
+				require.NoError(t, err)
+				publishOp, err := operation.Assemble(op.GetName(), operation.Metadata(repb.ExecutionStage_EXECUTING, arn.GetDigest()), nil)
+				require.NoError(t, err)
+				if statsFirst && i == 0 {
+					statsAny, err := anypb.New(&espb.PostCompletionStats{})
+					require.NoError(t, err)
+					publishOp, err = operation.Assemble(op.GetName(), operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+						Result: &repb.ActionResult{ExecutionMetadata: &repb.ExecutedActionMetadata{AuxiliaryMetadata: []*anypb.Any{statsAny}}},
+					})
+					require.NoError(t, err)
+				}
+				_ = publishStream.Send(publishOp)
+			}
+			_, err = publishStream.CloseAndRecv()
+			require.True(t, status.IsInvalidArgumentError(err), "PublishOperation error: %v", err)
+		})
+	}
 }
 
 // TestPublishOperation_FlushWithEmptyLinks pins down the contract:

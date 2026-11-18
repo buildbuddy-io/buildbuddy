@@ -3200,6 +3200,30 @@ func (s *SchedulerServer) ExistsTask(ctx context.Context, taskID string) (bool, 
 	return n == 1, err
 }
 
+func (s *SchedulerServer) AuthorizeTaskWrites(ctx context.Context, taskID string) error {
+	// Without a scheduler record the task's lease can't be renewed either, so
+	// an executor has no valid publish for it.
+	b, err := s.rdb.HGet(ctx, s.redisKeyForTask(taskID), redisTaskMetadataField).Bytes()
+	if err == redis.Nil {
+		return status.NotFoundErrorf("task %q not found", taskID)
+	} else if err != nil {
+		return status.InternalErrorf("read task metadata: %s", err)
+	}
+	md := &scpb.SchedulingMetadata{}
+	if err := proto.Unmarshal(b, md); err != nil {
+		return status.InternalErrorf("unmarshal task metadata: %s", err)
+	}
+	taskGroupID := md.GetTaskGroupId()
+	if taskGroupID == "" || taskGroupID == interfaces.AuthAnonymousUser {
+		return nil
+	}
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil || user.GetGroupID() != taskGroupID {
+		return status.PermissionDeniedErrorf("caller may not act on task %q", taskID)
+	}
+	return nil
+}
+
 func (s *SchedulerServer) TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error) {
 	exists, err := s.ExistsTask(ctx, req.GetTaskId())
 	if err != nil {
