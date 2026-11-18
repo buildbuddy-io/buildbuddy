@@ -31,6 +31,7 @@ go_test(
         "test.container-image": "docker://mirror.gcr.io/library/ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78",
         # OCI seccomp blocks the user namespace needed for mounts.
         "test.workload-isolation-type": "firecracker",
+        "test.EstimatedComputeUnits": "1",
     },
     target_compatible_with = ["@platforms//os:linux"],
     deps = select({

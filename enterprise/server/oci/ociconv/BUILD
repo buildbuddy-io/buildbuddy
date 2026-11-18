@@ -31,6 +31,7 @@ go_test(
     exec_properties = {
         # OCI seccomp blocks the user namespace needed for mounts.
         "test.workload-isolation-type": "firecracker",
+        "test.EstimatedComputeUnits": "1",
     },
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
