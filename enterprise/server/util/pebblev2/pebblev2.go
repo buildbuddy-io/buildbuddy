@@ -42,11 +42,16 @@ var NoSync = pebble.NoSync
 var Sync = pebble.Sync
 var ErrNotFound = pebble.ErrNotFound
 
-var FormatNewest = pebble.FormatNewest
 var NewCache = pebble.NewCache
 var WithFlushedWAL = pebble.WithFlushedWAL
 var Peek = pebble.Peek
 var DefaultFS = vfs.Default
+
+const (
+	FormatMinSupported    = pebble.FormatMinSupported
+	FormatVirtualSSTables = pebble.FormatVirtualSSTables
+	FormatNewest          = pebble.FormatNewest
+)
 
 type FormatMajorVersion = pebble.FormatMajorVersion
 type Options = pebble.Options
