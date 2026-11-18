@@ -122,10 +122,6 @@ const (
 	// default memory estimate for execution tasks.
 	runnerMemUsageEstimateMultiplierBytes = 6.5
 
-	// Maximum number of attempts to take a paused runner from the pool before
-	// giving up and creating a new runner.
-	maxUnpauseAttempts = 5
-
 	// If a runner exceeds this percentage of its total memory or disk allocation,
 	// it should not be recycled, because it may cause failures if it's reused
 	maxRecyclableResourceUtilization = .99
@@ -231,6 +227,11 @@ type taskRunner struct {
 	// atomic because in some cases we want to print runner metadata for debug
 	// purposes but without having to hold the pool lock.
 	state atomic.Int32
+	// containerPaused is whether the container is paused. When Get takes a
+	// runner from the pool, the container stays paused until Run, so that
+	// nothing in the container runs while the executor prepares the workspace
+	// for the task.
+	containerPaused bool
 
 	worker *persistentworker.Worker
 
@@ -540,6 +541,12 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		r.setState(ready)
 		r.p.mu.Unlock()
 	case ready:
+		if r.containerPaused {
+			if err := r.Container.Unpause(ctx); err != nil {
+				return commandutil.ErrorResult(status.UnavailableErrorf("unpause container: %s", err))
+			}
+			r.containerPaused = false
+		}
 	case removed:
 		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
@@ -893,11 +900,14 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		return err
 	}
 
-	if err := r.Container.Pause(ctx); err != nil {
-		return &labeledError{
-			status.WrapError(err, "failed to pause container before adding to the pool"),
-			"pause_failed",
+	if !r.containerPaused {
+		if err := r.Container.Pause(ctx); err != nil {
+			return &labeledError{
+				status.WrapError(err, "failed to pause container before adding to the pool"),
+				"pause_failed",
+			}
 		}
+		r.containerPaused = true
 	}
 
 	stats, err := r.Container.Stats(ctx)
@@ -1290,7 +1300,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	snapshotEnabledRunner := platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType &&
 		snaputil.IsChunkedSnapshotSharingEnabled()
 	if props.RecycleRunner && !snapshotEnabledRunner {
-		r := p.takeWithRetry(ctx, key)
+		r := p.take(ctx, key)
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
@@ -1493,39 +1503,9 @@ func (p *pool) String() string {
 	return runnerSlice(p.runners).String()
 }
 
-// takeWithRetry attempts to take (unpause) a runner from the pool. If the
-// unpause fails, it retries up to 5 times. For any given attempt, if there
-// are no runners available to unpause, this will return nil. If an unpause
-// operation fails on a given attempt, the runner is removed from the pool.
-func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
-	for i := 1; i <= maxUnpauseAttempts; i++ {
-		r := p.take(ctx, key)
-		if r == nil {
-			// No matches found; return.
-			return nil
-		}
-
-		// Found a match; unpause it.
-		if err := r.Container.Unpause(ctx); err != nil {
-			log.CtxWarningf(ctx, "Unpause attempt for runner %s failed: %s", r, err)
-			// If we fail to unpause, subsequent unpause attempts are also
-			// likely to fail, so remove the container from the pool and also
-			// remove the runner itself.
-			p.mu.Lock()
-			p.remove(r)
-			p.mu.Unlock()
-			r.RemoveInBackground(ctx)
-			continue
-		}
-
-		return r
-	}
-	return nil
-}
-
 // take finds the most recently used runner in the pool that matches the given
-// query. If one is found, it is marked ready and returned. The caller must
-// unpause the runner.
+// query. If one is found, it is marked ready and returned. The container is
+// still paused.
 func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 	p.mu.Lock()
 	defer p.mu.Unlock()
