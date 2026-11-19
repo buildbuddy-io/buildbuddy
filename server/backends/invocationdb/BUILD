@@ -35,11 +35,13 @@ go_test(
     deps = [
         ":invocationdb",
         "//proto:invocation_status_go_proto",
+        "//server/nullauth",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/db",
         "//server/util/prefix",
+        "//server/util/status",
         "@com_github_stretchr_testify//require",
     ],
 )
@@ -65,11 +67,13 @@ go_test(
     deps = [
         ":invocationdb",
         "//proto:invocation_status_go_proto",
+        "//server/nullauth",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/db",
         "//server/util/prefix",
+        "//server/util/status",
         "@com_github_stretchr_testify//require",
     ],
 )
@@ -95,11 +99,13 @@ go_test(
     deps = [
         ":invocationdb",
         "//proto:invocation_status_go_proto",
+        "//server/nullauth",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/db",
         "//server/util/prefix",
+        "//server/util/status",
         "@com_github_stretchr_testify//require",
     ],
 )

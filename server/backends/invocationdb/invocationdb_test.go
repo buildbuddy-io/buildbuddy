@@ -8,11 +8,13 @@ import (
 
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 )
 
@@ -240,4 +242,32 @@ func TestAuthenticatedInvocationReplacesMissingAPIKeyPlaceholder(t *testing.T) {
 	require.Equal(t, int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS), stored.InvocationStatus)
 	require.Equal(t, "user1", stored.UserID)
 	require.Equal(t, "group1", stored.GroupID)
+}
+
+func TestReconnectFromDifferentOwnerIsPermissionDenied(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1", "user2", "group2"))
+	ta.NullAuthenticator = nullauth.NewNullAuthenticator(true /*anonymousUsageEnabled*/)
+	te.SetAuthenticator(ta)
+	idb := invocationdb.NewInvocationDB(te, te.GetDBHandle())
+
+	ownerCtx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+	otherGroupCtx, err := ta.WithAuthenticatedUser(context.Background(), "user2")
+	require.NoError(t, err)
+	created, err := idb.CreateInvocation(ownerCtx, &tables.Invocation{InvocationID: "owned-invocation"})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	for _, ctx := range []context.Context{otherGroupCtx, context.Background()} {
+		created, err = idb.CreateInvocation(ctx, &tables.Invocation{InvocationID: "owned-invocation"})
+		require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+		require.False(t, created)
+	}
+
+	ti := &tables.Invocation{InvocationID: "owned-invocation"}
+	created, err = idb.CreateInvocation(ownerCtx, ti)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, uint64(2), ti.Attempt)
 }
