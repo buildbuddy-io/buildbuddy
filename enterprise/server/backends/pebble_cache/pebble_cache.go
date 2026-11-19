@@ -95,7 +95,8 @@ var (
 	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 2500, "Maximum number of entries to evict per second (per partition).")
 	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
 	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
-	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
+	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to the version set by cache.pebble.auto_ratchet_format_major_version.")
+	autoRatchetFormatMajorVersion = flag.Uint64("cache.pebble.auto_ratchet_format_major_version", uint64(pebble.FormatVirtualSSTables), "The pebble format major version to upgrade to when auto ratchet is enabled. The default, 16 (FormatVirtualSSTables), is the newest format pebble v1 supports. Upgrades cannot be undone, and versions above 16 require pebble v2.")
 	groupSizeSampleRate       = flag.Float64("cache.pebble.group_size_sample_rate", .01, "Compute estimated size per-group in partitions by sampling at this rate.")
 	groupSizeSampleDecayRate  = flag.Float64("cache.pebble.group_size_sample_decay_rate", .95, "Constant factor used to decay away partition size estimates.")
 	maxOpenFiles              = flag.Int("cache.pebble.max_open_files", 32768, "Maximum number of open SST files in Pebble. Must be lower than the open fd limit for the process. The buildbuddy_remote_cache_pebble_cache_pebble_level_num_files metric can be used to observe the number of SST files in pebble at different levels.")
@@ -450,6 +451,10 @@ func validateOpts(opts *Options) error {
 	if opts.MaxSizeBytes == 0 {
 		return status.FailedPreconditionError("Pebble cache size must be greater than 0")
 	}
+	ratchetFormat := pebble.FormatMajorVersion(*autoRatchetFormatMajorVersion)
+	if opts.EnableAutoRatchet && (ratchetFormat < pebble.FormatMostCompatible || ratchetFormat > pebble.FormatNewest) {
+		return status.InvalidArgumentErrorf("misconfigured: auto_ratchet_format_major_version %d is outside the supported range [%s, %s]", *autoRatchetFormatMajorVersion, pebble.FormatMostCompatible, pebble.FormatNewest)
+	}
 
 	for _, p := range opts.Partitions {
 		if *p.EvictionThreshold <= 0 || *p.EvictionThreshold > 1 {
@@ -640,7 +645,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 		}
 	}
 	if pcOpts.EnableAutoRatchet {
-		opts.FormatMajorVersion = pebble.FormatNewest
+		opts.FormatMajorVersion = pebble.FormatMajorVersion(*autoRatchetFormatMajorVersion)
 	}
 
 	// The threshold of L0 read-amplification at which compaction concurrency
