@@ -26,6 +26,7 @@ go_library(
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/uuid",
+        "@com_github_go_sql_driver_mysql//:mysql",
         "@org_golang_google_protobuf//proto",
     ],
 )

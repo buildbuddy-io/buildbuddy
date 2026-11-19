@@ -2,10 +2,12 @@ package invocation_search_service
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
@@ -27,6 +29,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
+	gomysql "github.com/go-sql-driver/mysql"
 	gproto "google.golang.org/protobuf/proto"
 )
 
@@ -38,7 +41,11 @@ const (
 
 var (
 	olapInvocationSearchEnabled = flag.Bool("app.olap_invocation_search_enabled", true, "If true, InvocationSearchService will query clickhouse for a few impossibly slow queries (i.e., tags), but mostly use the regular DB.")
+	mysqlSearchMaxExecutionTime = flag.Duration("app.invocation_search_mysql_max_execution_time", 60*time.Second, "Server-side time limit for MySQL invocation search queries, which MySQL keeps running after the client disconnects. 0 disables it.")
 )
+
+// MySQL error ER_QUERY_TIMEOUT, returned when MAX_EXECUTION_TIME is exceeded.
+const mysqlQueryTimeoutErrNum = 3024
 
 type InvocationSearchService struct {
 	env     environment.Env
@@ -115,12 +122,19 @@ func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.
 }
 
 func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest, offset int64, limit int64) ([]*inpb.Invocation, int64, error) {
-	sql, args, err := s.buildPrimaryQuery(ctx, "*", offset, limit, req, false)
+	fields := "*"
+	if *mysqlSearchMaxExecutionTime > 0 && s.dbh.GORM(ctx, "dialector").Dialector.Name() == "mysql" {
+		fields = fmt.Sprintf("/*+ MAX_EXECUTION_TIME(%d) */ *", mysqlSearchMaxExecutionTime.Milliseconds())
+	}
+	sql, args, err := s.buildPrimaryQuery(ctx, fields, offset, limit, req, false)
 	if err != nil {
 		return nil, 0, err
 	}
 	rq := s.dbh.NewQuery(ctx, "invocation_search").Raw(sql, args...)
 	tis, err := db.ScanAll(rq, &tables.Invocation{})
+	if mysqlErr := (*gomysql.MySQLError)(nil); errors.As(err, &mysqlErr) && mysqlErr.Number == mysqlQueryTimeoutErrNum {
+		return nil, 0, status.DeadlineExceededError("Invocation search timed out; try narrowing the search.")
+	}
 	if err != nil {
 		return nil, 0, err
 	}
