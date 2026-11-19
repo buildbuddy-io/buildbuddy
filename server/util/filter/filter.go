@@ -231,26 +231,18 @@ func validateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 	// enum type descriptors ("Operand"), so we need to dig around for them.
 	operandDescriptor := f.GetOperand().Descriptor().Values().ByNumber(f.GetOperand().Number())
 	if operandDescriptor == nil {
-		return "", nil, status.InvalidArgumentErrorf("Unknown operand value: %d", f.GetOperand())
-	}
-	operandDescriptorOptions := operandDescriptor.Options()
-	if operandDescriptorOptions == nil {
 		return "", nil, status.InvalidArgumentErrorf("Unknown operand value: %s", f.GetOperand())
 	}
-	operandOptions := proto.GetExtension(operandDescriptorOptions, stat_filter.E_FilterOperandOptions).(*stat_filter.FilterOperandOptions)
+	operandOptions := proto.GetExtension(operandDescriptor.Options(), stat_filter.E_FilterOperandOptions).(*stat_filter.FilterOperandOptions)
 	if operandOptions == nil {
 		return "", nil, status.InternalErrorf("Operand has no options specified: %s", f.GetOperand())
 	}
 
 	typeDescriptor := f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())
 	if typeDescriptor == nil {
-		return "", nil, status.InvalidArgumentErrorf("Unknown filter type: %d", f.GetType())
-	}
-	typeDescriptorOptions := typeDescriptor.Options()
-	if typeDescriptorOptions == nil {
 		return "", nil, status.InvalidArgumentErrorf("Unknown filter type: %s", f.GetType())
 	}
-	typeOptions := proto.GetExtension(typeDescriptorOptions, stat_filter.E_FilterTypeOptions).(*stat_filter.FilterTypeOptions)
+	typeOptions := proto.GetExtension(typeDescriptor.Options(), stat_filter.E_FilterTypeOptions).(*stat_filter.FilterTypeOptions)
 	if typeOptions == nil {
 		return "", nil, status.InvalidArgumentErrorf("Filter type has no options specified:: %s", f.GetType())
 	}
