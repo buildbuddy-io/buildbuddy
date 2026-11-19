@@ -1246,7 +1246,6 @@ func TestDownloadTreeEmptySymlinkTarget(t *testing.T) {
 
 func TestDownloadTreeDedupeInflight(t *testing.T) {
 	env, ctx := testEnv(t)
-	tmpDir := testfs.MakeTempDir(t)
 
 	rnA, bufA := testdigest.RandomCASResourceBuf(t, dirtools.BatchReadLimitBytes+1)
 	env.GetCache().Set(ctx, rnA, bufA)
@@ -1289,10 +1288,14 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 	mu := sync.Mutex{} // PROTECTS(totalTransferCount)
 	totalTransferCount := int64(0)
 
+	rootDirs := make([]string, 10)
+	for i := range rootDirs {
+		rootDirs[i] = testfs.MakeTempDir(t)
+	}
 	eg := errgroup.Group{}
-	for range 10 {
+	for _, rootDir := range rootDirs {
 		eg.Go(func() error {
-			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
+			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})
 			if err != nil {
 				return err
 			}
@@ -1306,14 +1309,16 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, int64(1), totalTransferCount, "two files were transferred")
-	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
-	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
-	target, err := os.Readlink(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
-	assert.NoError(t, err, "should be able to read symlink target")
-	assert.Equal(t, "./fileA.txt", target)
-	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
-	assert.NoError(t, err)
-	assert.Equal(t, bufA, targetContents, "symlinked file contents should match target file")
+	for _, rootDir := range rootDirs {
+		assert.DirExists(t, filepath.Join(rootDir, "my-directory"), "my-directory should exist")
+		assert.FileExists(t, filepath.Join(rootDir, "my-directory/fileA.txt"), "fileA.txt should exist")
+		target, err := os.Readlink(filepath.Join(rootDir, "my-directory/fileA.symlink"))
+		assert.NoError(t, err, "should be able to read symlink target")
+		assert.Equal(t, "./fileA.txt", target)
+		targetContents, err := os.ReadFile(filepath.Join(rootDir, "my-directory/fileA.symlink"))
+		assert.NoError(t, err)
+		assert.Equal(t, bufA, targetContents, "symlinked file contents should match target file")
+	}
 }
 
 func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
@@ -1720,12 +1725,17 @@ func TestDownloadTreeReturnsEmptyFileWriteError(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	emptyDigest, err := digest.Compute(strings.NewReader(""), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
-	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "empty.txt", Digest: emptyDigest}}}}
-
-	// Put a directory where the empty file should go, so creating the file
-	// fails.
-	err = os.Mkdir(filepath.Join(tmpDir, "empty.txt"), 0755)
+	// Make writing the empty file fail by giving it a name longer than the
+	// filesystem allows (255 bytes or characters on common filesystems). Put
+	// the file in a new directory, otherwise DownloadTree fails earlier, when
+	// it tries to remove any existing entry with that name.
+	dir := &repb.Directory{Files: []*repb.FileNode{{Name: strings.Repeat("x", 300), Digest: emptyDigest}}}
+	dirDigest, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
+	tree := &repb.Tree{
+		Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "dir", Digest: dirDigest}}},
+		Children: []*repb.Directory{dir},
+	}
 
 	// The download should fail rather than succeed with the file missing.
 	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
@@ -1927,6 +1937,128 @@ func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
 	targetContents, err = os.ReadFile(filepath.Join(tmpDir, "fileA.symlink"))
 	assert.NoError(t, err)
 	assert.Equal(t, "mytestdataB", string(targetContents), "symlinked file contents should match target file")
+}
+
+func TestDownloadTree_ReplacesExistingSymlinks(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		contents string
+		// If set, add the contents to the file cache and not to the CAS,
+		// so that the files can only be linked from the file cache.
+		fileCacheOnly bool
+		// If set, remove the CAS client, so that files are always downloaded
+		// with ByteStream.Read and never with BatchReadBlobs.
+		byteStreamOnly bool
+	}{
+		{name: "FilesLinkedFromFileCache", contents: "abc", fileCacheOnly: true},
+		{name: "FilesDownloadedWithBatchReadBlobs", contents: "abc"},
+		{name: "FilesDownloadedWithByteStream", contents: "abc", byteStreamOnly: true},
+		{name: "EmptyFilesWrittenWithoutDownload", contents: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := testEnv(t)
+			if tc.fileCacheOnly {
+				addToFileCache(t, ctx, env, testfs.MakeTempDir(t), tc.contents)
+			} else {
+				setFile(t, env, ctx, "", tc.contents)
+			}
+			if tc.byteStreamOnly {
+				env.SetContentAddressableStorageClient(nil)
+			}
+			d, err := digest.Compute(strings.NewReader(tc.contents), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			dir := &repb.Directory{
+				Files:    []*repb.FileNode{{Name: "b.txt", Digest: d}},
+				Symlinks: []*repb.SymlinkNode{{Name: "link", Target: "b.txt"}},
+			}
+			dirDigest, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			tree := &repb.Tree{
+				Root: &repb.Directory{
+					// Include multiple files with the same digest to test
+					// copying. The fetcher downloads a digest once and copies
+					// the file to the other paths.
+					Files:       []*repb.FileNode{{Name: "a.txt", Digest: d}, {Name: "c.txt", Digest: d}},
+					Directories: []*repb.DirectoryNode{{Name: "dir", Digest: dirDigest}},
+				},
+				Children: []*repb.Directory{dir},
+			}
+			otherDir := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, otherDir, map[string]string{"a.txt": "other", "c.txt": "other"})
+			testfs.MakeDirAll(t, otherDir, "dir")
+			rootDir := testfs.MakeTempDir(t)
+			for _, name := range []string{"a.txt", "c.txt", "dir"} {
+				err := os.Symlink(filepath.Join(otherDir, name), filepath.Join(rootDir, name))
+				require.NoError(t, err)
+			}
+
+			_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+			require.NoError(t, err)
+
+			testfs.AssertExactFileContents(t, otherDir, map[string]string{"a.txt": "other", "c.txt": "other", "dir": testfs.EmptyDir})
+			testfs.AssertExactFileContents(t, rootDir, map[string]string{"a.txt": tc.contents, "c.txt": tc.contents, "dir/b.txt": tc.contents})
+			target, err := os.Readlink(filepath.Join(rootDir, "dir/link"))
+			require.NoError(t, err)
+			assert.Equal(t, "b.txt", target)
+		})
+	}
+}
+
+func TestDownloadTree_NonEmptyDirectoryAtFilePath(t *testing.T) {
+	env, ctx := testEnv(t)
+	d := setFile(t, env, ctx, "", "abc")
+	tree := &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{{Name: "a.txt", Digest: d}}}}
+	rootDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, rootDir, map[string]string{"a.txt/b.txt": "local"})
+
+	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+	require.Error(t, err)
+
+	testfs.AssertExactFileContents(t, rootDir, map[string]string{"a.txt/b.txt": "local"})
+}
+
+func TestDownloadTree_KnownInputInReplacedDirectory(t *testing.T) {
+	env, ctx := testEnv(t)
+	d := setFile(t, env, ctx, "", "abc")
+	dir := &repb.Directory{Files: []*repb.FileNode{{Name: "b.txt", Digest: d}}}
+	dirDigest, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	tree := &repb.Tree{
+		Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "dir", Digest: dirDigest}}},
+		Children: []*repb.Directory{dir},
+	}
+	rootDir := testfs.MakeTempDir(t)
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+	require.NoError(t, err)
+	err = os.RemoveAll(filepath.Join(rootDir, "dir"))
+	require.NoError(t, err)
+	err = os.Symlink(testfs.MakeTempDir(t), filepath.Join(rootDir, "dir"))
+	require.NoError(t, err)
+
+	knownInputs := map[fspath.Key]*repb.FileNode{fspath.NewKey("dir/b.txt", false /*=caseInsensitive*/): dir.GetFiles()[0]}
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir, KnownInputs: knownInputs})
+	require.NoError(t, err)
+
+	testfs.AssertExactFileContents(t, rootDir, map[string]string{"dir/b.txt": "abc"})
+}
+
+func TestDownloadTree_FileAtDirectoryPath(t *testing.T) {
+	env, ctx := testEnv(t)
+	d := setFile(t, env, ctx, "", "abc")
+	dir := &repb.Directory{Files: []*repb.FileNode{{Name: "b.txt", Digest: d}}}
+	dirDigest, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	tree := &repb.Tree{
+		Root:     &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "dir", Digest: dirDigest}}},
+		Children: []*repb.Directory{dir},
+	}
+	rootDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, rootDir, map[string]string{"dir": "local"})
+
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+	require.Error(t, err)
+
+	testfs.AssertExactFileContents(t, rootDir, map[string]string{"dir": "local"})
 }
 
 type controlledCache struct {
