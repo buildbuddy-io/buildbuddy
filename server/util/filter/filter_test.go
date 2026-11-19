@@ -327,6 +327,27 @@ func TestValidGenericFilters(t *testing.T) {
 	}
 }
 
+func TestUnknownEnumGenericFilters(t *testing.T) {
+	for name, f := range map[string]*stat_filter.GenericFilter{
+		"unknown type": {
+			Type:    stat_filter.FilterType(9999),
+			Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
+			Value:   &stat_filter.FilterValue{IntValue: []int64{1}},
+		},
+		"unknown operand": {
+			Type:    stat_filter.FilterType_EXECUTION_AVERAGE_MILLICORES_FILTER_TYPE,
+			Operand: stat_filter.FilterOperand(9999),
+			Value:   &stat_filter.FilterValue{IntValue: []int64{1}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			q := query_builder.NewQuery("SELECT * FROM bogus_table")
+			err := filter.AddGenericFiltersToQuery(q, []*stat_filter.GenericFilter{f}, stat_filter.ObjectTypes_EXECUTION_OBJECTS, "clickhouse")
+			assert.True(t, status.IsInvalidArgumentError(err), "got %v", err)
+		})
+	}
+}
+
 // Tags are annoying to template because they behave different for different
 // dialects, so they get their own test case.
 func TestTagGenericFilters(t *testing.T) {

@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
@@ -230,20 +229,20 @@ func validateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 
 	// Enum value descriptors (i.e., for "GREATER_THAN") are nested inside of
 	// enum type descriptors ("Operand"), so we need to dig around for them.
-	operandDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetOperand().Descriptor().Values().ByNumber(f.GetOperand().Number())).Options()
-	if operandDescriptorOptions == nil {
+	operandDescriptor := f.GetOperand().Descriptor().Values().ByNumber(f.GetOperand().Number())
+	if operandDescriptor == nil {
 		return "", nil, status.InvalidArgumentErrorf("Unknown operand value: %s", f.GetOperand())
 	}
-	operandOptions := proto.GetExtension(operandDescriptorOptions, stat_filter.E_FilterOperandOptions).(*stat_filter.FilterOperandOptions)
+	operandOptions := proto.GetExtension(operandDescriptor.Options(), stat_filter.E_FilterOperandOptions).(*stat_filter.FilterOperandOptions)
 	if operandOptions == nil {
 		return "", nil, status.InternalErrorf("Operand has no options specified: %s", f.GetOperand())
 	}
 
-	typeDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())).Options()
-	if typeDescriptorOptions == nil {
+	typeDescriptor := f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())
+	if typeDescriptor == nil {
 		return "", nil, status.InvalidArgumentErrorf("Unknown filter type: %s", f.GetType())
 	}
-	typeOptions := proto.GetExtension(typeDescriptorOptions, stat_filter.E_FilterTypeOptions).(*stat_filter.FilterTypeOptions)
+	typeOptions := proto.GetExtension(typeDescriptor.Options(), stat_filter.E_FilterTypeOptions).(*stat_filter.FilterTypeOptions)
 	if typeOptions == nil {
 		return "", nil, status.InvalidArgumentErrorf("Filter type has no options specified:: %s", f.GetType())
 	}
