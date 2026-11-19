@@ -483,3 +483,35 @@ func TestAllFilterOperandsHaveRequiredOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestUnknownFilterEnumValues(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		filter *stat_filter.GenericFilter
+	}{
+		{
+			name: "unknown filter type",
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType(9999),
+				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
+				Value:   &stat_filter.FilterValue{IntValue: []int64{1}},
+			},
+		},
+		{
+			name: "unknown operand",
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_EXECUTION_QUEUE_TIME_USEC_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand(9999),
+				Value:   &stat_filter.FilterValue{IntValue: []int64{1}},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, objType := range []stat_filter.ObjectTypes{stat_filter.ObjectTypes_EXECUTION_OBJECTS, stat_filter.ObjectTypes_INVOCATION_OBJECTS} {
+				q := query_builder.NewQuery("SELECT * FROM bogus_table")
+				err := filter.AddGenericFiltersToQuery(q, []*stat_filter.GenericFilter{tc.filter}, objType, "clickhouse")
+				assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+			}
+		})
+	}
+}
