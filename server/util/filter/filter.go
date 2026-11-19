@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
@@ -230,7 +229,11 @@ func validateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 
 	// Enum value descriptors (i.e., for "GREATER_THAN") are nested inside of
 	// enum type descriptors ("Operand"), so we need to dig around for them.
-	operandDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetOperand().Descriptor().Values().ByNumber(f.GetOperand().Number())).Options()
+	operandDescriptor := f.GetOperand().Descriptor().Values().ByNumber(f.GetOperand().Number())
+	if operandDescriptor == nil {
+		return "", nil, status.InvalidArgumentErrorf("Unknown operand value: %d", f.GetOperand())
+	}
+	operandDescriptorOptions := operandDescriptor.Options()
 	if operandDescriptorOptions == nil {
 		return "", nil, status.InvalidArgumentErrorf("Unknown operand value: %s", f.GetOperand())
 	}
@@ -239,7 +242,11 @@ func validateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		return "", nil, status.InternalErrorf("Operand has no options specified: %s", f.GetOperand())
 	}
 
-	typeDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())).Options()
+	typeDescriptor := f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())
+	if typeDescriptor == nil {
+		return "", nil, status.InvalidArgumentErrorf("Unknown filter type: %d", f.GetType())
+	}
+	typeDescriptorOptions := typeDescriptor.Options()
 	if typeDescriptorOptions == nil {
 		return "", nil, status.InvalidArgumentErrorf("Unknown filter type: %s", f.GetType())
 	}
