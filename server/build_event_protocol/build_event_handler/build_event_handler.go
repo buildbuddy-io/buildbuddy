@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -504,6 +505,13 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(50) // Max concurrency when copying files from cache->blobstore.
 
+	// Log persist failures once per invocation rather than once per artifact:
+	// a single invocation can reference thousands of artifacts, and if they're
+	// all unreadable (e.g. evicted from the cache), per-artifact logging
+	// produces a burst of thousands of identical errors.
+	var numFailures atomic.Int64
+	var firstErr error
+
 	artifactsUploaded := make(map[string]struct{}, 0)
 	for _, uri := range task.persist.URIs {
 		// Only persist artifacts from caches that are hosted on the BuildBuddy
@@ -530,13 +538,20 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 			fullPath := path.Join(task.invocationInfo.id, cacheArtifactsBlobstorePath, uri.Path)
 			if err := persistArtifact(ctx, r.env, uri, fullPath); err != nil {
-				log.CtxError(ctx, err.Error())
+				// Only the goroutine that records the first failure writes
+				// firstErr; it's read after eg.Wait().
+				if numFailures.Add(1) == 1 {
+					firstErr = err
+				}
 			}
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
 		log.CtxErrorf(ctx, "Failed to persist cache artifacts to blobstore: %s", err)
+	}
+	if n := numFailures.Load(); n > 0 {
+		log.CtxErrorf(ctx, "Failed to persist %d of %d cache artifacts to blobstore. First error: %s", n, len(artifactsUploaded), firstErr)
 	}
 }
 
