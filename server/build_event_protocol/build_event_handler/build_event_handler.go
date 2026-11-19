@@ -835,6 +835,7 @@ type EventChannel struct {
 	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
 	onClose                          func()
+	registered                       bool
 	stopRedisRefresher               func()
 	attempt                          uint64
 	groupIDForMetrics                string
@@ -891,7 +892,7 @@ func (e *EventChannel) startRedisRefresher(iid string) {
 func (e *EventChannel) FinalizeInvocation(iid string) error {
 	e.stopRedisRefresher()
 
-	if e.isVoid || !e.hasReceivedEventWithOptions {
+	if e.isVoid || !e.registered {
 		return nil
 	}
 
@@ -1171,6 +1172,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			e.isVoid = true
 			return nil
 		}
+		e.registered = true
 		e.lastDBUpdateTime = e.env.GetClock().Now()
 		e.attempt = ti.Attempt
 		e.ctx = log.EnrichContext(e.ctx, "invocation_attempt", fmt.Sprintf("%d", e.attempt))
