@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/util/diskimage",
         "//enterprise/server/util/vsock",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",

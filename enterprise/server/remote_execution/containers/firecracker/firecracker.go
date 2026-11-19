@@ -105,6 +105,7 @@ var (
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_18                       = flag.Bool("executor.firecracker_enable_linux_6_18", false, "Enable the 6.18 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	enableGenericSnapshots                = flag.Bool("executor.firecracker_enable_generic_snapshots", false, "Build generic snapshots on startup for each shape that fits on the executor. Actions with use-generic-snapshot are rounded up to the smallest shape that fits them.")
+	genericErofsRoot                      = flag.Bool("executor.firecracker_generic_erofs_root", false, "Give generic snapshot VMs a read-only EROFS container root under an overlay whose writes go to a sparse ext4 scratch disk.", flag.Internal)
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
@@ -199,6 +200,11 @@ const (
 	// minScratchDiskSizeBytes is the minimum size needed for the scratch disk.
 	// This is needed because the init binary needs some space to copy files around.
 	minScratchDiskSizeBytes = 64e6
+
+	// genericScratchDiskSizeBytes is the size of the sparse scratch disk that
+	// holds root filesystem writes in VMs with an EROFS root. It fits
+	// tasksize.MaxEstimatedFreeDiskRecycleFalse plus ext4 metadata.
+	genericScratchDiskSizeBytes = 200 << 30
 
 	// Chunk size to use when creating COW images from files.
 	cowChunkSizeInPages = 1000
@@ -1414,6 +1420,8 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		} else if !c.genericSnapshot {
 			opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 			opts.ChunkedFiles[scratchDriveID] = c.scratchStore
+		} else if c.scratchStore != nil {
+			opts.ChunkedFiles[scratchDriveID] = c.scratchStore
 		}
 		opts.ChunkedFiles[memoryChunkDirName] = c.memoryStore
 	} else {
@@ -1781,6 +1789,37 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 	return nil
 }
 
+// erofsRoot reports whether the VM's container root is a read-only EROFS image
+// with writes going to the scratch disk.
+func (c *FirecrackerContainer) erofsRoot() bool {
+	return c.genericSnapshot && *genericErofsRoot
+}
+
+// imageFormat is the disk image format of the VM's container root.
+func (c *FirecrackerContainer) imageFormat() diskimage.Format {
+	if c.erofsRoot() {
+		return diskimage.Erofs
+	}
+	return diskimage.Ext4
+}
+
+// initErofsScratchDisk creates the sparse ext4 scratch disk that holds root
+// filesystem writes in VMs with an EROFS root.
+func (c *FirecrackerContainer) initErofsScratchDisk(ctx context.Context) error {
+	path := filepath.Join(c.getChroot(), scratchFSName)
+	// The overlay is mounted volatile, so a journal buys nothing. Don't
+	// reserve blocks for root, which nonroot tasks couldn't use.
+	if err := ext4.MakeSparseImage(ctx, path, genericScratchDiskSizeBytes, "-O", "^has_journal", "-m", "0"); err != nil {
+		return err
+	}
+	cow, err := c.convertToCOW(ctx, path, filepath.Join(c.getChroot(), scratchDriveID), snaputil.ConvertToCOWConcurrency)
+	if err != nil {
+		return err
+	}
+	c.scratchStore = cow
+	return nil
+}
+
 // imageInstanceName is the remote instance that container images are cached
 // under. Generic snapshot keys have no instance, so use the task's.
 func (c *FirecrackerContainer) imageInstanceName() string {
@@ -1796,7 +1835,7 @@ func (c *FirecrackerContainer) cachedContainerfs(ctx context.Context) *snaploade
 		return nil
 	}
 	c.containerfsSnapshotOnce.Do(func() {
-		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, c.imageInstanceName(), c.containerImage, diskimage.Ext4, c.remoteContainerImageAccess.RemoteReadsEnabled)
+		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, c.imageInstanceName(), c.containerImage, c.imageFormat(), c.remoteContainerImageAccess.RemoteReadsEnabled)
 		if err != nil {
 			if !status.IsNotFoundError(err) {
 				log.CtxWarningf(ctx, "Failed to look up cached containerfs for image %q: %s", c.containerImage, err)
@@ -1820,16 +1859,19 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 		// If a chunked containerfs snapshot is in the cache, unpack it directly.
 		cf, err = snaploader.UnpackContainerImageSnapshot(c.vmCtx, c.loader, snap, cowChunkDir)
 	} else {
-		// If a chunked containerfs is not cached, we need to convert the ext4 image into chunks.
-		containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.imageInstanceName(), c.containerImage, diskimage.Ext4, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess)
+		// If a chunked containerfs is not cached, we need to convert the disk image into chunks.
+		containerFSPath := filepath.Join(c.getChroot(), containerFSName)
+		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.imageInstanceName(), c.containerImage, c.imageFormat(), containerFSPath, cowChunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess)
 	}
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
 	}
-	if err := c.resizeRootfs(ctx, cf); err != nil {
-		cf.Close()
-		return err
+	// An EROFS root is read-only; its writes go to the scratch disk.
+	if !c.erofsRoot() {
+		if err := c.resizeRootfs(ctx, cf); err != nil {
+			cf.Close()
+			return err
+		}
 	}
 	c.rootStore = cf
 	return nil
@@ -2094,6 +2136,9 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration, deferRootfsMount bool) string {
 	}
 	if deferRootfsMount {
 		initArgs = append(initArgs, "-defer_rootfs_mount")
+		if *genericErofsRoot {
+			initArgs = append(initArgs, "-scratch_ext4")
+		}
 	}
 	if vmConfig.EnableVfs {
 		initArgs = append(initArgs, "-enable_vfs")
@@ -2172,6 +2217,15 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			IsReadOnly:   new(false),
 		},
 	}...)
+	// The EROFS root's scratch disk is /dev/vdc.
+	if c.erofsRoot() {
+		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
+			DriveID:      new(scratchDriveID),
+			PathOnHost:   &scratchFS,
+			IsRootDevice: new(false),
+			IsReadOnly:   new(false),
+		})
+	}
 
 	if networkingEnabled(c.vmConfig.NetworkMode) {
 		cfg.NetworkInterfaces = []fcclient.NetworkInterface{
@@ -2394,9 +2448,11 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 		log.CtxDebugf(ctx, "Set up VBD mounts in %s", time.Since(start))
 	}()
 
-	setup := func(driveID string, store *copy_on_write.COWStore) (*vbd.FS, error) {
-		if store == nil {
-			return nil, nil
+	// Generic VMs call this again after attaching the container root, when
+	// the scratch disk is already mounted.
+	setup := func(driveID string, store *copy_on_write.COWStore, mounted *vbd.FS) (*vbd.FS, error) {
+		if store == nil || mounted != nil {
+			return mounted, nil
 		}
 		d, err := vbd.New(store)
 		if err != nil {
@@ -2410,12 +2466,12 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 		return d, nil
 	}
 
-	if d, err := setup(rootDriveID, c.rootStore); err != nil {
+	if d, err := setup(rootDriveID, c.rootStore, c.rootVBD); err != nil {
 		return err
 	} else {
 		c.rootVBD = d
 	}
-	if d, err := setup(scratchDriveID, c.scratchStore); err != nil {
+	if d, err := setup(scratchDriveID, c.scratchStore, c.scratchVBD); err != nil {
 		return err
 	} else {
 		c.scratchVBD = d
@@ -2761,7 +2817,7 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
 		return status.UnavailableErrorf("check containerfs exists: %s", err)
 	} else if !exists && c.cachedContainerfs(ctx) == nil {
-		if err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, diskimage.Ext4, containerFSPath); err != nil {
+		if err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, c.imageFormat(), containerFSPath); err != nil {
 			return status.UnavailableErrorf("link cached image: %s", err)
 		}
 	}
@@ -2792,6 +2848,7 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 		Entropy:                  entropy,
 		MountContainerRoot:       true,
 		ContainerRootSizeBytes:   rootSizeBytes,
+		OverlayContainerRoot:     c.erofsRoot(),
 		MemoryLimitBytes:         c.guestMemoryLimitBytes,
 		ClearArpCache:            true,
 		UnixTimestampNanoseconds: time.Now().UnixNano(),
@@ -2848,7 +2905,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
 			return status.UnavailableErrorf("check containerfs exists: %s", err)
 		} else if !exists {
-			err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, diskimage.Ext4, containerFSPath)
+			err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, c.imageFormat(), containerFSPath)
 			if err != nil {
 				return status.UnavailableErrorf("link cached image: %s", err)
 			}
@@ -2857,6 +2914,12 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 
 	if c.genericSnapshot {
 		rootFSPath = workspacePlaceholderPath
+		if c.erofsRoot() {
+			if err := c.initErofsScratchDisk(ctx); err != nil {
+				return status.WrapError(err, "create scratch disk")
+			}
+			scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
+		}
 	} else if snaputil.IsChunkedSnapshotSharingEnabled() {
 		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
 		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
@@ -3461,7 +3524,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	defer span.End()
 
 	// Checking for the EXT4 image on local disk is cheap, so do it first.
-	cached, err := ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, diskimage.Ext4)
+	cached, err := ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, c.imageFormat())
 	if err != nil || cached {
 		return cached, err
 	}
@@ -3524,7 +3587,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
 		return status.UnavailableErrorf("create chroot dir: %s", err)
 	}
-	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, diskimage.Ext4, creds, c.useOCIFetcher, containerFSPath)
+	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, c.imageFormat(), creds, c.useOCIFetcher, containerFSPath)
 	if err != nil {
 		return err
 	}

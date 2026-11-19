@@ -133,6 +133,21 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	return nil
 }
 
+// MakeSparseImage creates an empty ext4 image without zeroing its inode
+// tables or journal, which a new sparse file already reads as zeros. Mount it
+// with noinit_itable so that the kernel doesn't zero the inode tables either.
+func MakeSparseImage(ctx context.Context, outputFile string, sizeBytes int64, extraArgs ...string) error {
+	if err := checkImageOutputPath(outputFile); err != nil {
+		return err
+	}
+	args := append([]string{"-q", "-t", "ext4", "-b", fmt.Sprintf("%d", blockSize), "-E", "lazy_itable_init=1,lazy_journal_init=1"}, extraArgs...)
+	args = append(args, outputFile, fmt.Sprintf("%dK", sizeBytes/iecKilobyte))
+	if out, err := exec.CommandContext(ctx, mke2fsPath, args...).CombinedOutput(); err != nil {
+		return status.InternalErrorf("mke2fs: %s: %s", err, out)
+	}
+	return nil
+}
+
 // MakeEmptyImage creates a new empty ext4 disk image of the specified size
 // and writes it to outputFile.
 func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) error {

@@ -22,6 +22,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/diskimage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -80,6 +81,10 @@ const (
 
 	// RootfsDevice is the merged rootfs block device when rootfs is enabled.
 	RootfsDevice = "/dev/vda"
+	// ScratchDevice holds writes to an EROFS rootfs in generic snapshot VMs.
+	ScratchDevice = "/dev/vdc"
+	// scratchMountPath is where goinit mounts ScratchDevice.
+	scratchMountPath = "/scratch"
 
 	// Stats polling starts off high-frequency to improve the chances of
 	// collecting some stats for short-running tasks, then slowly backs off to
@@ -289,7 +294,7 @@ func clearARPCache() error {
 	return nil
 }
 
-func isWorkspaceMounted() (bool, error) {
+func isMounted(target string) (bool, error) {
 	f, err := os.Open("/proc/mounts")
 	if err != nil {
 		return false, err
@@ -301,8 +306,7 @@ func isWorkspaceMounted() (bool, error) {
 		if len(fields) < 2 {
 			continue
 		}
-		target := fields[1]
-		if target == workspaceMountPath {
+		if fields[1] == target {
 			return true, nil
 		}
 	}
@@ -340,7 +344,7 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 			return nil, status.FailedPreconditionError("container root initialization already attempted")
 		}
 		// The new root would hide a workspace mounted on the old one.
-		if mounted, err := isWorkspaceMounted(); err != nil {
+		if mounted, err := isMounted(workspaceMountPath); err != nil {
 			return nil, err
 		} else if mounted {
 			return nil, status.FailedPreconditionError("workspace must be mounted after the container root")
@@ -351,7 +355,7 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 			}
 		}
 		x.rootMountAttempted = true
-		if err := mountContainerRoot(); err != nil {
+		if err := mountContainerRoot(req.GetOverlayContainerRoot()); err != nil {
 			return nil, status.WrapError(err, "mount container root")
 		}
 	}
@@ -420,7 +424,7 @@ func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWor
 func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
 	defer quietConsole()()
 	// Make sure the workspace drive is not already mounted.
-	mounted, err := isWorkspaceMounted()
+	mounted, err := isMounted(workspaceMountPath)
 	if err != nil {
 		log.Errorf("Failed to check if workspace is mounted: %s", err)
 		return nil, status.InternalErrorf("failed to check whether workspace is mounted: %s", err)
@@ -949,16 +953,76 @@ func reseedRNG(seed []byte) error {
 	return nil
 }
 
-func mountContainerRoot() error {
+// detectFormat returns the format of the filesystem on device.
+func detectFormat(device string) (diskimage.Format, error) {
+	f, err := os.Open(device)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	sb := make([]byte, 64)
+	if _, err := f.ReadAt(sb, 1024); err != nil {
+		return "", err
+	}
+	if binary.LittleEndian.Uint32(sb) == unix.EROFS_SUPER_MAGIC_V1 {
+		return diskimage.Erofs, nil
+	}
+	if binary.LittleEndian.Uint16(sb[56:]) == unix.EXT4_SUPER_MAGIC {
+		return diskimage.Ext4, nil
+	}
+	return "", status.InvalidArgumentErrorf("unrecognized filesystem on %s", device)
+}
+
+// mountOverlayRoot mounts the container image read-only at lower, under an
+// overlay at root whose writes go to the scratch disk.
+func mountOverlayRoot(format diskimage.Format, root string) error {
+	if mounted, err := isMounted(scratchMountPath); err != nil {
+		return err
+	} else if !mounted {
+		return status.FailedPreconditionErrorf("%s is not mounted", scratchMountPath)
+	}
+	const lower = "/container"
+	if err := os.MkdirAll(lower, 0755); err != nil {
+		return err
+	}
+	if err := syscall.Mount(RootfsDevice, lower, string(format), syscall.MS_RDONLY, ""); err != nil {
+		return err
+	}
+	upper := filepath.Join(scratchMountPath, "upper")
+	work := filepath.Join(scratchMountPath, "work")
+	for _, dir := range []string{upper, work} {
+		if err := os.Mkdir(dir, 0755); err != nil {
+			return err
+		}
+	}
+	// The root never needs to survive a guest crash.
+	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,volatile", lower, upper, work)
+	return syscall.Mount("overlay", root, "overlay", syscall.MS_NOATIME, opts)
+}
+
+func mountContainerRoot(overlay bool) error {
 	const root = "/mnt"
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
-	if err := syscall.Mount(RootfsDevice, root, "ext4", syscall.MS_NOATIME, ""); err != nil {
+	format, err := detectFormat(RootfsDevice)
+	if err != nil {
 		return err
 	}
-	if err := ResizeExt4FS(RootfsDevice, root); err != nil {
-		return err
+	switch {
+	case overlay:
+		if err := mountOverlayRoot(format, root); err != nil {
+			return status.WrapError(err, "mount overlay root")
+		}
+	case format == diskimage.Ext4:
+		if err := syscall.Mount(RootfsDevice, root, "ext4", syscall.MS_NOATIME, ""); err != nil {
+			return err
+		}
+		if err := ResizeExt4FS(RootfsDevice, root); err != nil {
+			return err
+		}
+	default:
+		return status.InvalidArgumentErrorf("%s root requires overlay_container_root", format)
 	}
 	for _, name := range []string{"dev", "proc", "sys", "run"} {
 		target := filepath.Join(root, name)
