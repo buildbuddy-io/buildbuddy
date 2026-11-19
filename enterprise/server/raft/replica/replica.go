@@ -1276,6 +1276,7 @@ func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse
 	var prevAtimeUsec int64
 	prevBuf, closer, err := wb.Get(req.GetKey())
 	if err == nil {
+		// found a previous record, decode its atime for index cleanup.
 		prevAtimeUsec, err = recordAtimeUsec(prevBuf)
 		closer.Close()
 		if err != nil {
