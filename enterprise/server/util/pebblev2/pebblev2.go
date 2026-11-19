@@ -1,7 +1,8 @@
-package pebble
+package pebblev2
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -13,15 +14,16 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/cockroachdb/pebble/vfs"
+	"github.com/cockroachdb/pebble/v2/vfs"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/bloom"
+	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble/v2/batchrepr"
+	"github.com/cockroachdb/pebble/v2/bloom"
 )
 
 const (
@@ -31,25 +33,20 @@ const (
 )
 
 var (
-	warnAboutLeaks = flag.Bool("cache.pebble.warn_about_leaks", true, "If set, warn about leaked DB handles")
+	warnAboutLeaks = flag.Bool("cache.pebble_v2.warn_about_leaks", true, "If set, warn about leaked DB handles")
 )
 
-var pebbleIterProfile = pprof.NewProfile("pebble_open_iter")
+var pebbleIterProfile = pprof.NewProfile("pebble_v2_open_iter")
 
 var NoSync = pebble.NoSync
 var Sync = pebble.Sync
 var ErrNotFound = pebble.ErrNotFound
 
+var FormatNewest = pebble.FormatNewest
 var NewCache = pebble.NewCache
 var WithFlushedWAL = pebble.WithFlushedWAL
 var Peek = pebble.Peek
 var DefaultFS = vfs.Default
-
-const (
-	FormatMostCompatible  = pebble.FormatMostCompatible
-	FormatVirtualSSTables = pebble.FormatVirtualSSTables
-	FormatNewest          = pebble.FormatNewest
-)
 
 type FormatMajorVersion = pebble.FormatMajorVersion
 type Options = pebble.Options
@@ -174,7 +171,7 @@ type Batch interface {
 	// Returns the current size of the batch.
 	Len() int
 
-	Reader() pebble.BatchReader
+	Reader() batchrepr.Reader
 
 	Reset()
 }
@@ -307,7 +304,7 @@ func (ib *instrumentedBatch) Apply(batch Batch, opts *pebble.WriteOptions) error
 	return ib.batch.Apply(batch.(*instrumentedBatch).batch, opts)
 }
 
-func (ib *instrumentedBatch) Reader() pebble.BatchReader {
+func (ib *instrumentedBatch) Reader() batchrepr.Reader {
 	return ib.batch.Reader()
 }
 func (ib *instrumentedBatch) Reset() {
@@ -407,7 +404,7 @@ func (idb *instrumentedDB) NewSnapshot() *pebble.Snapshot {
 }
 
 func (idb *instrumentedDB) Compact(start, end []byte, parallelize bool) error {
-	return idb.db.Compact(start, end, parallelize)
+	return idb.db.Compact(context.Background(), start, end, parallelize)
 }
 
 func (idb *instrumentedDB) Checkpoint(destDir string, opts ...pebble.CheckpointOption) error {
@@ -506,7 +503,7 @@ type leaser struct {
 // to prevent leaks. The DB cannot be closed until all handles are returned.
 //
 // Once the DB leaser has been closed with Close(), no new handles can be
-// acquired, instead an Unavailable error is returned.
+// acquired, instead an error is returned.
 func NewDBLeaser(db IPebbleDB) Leaser {
 	return &leaser{db: db}
 }
@@ -528,9 +525,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 	l.closedMu.RLock()
 	defer l.closedMu.RUnlock()
 	if l.closed {
-		// The DB is closed during shutdown. Return Unavailable so that
-		// clients retry, likely against another server.
-		return nil, status.UnavailableError("db is closed")
+		return nil, status.FailedPreconditionError("db is closed")
 	}
 
 	handle := &refCountedDB{
@@ -546,7 +541,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 		}
 		handle.finalizerSet = true
 		runtime.SetFinalizer(handle, func(h *refCountedDB) {
-			if !h.refCounter.closed.Load() {
+			if !h.refCounter.closed {
 				alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
 			}
 		})
@@ -556,20 +551,20 @@ func (l *leaser) DB() (IPebbleDB, error) {
 
 type refCounter struct {
 	wg     *sync.WaitGroup
-	closed atomic.Bool
+	closed bool
 }
 
 func newRefCounter(wg *sync.WaitGroup) *refCounter {
 	wg.Add(1)
 	return &refCounter{
-		wg: wg,
+		wg:     wg,
+		closed: false,
 	}
 }
 
 func (r *refCounter) Close() error {
-	// CompareAndSwap ensures only one of several concurrent Close calls
-	// decrements the WaitGroup.
-	if r.closed.CompareAndSwap(false, true) {
+	if !r.closed {
+		r.closed = true
 		r.wg.Add(-1)
 	}
 	return nil
@@ -749,15 +744,15 @@ func (mc *MetricsCollector) UpdateMetrics(m *Metrics, om Metrics, cacheName stri
 			metrics.CacheNameLabel: cacheName,
 		}
 		metrics.PebbleCachePebbleLevelSublevels.With(lbls).Set(float64(l.Sublevels))
-		metrics.PebbleCachePebbleLevelNumFiles.With(lbls).Set(float64(l.NumFiles))
-		metrics.PebbleCachePebbleLevelSizeBytes.With(lbls).Set(float64(l.Size))
+		metrics.PebbleCachePebbleLevelNumFiles.With(lbls).Set(float64(l.TablesCount))
+		metrics.PebbleCachePebbleLevelSizeBytes.With(lbls).Set(float64(l.TablesSize))
 		metrics.PebbleCachePebbleLevelScore.With(lbls).Set(l.Score)
-		metrics.PebbleCachePebbleLevelBytesInCount.With(lbls).Add(float64(l.BytesIn - ol.BytesIn))
-		metrics.PebbleCachePebbleLevelBytesIngestedCount.With(lbls).Add(float64(l.BytesIngested - ol.BytesIngested))
-		metrics.PebbleCachePebbleLevelBytesMovedCount.With(lbls).Add(float64(l.BytesMoved - ol.BytesMoved))
-		metrics.PebbleCachePebbleLevelBytesReadCount.With(lbls).Add(float64(l.BytesRead - ol.BytesRead))
-		metrics.PebbleCachePebbleLevelBytesCompactedCount.With(lbls).Add(float64(l.BytesCompacted - ol.BytesCompacted))
-		metrics.PebbleCachePebbleLevelBytesFlushedCount.With(lbls).Add(float64(l.BytesFlushed - ol.BytesFlushed))
+		metrics.PebbleCachePebbleLevelBytesInCount.With(lbls).Add(float64(l.TableBytesIn - ol.TableBytesIn))
+		metrics.PebbleCachePebbleLevelBytesIngestedCount.With(lbls).Add(float64(l.TableBytesIngested - ol.TableBytesIngested))
+		metrics.PebbleCachePebbleLevelBytesMovedCount.With(lbls).Add(float64(l.TableBytesMoved - ol.TableBytesMoved))
+		metrics.PebbleCachePebbleLevelBytesReadCount.With(lbls).Add(float64(l.TableBytesRead - ol.TableBytesRead))
+		metrics.PebbleCachePebbleLevelBytesCompactedCount.With(lbls).Add(float64(l.TableBytesCompacted - ol.TableBytesCompacted))
+		metrics.PebbleCachePebbleLevelBytesFlushedCount.With(lbls).Add(float64(l.TableBytesFlushed - ol.TableBytesFlushed))
 		metrics.PebbleCachePebbleLevelTablesCompactedCount.With(lbls).Add(float64(l.TablesCompacted - ol.TablesCompacted))
 		metrics.PebbleCachePebbleLevelTablesFlushedCount.With(lbls).Add(float64(l.TablesFlushed - ol.TablesFlushed))
 		metrics.PebbleCachePebbleLevelTablesIngestedCount.With(lbls).Add(float64(l.TablesIngested - ol.TablesIngested))
@@ -780,8 +775,8 @@ func (mc *MetricsCollector) UpdateMetrics(m *Metrics, om Metrics, cacheName stri
 	}
 	metrics.PebbleCachePebbleBlockCacheRequestsCount.With(hitLabel).Add(float64(m.BlockCache.Hits - om.BlockCache.Hits))
 	metrics.PebbleCachePebbleBlockCacheRequestsCount.With(missLabel).Add(float64(m.BlockCache.Misses - om.BlockCache.Misses))
-	metrics.PebbleCachePebbleTableCacheRequestsCount.With(hitLabel).Add(float64(m.TableCache.Hits - om.TableCache.Hits))
-	metrics.PebbleCachePebbleTableCacheRequestsCount.With(missLabel).Add(float64(m.TableCache.Misses - om.TableCache.Misses))
+	metrics.PebbleCachePebbleTableCacheRequestsCount.With(hitLabel).Add(float64(m.FileCache.Hits - om.FileCache.Hits))
+	metrics.PebbleCachePebbleTableCacheRequestsCount.With(missLabel).Add(float64(m.FileCache.Misses - om.FileCache.Misses))
 
 	// Write Stall metrics
 	count, dur := mc.WriteStallStats()

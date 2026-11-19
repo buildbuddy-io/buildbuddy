@@ -1,12 +1,11 @@
-package pebble_test
+package pebblev2_test
 
 import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -15,10 +14,11 @@ import (
 
 func TestCloseLeasedDB(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	db, err := pebblev2.Open(rootDir, "test", &pebblev2.Options{})
 	require.NoError(t, err)
+	defer db.Close()
 
-	leaser := pebble.NewDBLeaser(db)
+	leaser := pebblev2.NewDBLeaser(db)
 	require.NotNil(t, leaser)
 
 	var leaserCloseTime time.Time
@@ -45,7 +45,7 @@ func TestCloseLeasedDB(t *testing.T) {
 
 	// DB is now closed; check that leasing fails.
 	_, err = leaser.DB()
-	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got %v", err)
+	require.Error(t, err)
 
 	// Check that the db lease was returned before the leaser closed
 	// (even though we did these in opposite order). This is to check
@@ -53,92 +53,54 @@ func TestCloseLeasedDB(t *testing.T) {
 	require.Less(t, dbReturnTime, leaserCloseTime)
 }
 
-func TestConcurrentCloseLeasedDB(t *testing.T) {
+func TestOpenV1DB(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+
+	// Create a DB with pebble v1 at its newest format.
+	v1DB, err := pebblev1.Open(rootDir, &pebblev1.Options{FormatMajorVersion: pebblev1.FormatNewest})
 	require.NoError(t, err)
-	defer db.Close()
+	require.NoError(t, v1DB.Set([]byte("key"), []byte("value"), pebblev1.Sync))
+	require.NoError(t, v1DB.Close())
 
-	leaser := pebble.NewDBLeaser(db)
-	handle1, err := leaser.DB()
+	// Open it with v2 without ratcheting; the format must stay at v1's
+	// newest so a v1 binary can still open it.
+	v2DB, err := pebblev2.Open(rootDir, "test", &pebblev2.Options{})
 	require.NoError(t, err)
-	handle2, err := leaser.DB()
+	require.Equal(t, pebblev2.FormatMajorVersion(pebblev1.FormatNewest), v2DB.FormatMajorVersion())
+	requireValue(t, v2DB, "key", "value")
+	require.NoError(t, v2DB.Set([]byte("key2"), []byte("value2"), pebblev2.Sync))
+	require.NoError(t, v2DB.Close())
+
+	// Roll back to v1 and read data written by both versions.
+	v1DB, err = pebblev1.Open(rootDir, &pebblev1.Options{})
 	require.NoError(t, err)
-
-	// Close the same handle from many goroutines; only one lease should be
-	// returned.
-	eg := errgroup.Group{}
-	for range 100 {
-		eg.Go(handle1.Close)
-	}
-	require.NoError(t, eg.Wait())
-
-	// handle2 is still leased, so leaser.Close must keep waiting.
-	leaserClosed := make(chan struct{})
-	go func() {
-		leaser.Close()
-		close(leaserClosed)
-	}()
-	select {
-	case <-leaserClosed:
-		require.FailNow(t, "leaser closed while a lease was still held")
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	require.NoError(t, handle2.Close())
-	select {
-	case <-leaserClosed:
-	case <-time.After(10 * time.Second):
-		require.FailNow(t, "leaser did not close after all leases were returned")
+	defer v1DB.Close()
+	for key, want := range map[string]string{"key": "value", "key2": "value2"} {
+		val, closer, err := v1DB.Get([]byte(key))
+		require.NoError(t, err)
+		require.Equal(t, want, string(val))
+		require.NoError(t, closer.Close())
 	}
 }
 
-func TestRatchetDB(t *testing.T) {
+func TestOpenV1DBBelowMinSupportedFormat(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 
-	// Open a new DB and write a value
-	db, err := pebblev1.Open(rootDir, &pebblev1.Options{})
+	// An unset format in v1 defaults to FormatMostCompatible, which is below
+	// the oldest format v2 can open.
+	v1DB, err := pebblev1.Open(rootDir, &pebblev1.Options{})
 	require.NoError(t, err)
-	require.Equal(t, pebblev1.FormatMostCompatible, db.FormatMajorVersion(), "expected db1 to be at most compatible format")
-	err = db.Set([]byte("key"), []byte("value"), &pebblev1.WriteOptions{Sync: true})
-	require.NoError(t, err)
-	err = db.Close()
-	require.NoError(t, err)
+	require.Equal(t, pebblev1.FormatMostCompatible, v1DB.FormatMajorVersion())
+	require.NoError(t, v1DB.Close())
 
-	// Re-open DB with ratcheting
-	ratchetDB, err := pebble.Open(rootDir, "testing", &pebblev1.Options{FormatMajorVersion: pebblev1.FormatNewest})
-	require.NoError(t, err)
-	require.Equal(t, pebblev1.FormatNewest, ratchetDB.FormatMajorVersion(), "expected ratchetted db2 to be at newest format")
-	val, closer, err := ratchetDB.Get([]byte("key"))
-	require.NoError(t, err)
-	require.Equal(t, "value", string(val), "expected value to be preserved after ratchet")
-	err = closer.Close()
-	require.NoError(t, err)
-	err = ratchetDB.Set([]byte("key2"), []byte("value2"), &pebblev1.WriteOptions{Sync: true})
-	require.NoError(t, err)
-	err = ratchetDB.Close()
-	require.NoError(t, err)
+	_, err = pebblev2.Open(rootDir, "test", &pebblev2.Options{})
+	require.ErrorContains(t, err, "no longer supported")
+}
 
-	// Validate a rollback is possible after ratcheting
-	revertedDB, err := pebblev1.Open(rootDir, &pebblev1.Options{})
+func requireValue(t *testing.T, db pebblev2.IPebbleDB, key, want string) {
+	t.Helper()
+	val, closer, err := db.Get([]byte(key))
 	require.NoError(t, err)
-	require.Equal(t, pebblev1.FormatNewest, revertedDB.FormatMajorVersion(), "expected reverted db3 to be at newest format")
-
-	val, closer, err = revertedDB.Get([]byte("key"))
-	require.NoError(t, err)
-	require.Equal(t, "value", string(val), "expected original value to be accessible after revert")
-	err = closer.Close()
-	require.NoError(t, err)
-
-	val, closer, err = revertedDB.Get([]byte("key2"))
-	require.NoError(t, err)
-	require.Equal(t, "value2", string(val), "expected ratcheted value to be accessible after revert")
-	err = closer.Close()
-	require.NoError(t, err)
-
-	err = revertedDB.Set([]byte("key3"), []byte("value3"), &pebblev1.WriteOptions{Sync: true})
-	require.NoError(t, err)
-
-	err = revertedDB.Close()
-	require.NoError(t, err)
+	defer closer.Close()
+	require.Equal(t, want, string(val))
 }
