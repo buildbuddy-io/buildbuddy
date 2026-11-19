@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -759,14 +760,11 @@ type treeCacheHit struct {
 	dirCount int
 }
 
-func treeCachePointerMetadata(ar *repb.ActionResult) *capb.TreeCachePointerMetadata {
-	for _, a := range ar.GetExecutionMetadata().GetAuxiliaryMetadata() {
-		meta := &capb.TreeCachePointerMetadata{}
-		if a.MessageIs(meta) && a.UnmarshalTo(meta) == nil {
-			return meta
-		}
-	}
-	return nil
+// sentAsSubtreeDigest returns whether a cached subtree with dirCount
+// directories is returned to the client as a digest (given that the client
+// requested subtrees) rather than inline.
+func sentAsSubtreeDigest(dirCount int) bool {
+	return dirCount >= *getTreeSubtreeMinDirCount
 }
 
 // checkCachedTreeNode verifies that the blobs of a cached tree exist without
@@ -803,7 +801,8 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 				treeCacheRN := digest.NewResourceName(ar.OutputFiles[0].Digest, treeCachePointer.GetInstanceName(), rspb.CacheType_CAS, treeCachePointer.GetDigestFunction())
 				var hit *treeCacheHit
 				bytesRead := 0
-				if meta := treeCachePointerMetadata(ar); skipContents && meta.GetDirCount() > 0 {
+				meta := &capb.TreeCachePointerMetadata{}
+				if ok, _ := rexec.FindFirstAuxiliaryMetadata(ar.GetExecutionMetadata(), meta); ok && skipContents && meta.GetDirCount() > 0 && sentAsSubtreeDigest(int(meta.GetDirCount())) {
 					if err := s.checkCachedTreeNode(ctx, treeCacheRN, meta); err == nil {
 						hit = &treeCacheHit{rn: treeCacheRN, dirCount: int(meta.GetDirCount())}
 					}
@@ -1065,13 +1064,13 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				if subtreesRequested && grandchild.cachedRoot != nil && grandchild.cachedDirCount >= *getTreeSubtreeMinDirCount {
+				if subtreesRequested && grandchild.cachedRoot != nil && sentAsSubtreeDigest(grandchild.cachedDirCount) {
 					// This grandchild was cached--we are guaranteed that cachedSubtrees
 					// will be empty (TreeCache entries are always complete), so we
-					// record the subtree root for our response.  The only purpose of
-					// saving the subtree's contents is so that we can validate the
-					// entire tree at the end of the request.
+					// record the subtree root for our response.  The contents (nil
+					// unless read) are kept for ancestor tree cache writes.
 					allCachedSubtrees = append(allCachedSubtrees, grandchild.cachedRoot)
+					subtreeDirCount += grandchild.cachedDirCount
 					allCachedSubtreeContents = append(allCachedSubtreeContents, grandchild.mainDirectories...)
 				} else {
 					// Three possibilities here:
@@ -1088,6 +1087,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 					if len(grandchild.cachedSubtrees) > 0 {
 						allCachedSubtrees = append(allCachedSubtrees, grandchild.cachedSubtrees...)
 						allCachedSubtreeContents = append(allCachedSubtreeContents, grandchild.subtreeDirectories...)
+						subtreeDirCount += grandchild.subtreeDirCount
 					}
 				}
 				return nil
