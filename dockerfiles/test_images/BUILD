@@ -23,3 +23,14 @@ container_push(
     tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
+
+container_push(
+    name = "erofs_push",
+    format = "Docker",
+    image = "@erofs_image//image:dockerfile_image.tar",
+    registry = "gcr.io",
+    repository = "flame-public/test-erofs",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
+    tags = ["manual"],  # Don't include this target in wildcard patterns
+)
