@@ -1,4 +1,4 @@
-.markdown a {
+.markdown a:where(:not(.react-tweet-theme *)) {
   color: #000;
   background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(84,110,122 ,0.5)" /></svg>');
   background-size: 1px 1px;
@@ -9,13 +9,13 @@
   padding-bottom: 1px;
 }
 
-.markdown a:hover {
+.markdown a:where(:not(.react-tweet-theme *)):hover {
   background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(3,169,244 ,0.9)" /></svg>');
   background-position: 0 calc(1em + 1px);
   background-size: 1px 2px;
 }
 
-html[data-theme="dark"] .markdown a {
+html[data-theme="dark"] .markdown a:where(:not(.react-tweet-theme *)) {
   color: #aef0ff;
 }
 
@@ -65,7 +65,7 @@ a .theme-code-block code {
   letter-spacing: -0.015em;
 }
 
-.markdown p {
+.markdown p:where(:not(.react-tweet-theme *)) {
   line-height: 1.75;
 }
 
@@ -76,4 +76,11 @@ a .theme-code-block code {
 .theme-code-block > div {
   color: #aaa;
   border-bottom-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Restore react-tweet's native font size, line-height, and spacing from Infima's .markdown p rules */
+.markdown .react-tweet-theme p {
+  font-size: inherit;
+  line-height: inherit;
+  margin: 0;
 }

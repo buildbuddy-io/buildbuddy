@@ -9,11 +9,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/cas",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/testutil/testdigest",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )

@@ -7,6 +7,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testcache",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:bytestream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
@@ -15,7 +16,6 @@ go_library(
         "//server/rpc/interceptors",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//test/bufconn",
     ],

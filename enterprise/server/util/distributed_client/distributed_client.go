@@ -54,6 +54,9 @@ const (
 	// getMultiDereferenceConcurrency bounds how many references from a single
 	// GetMulti response are dereferenced concurrently.
 	getMultiDereferenceConcurrency = 10
+
+	// The maximum buffer size to allocate when dereferencing a reference. 10MB.
+	maxDereferenceBufferBytes = 10 * 1024 * 1024
 )
 
 var (
@@ -644,7 +647,7 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 			return nil, nil, err
 		}
 		defer rc.Close()
-		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(requested, maxDecompressBufSizeBytes)))
+		buf := bytes.NewBuffer(make([]byte, 0, dereferenceBufferSize(requested, ref)))
 		_, err = io.Copy(buf, rc)
 		recordGetWithMetadataResponseMetrics("reference", requested, status.MetricsLabel(err))
 		if err != nil {
@@ -662,6 +665,22 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 		recordGetWithMetadataResponseMetrics("bytes", requested, codes.OK.String())
 	}
 	return data, cacheMetadataFromProto(rsp.GetMetadata()), nil
+}
+
+func dereferenceBufferSize(requested *rspb.ResourceName, ref *refpb.Reference) int64 {
+	var bufSize int64
+	if requested.GetCompressor() == ref.GetMetadata().GetFileRecord().GetCompressor() {
+		// If we're reading using the same compressor as the stored data, we use
+		// the stored size, clamped between 32 and maxDereferenceBufferBytes.
+		bufSize = min(max(32, ref.GetMetadata().GetStoredSizeBytes()), maxDereferenceBufferBytes)
+	} else {
+		// Otherwise use the requested size.
+		bufSize = int64(digest.SafeBufferSize(requested, maxDereferenceBufferBytes))
+	}
+	// bytes.Buffer.ReadFrom will always allocate unless the buffer has at least
+	// bytes.MinRead spare capacity.
+	return bufSize + bytes.MinRead
+
 }
 
 func recordGetWithMetadataResponseMetrics(responseType string, r *rspb.ResourceName, statusLabel string) {
@@ -859,8 +878,8 @@ func dereferenceToBytes(ctx context.Context, refCache interfaces.ReferenceCache,
 		return nil, err
 	}
 	defer rc.Close()
-	buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(rn, maxDecompressBufSizeBytes)))
-	if _, err := buf.ReadFrom(rc); err != nil {
+	buf := bytes.NewBuffer(make([]byte, 0, dereferenceBufferSize(rn, ref)))
+	if _, err := io.Copy(buf, rc); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

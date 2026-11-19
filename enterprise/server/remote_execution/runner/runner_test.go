@@ -85,6 +85,7 @@ func noLimitsCfg() *RunnerPoolOptions {
 type fakeContainer struct {
 	container.CommandContainer // TODO: implement all methods
 	CreateError                error
+	UnpauseError               error
 	Removed                    chan struct{}
 	Result                     *interfaces.CommandResult
 	ExecFunc                   func(context.Context) *interfaces.CommandResult
@@ -92,6 +93,7 @@ type fakeContainer struct {
 	ImageCached                bool   // Return value for IsImageCached
 	BlockPull                  bool   // PullImage blocks forever if true.
 	FakeStats                  *repb.UsageStats
+	Paused                     bool
 }
 
 func NewFakeContainer() *fakeContainer {
@@ -145,9 +147,21 @@ func (c *fakeContainer) Remove(ctx context.Context) error {
 }
 
 func (c *fakeContainer) Pause(ctx context.Context) error {
+	if c.Paused {
+		return status.FailedPreconditionError("container is already paused")
+	}
+	c.Paused = true
 	return nil
 }
+
 func (c *fakeContainer) Unpause(ctx context.Context) error {
+	if c.UnpauseError != nil {
+		return c.UnpauseError
+	}
+	if !c.Paused {
+		return status.FailedPreconditionError("container is not paused")
+	}
+	c.Paused = false
 	return nil
 }
 
@@ -1233,11 +1247,14 @@ func TestCreateThenRecycleWithoutRun(t *testing.T) {
 	require.Empty(t, testmetrics.CounterValues(t, metrics.UnexpectedEvent), "unexpected events logged")
 }
 
-func TestUnpauseThenRecycleWithoutRun(t *testing.T) {
+func TestTakeThenRecycleWithoutRun(t *testing.T) {
 	metrics.UnexpectedEvent.Reset()
 
 	env := newTestEnv(t)
 	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return NewFakeContainer(), nil
+	})
 	pool := newRunnerPool(t, env, cfg)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 	task := newTask()
@@ -1251,9 +1268,10 @@ func TestUnpauseThenRecycleWithoutRun(t *testing.T) {
 	pool.TryRecycle(ctx, r, true)
 	assert.Equal(t, 1, pool.PausedRunnerCount(), "runner should be added to the pool")
 
-	// Get the paused runner then try to recycle it without running anything. We
-	// should call pause since the runner should be created and it may have
-	// useful contents from the previous run.
+	// Get the paused runner then try to recycle it without running anything.
+	// It should go back into the pool, since it may have useful contents from
+	// the previous run. The container is still paused, so the pool should not
+	// pause it again.
 	r, err = pool.Get(ctx, task)
 	require.NoError(t, err)
 	err = r.PrepareForTask(ctx)
@@ -1262,6 +1280,71 @@ func TestUnpauseThenRecycleWithoutRun(t *testing.T) {
 	assert.Equal(t, 1, pool.PausedRunnerCount(), "runner should be added to the pool")
 
 	require.Empty(t, testmetrics.CounterValues(t, metrics.UnexpectedEvent), "unexpected events logged")
+}
+
+func TestRecycledRunnerUnpausesOnRun(t *testing.T) {
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	ctr := NewFakeContainer()
+	pausedDuringExec := false
+	ctr.ExecFunc = func(ctx context.Context) *interfaces.CommandResult {
+		pausedDuringExec = ctr.Paused
+		return &interfaces.CommandResult{}
+	}
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	task := newTask()
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	res := r.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+	pool.TryRecycle(ctx, r, true)
+	require.Equal(t, 1, pool.PausedRunnerCount())
+
+	r, err = pool.Get(ctx, task)
+	require.NoError(t, err)
+	err = r.PrepareForTask(ctx)
+	require.NoError(t, err)
+	pausedBeforeRun := ctr.Paused
+	res = r.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+
+	assert.True(t, pausedBeforeRun)
+	assert.False(t, pausedDuringExec)
+}
+
+func TestRecycledRunnerUnpauseError(t *testing.T) {
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	ctr := NewFakeContainer()
+	execCount := 0
+	ctr.ExecFunc = func(ctx context.Context) *interfaces.CommandResult {
+		execCount++
+		return &interfaces.CommandResult{}
+	}
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	task := newTask()
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	res := r.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+	pool.TryRecycle(ctx, r, true)
+	require.Equal(t, 1, pool.PausedRunnerCount())
+
+	ctr.UnpauseError = fmt.Errorf("test unpause error")
+	r, err = pool.Get(ctx, task)
+	require.NoError(t, err)
+	res = r.Run(ctx, &repb.IOStats{})
+
+	assert.True(t, status.IsUnavailableError(res.Error), "want Unavailable, got %+#v", res.Error)
+	assert.Equal(t, 1, execCount, "the second task should not run")
 }
 
 func TestRunnerCrashedExitCodes(t *testing.T) {

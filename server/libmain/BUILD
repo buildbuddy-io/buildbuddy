@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//proto:auth_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:bytestream_go_proto",
         "//proto:cache_proxy_go_proto",
         "//proto:cache_service_go_proto",
         "//proto:encryption_go_proto",
@@ -19,6 +20,7 @@ go_library(
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
+        "//proto:telemetry_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/backends/blobstore",
         "//server/backends/disk_cache",
@@ -65,7 +67,6 @@ go_library(
         "//server/util/tracing",
         "//server/util/usageutil",
         "//static:bundle",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//channelz/service",
     ],

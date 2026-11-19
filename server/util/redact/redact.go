@@ -44,6 +44,13 @@ const (
 	allowEnvPrefix            = "ALLOW_ENV="
 	allowEnvListSeparator     = ","
 	explicitCommandLineName   = "EXPLICIT_COMMAND_LINE"
+
+	urlScheme        = `[a-z][a-z0-9+.-]*://`
+	urlHost          = `[^"\s<>{}|\\^[\]]+`
+	looseUsername    = `[^:@\r\n]+`
+	loosePassword    = `[^@\r\n]*`
+	progressUsername = `[^:/@\s]+`
+	progressPassword = `[^/@\s]*`
 )
 
 var (
@@ -55,8 +62,9 @@ var (
 	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
 	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
-	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@\r\n]+:)[^@\r\n]*(@[^"\s<>{}|\\^[\]]+)`)
-	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
+	urlSecretRegex         = regexp.MustCompile(`(?i)(` + urlScheme + looseUsername + `:)` + loosePassword + `(@` + urlHost + `)`)
+	progressURLSecretRegex = regexp.MustCompile(`(?i)(` + urlScheme + progressUsername + `:)` + progressPassword + `(@` + urlHost + `)`)
+	residualSecretRegex    = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
 	// specified as comma-separated KEY=VALUE pairs, e.g.:
@@ -693,6 +701,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
 		{
+			p.Progress.Stdout = progressURLSecretRegex.ReplaceAllString(p.Progress.Stdout, "${1}<REDACTED>${2}")
+			p.Progress.Stderr = progressURLSecretRegex.ReplaceAllString(p.Progress.Stderr, "${1}<REDACTED>${2}")
 		}
 	case *bespb.BuildEvent_Aborted:
 		{
@@ -755,6 +765,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	case *bespb.BuildEvent_Completed:
 		{
 			p.Completed.DirectoryOutput = stripURLSecretsFromFiles(p.Completed.DirectoryOutput)
+			if p.Completed.FailureDetail != nil {
+				p.Completed.FailureDetail.Message = RedactText(p.Completed.FailureDetail.Message)
+			}
 		}
 	case *bespb.BuildEvent_TestResult:
 		{

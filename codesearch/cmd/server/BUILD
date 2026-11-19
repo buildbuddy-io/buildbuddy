@@ -14,6 +14,7 @@ go_library(
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/clientidentity",
         "//enterprise/server/remoteauth",
+        "//proto:bytestream_go_proto",
         "//proto:codesearch_service_go_proto",
         "//server/config",
         "//server/real_environment",
@@ -25,7 +26,6 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/monitoring",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],
 )

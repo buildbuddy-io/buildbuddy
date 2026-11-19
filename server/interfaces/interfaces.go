@@ -29,6 +29,7 @@ import (
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -63,7 +64,6 @@ import (
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -1098,6 +1098,10 @@ type SchedulerService interface {
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	CancelTask(ctx context.Context, taskID string) (bool, error)
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
+	// AuthorizeTaskWrites returns nil if the caller may write updates for the
+	// task, NotFound if the task does not exist, and PermissionDenied
+	// otherwise.
+	AuthorizeTaskWrites(ctx context.Context, taskID string) error
 	// WatchTaskLiveness returns a channel that the scheduler closes if it
 	// loses the task, meaning that the task no longer exists and so no
 	// executor will run it again. The scheduler watches the task until ctx is

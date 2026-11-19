@@ -40,11 +40,16 @@ var NoSync = pebble.NoSync
 var Sync = pebble.Sync
 var ErrNotFound = pebble.ErrNotFound
 
-var FormatNewest = pebble.FormatNewest
 var NewCache = pebble.NewCache
 var WithFlushedWAL = pebble.WithFlushedWAL
 var Peek = pebble.Peek
 var DefaultFS = vfs.Default
+
+const (
+	FormatMostCompatible  = pebble.FormatMostCompatible
+	FormatVirtualSSTables = pebble.FormatVirtualSSTables
+	FormatNewest          = pebble.FormatNewest
+)
 
 type FormatMajorVersion = pebble.FormatMajorVersion
 type Options = pebble.Options
@@ -501,7 +506,7 @@ type leaser struct {
 // to prevent leaks. The DB cannot be closed until all handles are returned.
 //
 // Once the DB leaser has been closed with Close(), no new handles can be
-// acquired, instead an error is returned.
+// acquired, instead an Unavailable error is returned.
 func NewDBLeaser(db IPebbleDB) Leaser {
 	return &leaser{db: db}
 }
@@ -523,7 +528,9 @@ func (l *leaser) DB() (IPebbleDB, error) {
 	l.closedMu.RLock()
 	defer l.closedMu.RUnlock()
 	if l.closed {
-		return nil, status.FailedPreconditionError("db is closed")
+		// The DB is closed during shutdown. Return Unavailable so that
+		// clients retry, likely against another server.
+		return nil, status.UnavailableError("db is closed")
 	}
 
 	handle := &refCountedDB{
@@ -539,7 +546,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 		}
 		handle.finalizerSet = true
 		runtime.SetFinalizer(handle, func(h *refCountedDB) {
-			if !h.refCounter.closed {
+			if !h.refCounter.closed.Load() {
 				alert.UnexpectedEvent("pebble_db_handle_leak", "DB() handle leak at %s!", location)
 			}
 		})
@@ -549,20 +556,20 @@ func (l *leaser) DB() (IPebbleDB, error) {
 
 type refCounter struct {
 	wg     *sync.WaitGroup
-	closed bool
+	closed atomic.Bool
 }
 
 func newRefCounter(wg *sync.WaitGroup) *refCounter {
 	wg.Add(1)
 	return &refCounter{
-		wg:     wg,
-		closed: false,
+		wg: wg,
 	}
 }
 
 func (r *refCounter) Close() error {
-	if !r.closed {
-		r.closed = true
+	// CompareAndSwap ensures only one of several concurrent Close calls
+	// decrements the WaitGroup.
+	if r.closed.CompareAndSwap(false, true) {
 		r.wg.Add(-1)
 	}
 	return nil

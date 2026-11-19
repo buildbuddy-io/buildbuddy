@@ -83,6 +83,8 @@ var (
 	enableDriver                  = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup              = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload         = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+	enableAutoRatchet             = flag.Bool("cache.raft.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to the version set by cache.raft.auto_ratchet_format_major_version.")
+	autoRatchetFormatMajorVersion = flag.Uint64("cache.raft.auto_ratchet_format_major_version", uint64(pebble.FormatVirtualSSTables), "The pebble format major version to upgrade to when cache.raft.enable_auto_ratchet is set. The default, 16 (FormatVirtualSSTables), is the newest format pebble v1 supports. Upgrades cannot be undone, and versions above 16 require pebble v2.")
 	blockCacheSizeBytes           = flag.Int64("cache.raft.block_cache_size_bytes", 1e9, "How much ram to give the block cache")
 	dragonboatBlockCacheSizeBytes = flag.Uint64("cache.raft.dragonboat_block_cache_size_bytes", 1e9, "How much ram to give the block cache in dragonboat")
 )
@@ -311,6 +313,10 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	if !*enableDriver && raftConfig.TargetRangeSizeBytes() > 0 {
 		return nil, status.FailedPreconditionError("misconfigured: enable_driver is false but target_range_size_bytes is set; splitting requires the driver to be enabled")
 	}
+	ratchetFormat := pebble.FormatMajorVersion(*autoRatchetFormatMajorVersion)
+	if *enableAutoRatchet && (ratchetFormat < pebble.FormatMostCompatible || ratchetFormat > pebble.FormatNewest) {
+		return nil, status.InvalidArgumentErrorf("misconfigured: auto_ratchet_format_major_version %d is outside the supported range [%s, %s]", *autoRatchetFormatMajorVersion, pebble.FormatMostCompatible, pebble.FormatNewest)
+	}
 
 	raftListener := listener.NewRaftListener()
 
@@ -330,10 +336,26 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	if pebbleOpts.Cache != nil {
 		defer pebbleOpts.Cache.Unref()
 	}
+	if *enableAutoRatchet {
+		pebbleOpts.FormatMajorVersion = ratchetFormat
+		fs := pebbleOpts.FS
+		if fs == nil {
+			fs = pebble.DefaultFS
+		}
+		// Peek requires RootDir to exist. Callers create it before New, and
+		// dragonboat.NewNodeHost creates subdirectories under it.
+		// Peek is only used for logging; pebble.Open reports real errors.
+		if desc, err := pebble.Peek(cfg.RootDir, fs); err != nil {
+			log.Warningf("Raft store: failed to read pebble format before open: %s", err)
+		} else if desc.Exists && desc.FormatMajorVersion < pebbleOpts.FormatMajorVersion {
+			log.Infof("Raft store: upgrading pebble format from %s to %s", desc.FormatMajorVersion, pebbleOpts.FormatMajorVersion)
+		}
+	}
 	db, err := pebble.Open(cfg.RootDir, "raft_store", pebbleOpts)
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("Raft store: pebble format major version is %s", db.FormatMajorVersion())
 	leaser := pebble.NewDBLeaser(db)
 
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
@@ -437,14 +459,14 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	// StartOnDiskReplica can be blocked when the the buffered leaderChangeListener channel is full.
 	s.leaseKeeper.Start()
 
-	s.updateTagsWorker.Start()
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	s.egCancel = cancelFunc
 
 	eg, gctx := errgroup.WithContext(ctx)
 	s.eg = eg
 	s.egCtx = gctx
+	// The worker uses egCtx, so start it after that is set.
+	s.updateTagsWorker.Start()
 	eg.Go(func() error {
 		s.queryForMetarange(gctx)
 		return nil
@@ -781,7 +803,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	buf.WriteString("<pre>")
 	buf.WriteString(s.liveness.String() + "\n")
 
-	su := s.Usage()
+	su := s.usage(ctx)
 	buf.WriteString(fmt.Sprintf("%36s | Replicas: %4d | Leases: %7d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
@@ -2593,7 +2615,7 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 	}
 }
 
-func (s *Store) Usage() *rfpb.StoreUsage {
+func (s *Store) usage(ctx context.Context) *rfpb.StoreUsage {
 	su := &rfpb.StoreUsage{
 		Node: s.NodeDescriptor(),
 	}
@@ -2602,7 +2624,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	su.ReplicaCount = int64(len(s.openRanges))
 	s.rangeMu.RUnlock()
 
-	su.LeaseCount = s.leaseKeeper.LeaseCount(context.TODO())
+	su.LeaseCount = s.leaseKeeper.LeaseCount(ctx)
 	s.replicas.Range(func(key, value any) bool {
 		r, _ := value.(*replica.Replica)
 		ru, err := r.Usage()
@@ -2839,7 +2861,7 @@ func (w *updateTagsWorker) updateTags() error {
 
 	storeTags[constants.GRPCAddressTag] = w.store.grpcAddr
 
-	su := w.store.Usage()
+	su := w.store.usage(w.store.egCtx)
 	buf, err := proto.Marshal(su)
 	if err != nil {
 		return err

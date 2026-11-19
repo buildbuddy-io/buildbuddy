@@ -697,6 +697,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("Pebble Cache [%s]: format major version is %s", opts.Name, db.FormatMajorVersion())
 	clock := opts.Clock
 	if clock == nil {
 		clock = clockwork.NewRealClock()

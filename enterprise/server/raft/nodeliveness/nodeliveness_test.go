@@ -80,6 +80,18 @@ func (tp *testingProposer) SyncRead(ctx context.Context, _ []byte, batch *rfpb.B
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 
+// blockingProposer blocks every proposal until its context is done.
+type blockingProposer struct {
+	sender.ISender
+	proposing chan struct{}
+}
+
+func (bp *blockingProposer) SyncPropose(ctx context.Context, _ []byte, _ *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	bp.proposing <- struct{}{}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func TestAcquire(t *testing.T) {
 	proposer := newTestingProposer(t)
 	ctx := context.Background()
@@ -149,4 +161,30 @@ func TestEpochChangeOnLease(t *testing.T) {
 	nl, err = liveness2.BlockingGetCurrentNodeLiveness(ctx)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), nl.GetEpoch())
+}
+
+// Stop must abort a renewal that is in flight and refuse new ones, even when
+// the caller's context is still live.
+func TestStopAbortsRenewal(t *testing.T) {
+	proposer := &blockingProposer{proposing: make(chan struct{}, 2)}
+	liveness := nodeliveness.New(context.Background(), "replicaID-4", proposer)
+	lease := func() <-chan error {
+		errCh := make(chan error, 1)
+		go func() { errCh <- liveness.Lease(context.Background()) }()
+		return errCh
+	}
+	requireErrorSoon := func(errCh <-chan error) {
+		select {
+		case err := <-errCh:
+			require.Error(t, err)
+		case <-time.After(10 * time.Second):
+			require.FailNow(t, "renewal outlived Stop")
+		}
+	}
+
+	inFlight := lease()
+	<-proposer.proposing
+	require.NoError(t, liveness.Stop())
+	requireErrorSoon(inFlight)
+	requireErrorSoon(lease())
 }

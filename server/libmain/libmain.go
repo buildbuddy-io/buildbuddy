@@ -59,6 +59,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
@@ -69,9 +70,9 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	channelzservice "google.golang.org/grpc/channelz/service"
 )
 
@@ -339,6 +340,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	}
 	if irs := env.GetIPRulesService(); irs != nil {
 		irpb.RegisterIPRulesServiceServer(grpcServer, irs)
+	}
+	if ts := env.GetTelemetryServer(); ts != nil {
+		telpb.RegisterTelemetryServer(grpcServer, ts)
 	}
 
 }

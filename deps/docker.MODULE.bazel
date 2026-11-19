@@ -81,6 +81,12 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "erofs_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/test_images/erofs_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
     name = "xfsprogs_image",
     dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/test_images/xfsprogs_image:Dockerfile",
     visibility = ["//visibility:public"],

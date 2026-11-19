@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -44,12 +45,52 @@ func TestCloseLeasedDB(t *testing.T) {
 
 	// DB is now closed; check that leasing fails.
 	_, err = leaser.DB()
-	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable, got %v", err)
 
 	// Check that the db lease was returned before the leaser closed
 	// (even though we did these in opposite order). This is to check
 	// that the serialization is working properly.
 	require.Less(t, dbReturnTime, leaserCloseTime)
+}
+
+func TestConcurrentCloseLeasedDB(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+	defer db.Close()
+
+	leaser := pebble.NewDBLeaser(db)
+	handle1, err := leaser.DB()
+	require.NoError(t, err)
+	handle2, err := leaser.DB()
+	require.NoError(t, err)
+
+	// Close the same handle from many goroutines; only one lease should be
+	// returned.
+	eg := errgroup.Group{}
+	for range 100 {
+		eg.Go(handle1.Close)
+	}
+	require.NoError(t, eg.Wait())
+
+	// handle2 is still leased, so leaser.Close must keep waiting.
+	leaserClosed := make(chan struct{})
+	go func() {
+		leaser.Close()
+		close(leaserClosed)
+	}()
+	select {
+	case <-leaserClosed:
+		require.FailNow(t, "leaser closed while a lease was still held")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	require.NoError(t, handle2.Close())
+	select {
+	case <-leaserClosed:
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "leaser did not close after all leases were returned")
+	}
 }
 
 func TestRatchetDB(t *testing.T) {

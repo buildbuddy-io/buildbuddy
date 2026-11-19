@@ -8,10 +8,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"gorm.io/gorm/clause"
@@ -21,8 +23,9 @@ import (
 )
 
 var (
-	telemetryPort = flag.Int("telemetry_port", 9099, "The port on which to listen for telemetry events")
-	_             = flag.Bool("verbose_telemetry_server", false, "If true; print telemetry server information")
+	telemetryPort   = flag.Int("telemetry_port", 9099, "The port on which to listen for telemetry events")
+	serveOnGRPCPort = flag.Bool("telemetry.serve_on_grpc_port", false, "If true, also accept telemetry events on the main gRPC port(s), in addition to the telemetry port.")
+	_               = flag.Bool("verbose_telemetry_server", false, "If true; print telemetry server information")
 )
 
 type TelemetryServer struct {
@@ -37,12 +40,25 @@ func NewTelemetryServer(env environment.Env, h interfaces.DBHandle) *TelemetrySe
 	}
 }
 
-func (t *TelemetryServer) StartOrDieIfEnabled() {
-	if *telemetryPort < 0 {
-		log.Debug("Telemetry collection disabled")
-		return
+// Register starts the telemetry server on the telemetry port and, if
+// telemetry.serve_on_grpc_port is set, also serves it on the main gRPC port(s).
+func Register(env *real_environment.RealEnv) error {
+	t := NewTelemetryServer(env, env.GetDBHandle())
+	if err := t.startOnTelemetryPort(); err != nil {
+		return err
 	}
-	log.Debug("Telemetry collection enabled")
+	if *serveOnGRPCPort {
+		env.SetTelemetryServer(t)
+	}
+	return nil
+}
+
+func (t *TelemetryServer) startOnTelemetryPort() error {
+	if *telemetryPort < 0 {
+		log.Debug("Telemetry port disabled")
+		return nil
+	}
+	log.Debug("Telemetry port enabled")
 
 	grpcOptions := []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(t.env),
@@ -54,12 +70,13 @@ func (t *TelemetryServer) StartOrDieIfEnabled() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *telemetryPort))
 	if err != nil {
-		log.Fatalf("Failed to listen on telemetry port: %s", err)
+		return status.UnavailableErrorf("listen on telemetry port: %s", err)
 	}
 	go func() {
 		err := grpcServer.Serve(lis)
 		log.Fatal(err.Error())
 	}()
+	return nil
 }
 
 func (t *TelemetryServer) LogTelemetry(ctx context.Context, req *telpb.LogTelemetryRequest) (*telpb.LogTelemetryResponse, error) {

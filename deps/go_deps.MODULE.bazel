@@ -368,7 +368,6 @@ use_repo(
     "land_charm_lipgloss_v2",
     "org_golang_google_api",
     "org_golang_google_genproto_googleapis_api",
-    "org_golang_google_genproto_googleapis_bytestream",
     "org_golang_google_genproto_googleapis_rpc",
     "org_golang_google_grpc",
     "org_golang_google_protobuf",

@@ -28,6 +28,11 @@ go_library(
 go_test(
     name = "ociconv_test",
     srcs = ["ociconv_test.go"],
+    exec_properties = {
+        # OCI seccomp blocks the user namespace needed for mounts.
+        "test.workload-isolation-type": "firecracker",
+        "test.EstimatedComputeUnits": "1",
+    },
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":ociconv",
@@ -39,6 +44,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/testutil/testmount",
         "//server/util/claims",
         "//server/util/hash",
         "//server/util/testing/flags",

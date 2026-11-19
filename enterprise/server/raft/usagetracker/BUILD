@@ -41,7 +41,6 @@ go_test(
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
-        "//server/util/approxlru",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//require",

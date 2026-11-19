@@ -64,15 +64,12 @@ go_test(
 
 go_test(
     name = "usage_test_clickhouse",
-    size = "small",
     srcs = ["usage_test.go"],
-    args = [
-        "-test_clickhouse_enabled=true",
-        # TODO(bduffany): Remove test filter, add ClickHouse test logic to all
-        # test cases, and enable test sharding before we fully enable
-        # ClickHouse in prod.
-        "-test.run=TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod|TestClickHouseUsageView_DedupesDuplicateRawUsageRows",
-    ],
+    args = ["-test_clickhouse_enabled=true"],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "4",
+    },
+    shard_count = 4,
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",

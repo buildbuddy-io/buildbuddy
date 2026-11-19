@@ -18,8 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"golang.org/x/sync/errgroup"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func findMissingInSecondary(ctx context.Context, router interfaces.CacheRoutingService, b *batch_operator.DigestBatch) ([]*repb.Digest, error) {

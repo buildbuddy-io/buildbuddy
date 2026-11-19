@@ -51,6 +51,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -58,7 +59,6 @@ import (
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	ctrtypes "github.com/google/go-containerregistry/pkg/v1/types"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
