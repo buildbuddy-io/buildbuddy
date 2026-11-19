@@ -3,6 +3,7 @@ package storemap
 import (
 	"encoding/base64"
 	"flag"
+	"math"
 	"sync"
 	"time"
 
@@ -21,7 +22,21 @@ var (
 	deadStoreTimeout             = flag.Duration("cache.raft.dead_store_timeout", 5*time.Minute, "The amount of time after which we didn't receive alive status for a node, consider a store dead")
 	suspectStoreDuration         = flag.Duration("cache.raft.suspect_store_duration", 30*time.Second, "The amount of time we consider a node suspect after it becomes unavailable")
 	leaseRebalanceStableDuration = flag.Duration("cache.raft.lease_rebalance_stable_duration", 5*time.Minute, "The amount of time all stores must remain available and ready before lease rebalancing is allowed")
+	qpsEWMATimeConstant          = flag.Duration("cache.raft.qps_ewma_time_constant", 2*time.Minute, "Time constant for smoothing gossiped store QPS before it is used in rebalancing decisions. 0 to use raw values.")
+
+	// LoadBasedRebalance is declared here (the lowest common dependency of
+	// the store, storemap and driver packages) so that all three can gate
+	// their load-based-rebalancing behavior on it. With the flag off,
+	// cluster behavior is unchanged: no periodic usage gossip, no QPS
+	// smoothing, count-based rebalancing only.
+	LoadBasedRebalance = flag.Bool("cache.raft.enable_load_based_rebalance", false, "If true, rebalance leases on read QPS and replicas on propose QPS when there is enough load, instead of on counts")
 )
+
+// QPSEWMATimeConstant exposes the smoothing time constant so the driver can
+// size its pending-move adjustments to outlive gossip lag.
+func QPSEWMATimeConstant() time.Duration {
+	return *qpsEWMATimeConstant
+}
 
 type storeStatus int
 
@@ -49,6 +64,13 @@ type IStoreMap interface {
 
 type StoreDetail struct {
 	usage *rfpb.StoreUsage
+
+	// Exponentially-weighted moving averages of the gossiped QPS values.
+	// Rebalancing decisions read these instead of the raw 5-second-window
+	// values so that short traffic spikes don't trigger moves.
+	readQPSEWMA         float64
+	raftProposeQPSEWMA  float64
+	lastUsageObservedAt time.Time
 
 	// The node host ID of the store
 	nhid string
@@ -238,13 +260,52 @@ func (sm *StoreMap) updateStoreDetail(nhid string, usage *rfpb.StoreUsage, nodeS
 	defer sm.mu.Unlock()
 
 	detail := sm.getDetailLocked(nhid)
+	now := sm.clock.Now()
 	if usage != nil {
 		detail.usage = usage
+		detail.updateQPSEWMALocked(usage, now)
 	}
-	now := sm.clock.Now()
 	currentlyAlive := nodeStatus == serf.StatusAlive
 	detail.updateTransitionsLocked(currentlyAlive, now)
 	return nil
+}
+
+// updateQPSEWMALocked folds a newly gossiped usage sample into the QPS
+// moving averages using a time-based alpha, so the smoothing strength is
+// independent of how often usage happens to be gossiped.
+func (sd *StoreDetail) updateQPSEWMALocked(usage *rfpb.StoreUsage, now time.Time) {
+	tau := qpsEWMATimeConstant.Seconds()
+	if tau <= 0 || sd.lastUsageObservedAt.IsZero() {
+		sd.readQPSEWMA = float64(usage.GetReadQps())
+		sd.raftProposeQPSEWMA = float64(usage.GetRaftProposeQps())
+		sd.lastUsageObservedAt = now
+		return
+	}
+	dt := now.Sub(sd.lastUsageObservedAt).Seconds()
+	if dt < 0 {
+		dt = 0
+	}
+	alpha := 1 - math.Exp(-dt/tau)
+	sd.readQPSEWMA += alpha * (float64(usage.GetReadQps()) - sd.readQPSEWMA)
+	sd.raftProposeQPSEWMA += alpha * (float64(usage.GetRaftProposeQps()) - sd.raftProposeQPSEWMA)
+	sd.lastUsageObservedAt = now
+}
+
+// smoothedUsageLocked returns a copy of the store's usage with the QPS
+// fields replaced by their smoothed values when load-based rebalancing is
+// enabled. The raw gossiped values stay untouched on sd.usage. The returned
+// clone is owned by the caller (callers hand it to
+// createStoresWithStatsNoClone, avoiding a second copy).
+func (sd *StoreDetail) smoothedUsageLocked() *rfpb.StoreUsage {
+	if sd.usage == nil {
+		return nil
+	}
+	usage := sd.usage.CloneVT()
+	if *LoadBasedRebalance && qpsEWMATimeConstant.Seconds() > 0 {
+		usage.ReadQps = int64(sd.readQPSEWMA)
+		usage.RaftProposeQps = int64(sd.raftProposeQPSEWMA)
+	}
+	return usage
 }
 
 // OnEvent listens for other nodes' gossip events and handles them.
@@ -283,9 +344,19 @@ type StoresWithStats struct {
 }
 
 func CreateStoresWithStats(usages []*rfpb.StoreUsage) *StoresWithStats {
+	cloned := make([]*rfpb.StoreUsage, 0, len(usages))
+	for _, usage := range usages {
+		cloned = append(cloned, usage.CloneVT())
+	}
+	return createStoresWithStatsNoClone(cloned)
+}
+
+// createStoresWithStatsNoClone is CreateStoresWithStats for callers that
+// already own the usages (e.g. clones from smoothedUsageLocked).
+func createStoresWithStatsNoClone(usages []*rfpb.StoreUsage) *StoresWithStats {
 	res := &StoresWithStats{}
 	for _, usage := range usages {
-		res.Usages = append(res.Usages, usage.CloneVT())
+		res.Usages = append(res.Usages, usage)
 		res.ReplicaCount.update(usage.GetReplicaCount())
 		res.LeaseCount.update(usage.GetLeaseCount())
 		res.ReadQPS.update(usage.GetReadQps())
@@ -308,10 +379,10 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 	for _, sd := range sm.storeDetails {
 		status := sd.refreshAndComputeStatusLocked(memberStatus, now)
 		if status == storeStatusAvailable {
-			alive = append(alive, sd.usage)
+			alive = append(alive, sd.smoothedUsageLocked())
 		}
 	}
-	return CreateStoresWithStats(alive)
+	return createStoresWithStatsNoClone(alive)
 }
 
 // Returns stores with stats that are not dead (include both alive and suspect).
@@ -332,10 +403,10 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 		status := sd.refreshAndComputeStatusLocked(memberStatus, now)
 
 		if status == storeStatusAvailable || status == storeStatusSuspect {
-			alive = append(alive, sd.usage)
+			alive = append(alive, sd.smoothedUsageLocked())
 		}
 	}
-	return CreateStoresWithStats(alive)
+	return createStoresWithStatsNoClone(alive)
 }
 
 func (sm *StoreMap) AllStoresAvailableAndReady() bool {
