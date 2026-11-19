@@ -35,12 +35,12 @@ import (
 	dbconfig "github.com/lni/dragonboat/v4/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
-	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 )
 
 var (

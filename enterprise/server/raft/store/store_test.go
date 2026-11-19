@@ -29,9 +29,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 )
 
 func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64) []*rfpb.ReplicaDescriptor {

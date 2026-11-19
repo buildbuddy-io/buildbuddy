@@ -68,11 +68,11 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
-	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 )
 
 var (

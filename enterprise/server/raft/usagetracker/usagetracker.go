@@ -31,10 +31,10 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 )
 
 var (

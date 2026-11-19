@@ -10,12 +10,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/stretchr/testify/require"
 
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
-	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 )
 
 // Benchmarks for the apply path of the two mutations that dominate cache write

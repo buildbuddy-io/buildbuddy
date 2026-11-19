@@ -34,6 +34,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	guuid "github.com/google/uuid"
@@ -41,7 +42,6 @@ import (
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	dbrd "github.com/lni/goutils/random"
-	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 )
 
 func localAddr(t *testing.T) string {
