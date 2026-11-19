@@ -29,6 +29,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -1257,6 +1258,9 @@ func TestLookupBazelInvocationOutputs_FetchesEveryPage(t *testing.T) {
 	assert.Equal(t, "b", outputs[1].GetName())
 	require.Len(t, client.requests, 3)
 	for _, req := range client.requests {
-		require.NotNil(t, req.Status, "an unset status returns every group's metadata instead of the artifact listing")
+		require.Equal(t, cmnpb.Status_STATUS_UNSPECIFIED, req.GetStatus())
+		// Explicitly check for nil because GetStatus() also returns zero when the status is unset.
+		// An unset status returns every group's metadata instead of the artifact listing.
+		require.NotNil(t, req.Status)
 	}
 }

@@ -881,7 +881,11 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 		}
 		// An invocation still being finalized can return an empty page with a
 		// token pointing back at the same offset.
-		if g.GetNextPageToken() == "" || len(g.GetTargets()) == 0 {
+		unfinalized := g.GetNextPageToken() != "" && len(g.GetTargets()) == 0
+		if unfinalized {
+			log.Warnf("Invocation %q is still being finalized; downloaded outputs may be incomplete.", invocationID)
+		}
+		if g.GetNextPageToken() == "" || unfinalized {
 			return outputs, nil
 		}
 		pageToken = g.GetNextPageToken()

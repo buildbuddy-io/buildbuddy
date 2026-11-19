@@ -67,6 +67,7 @@ go_test(
         "//proto:git_go_proto",
         "//proto:runner_go_proto",
         "//proto:target_go_proto",
+        "//proto/api/v1:common_go_proto",
         "//server/testutil/testgit",
         "//server/testutil/testshell",
         "//server/util/lockingbuffer",
