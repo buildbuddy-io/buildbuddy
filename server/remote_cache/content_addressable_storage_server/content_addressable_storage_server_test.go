@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1646,28 +1647,34 @@ func (c *treeCacheSpy) FindMissing(ctx context.Context, rns []*rspb.ResourceName
 }
 
 func (c *treeCacheSpy) Set(ctx context.Context, rn *rspb.ResourceName, data []byte) error {
-	if isTreeCacheRN(rn) {
-		c.mu.Lock()
-		if rn.GetCacheType() == rspb.CacheType_AC {
-			ar := &repb.ActionResult{}
-			if err := proto.Unmarshal(data, ar); err == nil {
-				c.pointers = append(c.pointers, ar)
-				c.pointerRNs = append(c.pointerRNs, rn)
-				if c.stripPointerMetadata {
-					ar.ExecutionMetadata = nil
-					data, _ = proto.Marshal(ar)
-				}
-			}
-		} else {
-			tc := &capb.TreeCache{}
-			if err := proto.Unmarshal(data, tc); err == nil {
-				c.blobWrites = append(c.blobWrites, tc)
-				c.blobWriteRNs = append(c.blobWriteRNs, rn)
-			}
-		}
-		c.mu.Unlock()
+	if !isTreeCacheRN(rn) {
+		return c.Cache.Set(ctx, rn, data)
 	}
-	return c.Cache.Set(ctx, rn, data)
+	ar := &repb.ActionResult{}
+	tc := &capb.TreeCache{}
+	isPointer := rn.GetCacheType() == rspb.CacheType_AC
+	if isPointer {
+		if err := proto.Unmarshal(data, ar); err == nil && c.stripPointerMetadata {
+			ar.ExecutionMetadata = nil
+			data, _ = proto.Marshal(ar)
+		}
+	} else {
+		_ = proto.Unmarshal(data, tc)
+	}
+	if err := c.Cache.Set(ctx, rn, data); err != nil {
+		return err
+	}
+	// Recorded only once readable so that waitForPointers is a reliable signal.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if isPointer {
+		c.pointers = append(c.pointers, ar)
+		c.pointerRNs = append(c.pointerRNs, rn)
+	} else {
+		c.blobWrites = append(c.blobWrites, tc)
+		c.blobWriteRNs = append(c.blobWriteRNs, rn)
+	}
+	return nil
 }
 
 func (c *treeCacheSpy) resetCounts() {
@@ -1704,9 +1711,13 @@ type treeResult struct {
 }
 
 func getTreeWithSubtrees(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, rootDigest *repb.Digest) treeResult {
+	return getTree(ctx, t, casClient, rootDigest, true)
+}
+
+func getTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, rootDigest *repb.Digest, sendSubtrees bool) treeResult {
 	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
 		RootDigest:               rootDigest,
-		SendCachedSubtreeDigests: true,
+		SendCachedSubtreeDigests: sendSubtrees,
 	})
 	require.NoError(t, err)
 	res := treeResult{dirs: map[string]bool{}, subtrees: map[string]bool{}}
@@ -1724,6 +1735,38 @@ func getTreeWithSubtrees(ctx context.Context, t *testing.T, casClient repb.Conte
 		for _, st := range rsp.GetSubtrees() {
 			res.subtrees[st.GetDigest().GetHash()] = true
 		}
+	}
+}
+
+// subtreeDirCount returns the dir count recorded in the pointer to the tree
+// cache blob with the given hash.
+func (c *treeCacheSpy) subtreeDirCount(t *testing.T, blobHash string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, ar := range c.pointers {
+		if ar.GetOutputFiles()[0].GetDigest().GetHash() != blobHash {
+			continue
+		}
+		meta := &capb.TreeCachePointerMetadata{}
+		require.NoError(t, ar.GetExecutionMetadata().GetAuxiliaryMetadata()[0].UnmarshalTo(meta))
+		return int(meta.GetDirCount())
+	}
+	require.FailNow(t, "no pointer for subtree", blobHash)
+	return 0
+}
+
+// assertCompleteTree checks that got, together with the subtrees it points to,
+// covers exactly the directories of the full tree under root.
+func (f *skipFetchFixture) assertCompleteTree(t *testing.T, root *repb.Digest, got treeResult) {
+	full := getTree(f.ctx, t, f.casClient, root, false)
+	require.Empty(t, full.subtrees)
+	n := len(got.dirs)
+	for h := range got.subtrees {
+		n += f.spy.subtreeDirCount(t, h)
+	}
+	assert.Equal(t, len(full.dirs), n)
+	for d := range got.dirs {
+		assert.Contains(t, full.dirs, d)
 	}
 }
 
@@ -1804,14 +1847,34 @@ func TestGetTreeSkipCachedSubtreeFetch(t *testing.T) {
 	assert.Positive(t, findMissing)
 }
 
+func TestGetTreeSkipCachedSubtreeFetch_SubtreeBelowMinDirCountIsSentInline(t *testing.T) {
+	f := setupSkipFetch(t, false)
+	flags.Set(t, "cache.get_tree_subtree_min_dir_count", 100000)
+
+	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", false)
+	want := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	require.Empty(t, want.subtrees)
+
+	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
+	f.spy.resetCounts()
+	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	gets, _ := f.spy.counts()
+	assert.Equal(t, want, got)
+	assert.Positive(t, gets)
+	f.assertCompleteTree(t, f.rootDigest2, got)
+}
+
 func TestGetTreeSkipCachedSubtreeFetch_OldFormatPointer(t *testing.T) {
 	f := setupSkipFetch(t, true)
+	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", false)
+	want := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	require.Len(t, want.subtrees, 1)
 	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
 
 	f.spy.resetCounts()
 	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
 	gets, findMissing := f.spy.counts()
-	assert.Len(t, got.subtrees, 1)
+	assert.Equal(t, want, got)
 	assert.Positive(t, gets)
 	assert.Zero(t, findMissing)
 }
@@ -1819,8 +1882,7 @@ func TestGetTreeSkipCachedSubtreeFetch_OldFormatPointer(t *testing.T) {
 func TestGetTreeSkipCachedSubtreeFetch_MissingBlobFallsBackToWalk(t *testing.T) {
 	f := setupSkipFetch(t, false)
 	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", false)
-	want := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
-	require.Len(t, want.subtrees, 1)
+	full := getTree(f.ctx, t, f.casClient, f.rootDigest2, false)
 
 	// Evict the blobs of both cached subtrees (child1 and child2).
 	for i := range 2 {
@@ -1830,11 +1892,7 @@ func TestGetTreeSkipCachedSubtreeFetch_MissingBlobFallsBackToWalk(t *testing.T) 
 	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
 	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
 	assert.Empty(t, got.subtrees)
-	// Everything that was in the cached subtree is now sent inline.
-	assert.Greater(t, len(got.dirs), len(want.dirs)+1000)
-	for d := range want.dirs {
-		assert.True(t, got.dirs[d])
-	}
+	assert.Equal(t, full.dirs, got.dirs)
 }
 
 func TestGetTreeSkipCachedSubtreeFetch_MissingSplitChildFallsBackToWalk(t *testing.T) {
@@ -1843,12 +1901,30 @@ func TestGetTreeSkipCachedSubtreeFetch_MissingSplitChildFallsBackToWalk(t *testi
 	f := setupSplitSkipFetch(t)
 
 	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
+	f.spy.resetCounts()
 	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	gets, findMissing := f.spy.counts()
 	require.Contains(t, got.subtrees, f.splitRootBlob.GetDigest().GetHash())
+	assert.Zero(t, gets)
+	assert.Positive(t, findMissing)
+	f.assertCompleteTree(t, f.rootDigest2, got)
 
 	require.NoError(t, f.cache.Delete(f.ctx, f.splitChildBlob))
 	got = getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
 	assert.NotContains(t, got.subtrees, f.splitRootBlob.GetDigest().GetHash())
+	f.assertCompleteTree(t, f.rootDigest2, got)
+}
+
+func TestGetTreeSkipCachedSubtreeFetch_SplitPointerIsAMissWhenSplittingDisabled(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_splitting", true)
+	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
+	f := setupSplitSkipFetch(t)
+
+	flags.Set(t, "cache.tree_cache_splitting", false)
+	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
+	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	assert.NotContains(t, got.subtrees, f.splitRootBlob.GetDigest().GetHash())
+	f.assertCompleteTree(t, f.rootDigest2, got)
 }
 
 func TestGetTreeSkipCachedSubtreeFetch_WriteAboveCachedSubtreeIncludesContents(t *testing.T) {
@@ -1882,6 +1958,8 @@ func setupSplitSkipFetch(t *testing.T) *skipFetchFixture {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	flags.Set(t, "cache.tree_cache_min_descendents", 2000)
 	flags.Set(t, "cache.get_tree_subtree_support", true)
+	const seed = "split-skip-fetch-test"
+	flags.Set(t, "cache.tree_cache_seed", seed)
 
 	te := testenv.GetTestEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
@@ -1896,6 +1974,8 @@ func setupSplitSkipFetch(t *testing.T) *skipFetchFixture {
 
 	nodeModules, _ := cas.MakeTree(ctx, t, bsClient, "", 10, 2)
 	child3, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
+	// Distinct from child3 so that no directory appears both inline and in a subtree.
+	child4, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
 	upload := func(d *repb.Directory) *repb.Digest {
 		rn, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, d)
 		require.NoError(t, err)
@@ -1904,7 +1984,7 @@ func setupSplitSkipFetch(t *testing.T) *skipFetchFixture {
 	inner := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "node_modules", Digest: nodeModules}, {Name: "child3", Digest: child3}}})
 	w := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "inner", Digest: inner}}})
 	x := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "w", Digest: w}}})
-	y := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "w", Digest: w}, {Name: "child3", Digest: child3}}})
+	y := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "w", Digest: w}, {Name: "child4", Digest: child4}}})
 
 	// Caches w, inner and node_modules.
 	cas.ReadTree(ctx, t, casClient, "", x)
@@ -1912,14 +1992,19 @@ func setupSplitSkipFetch(t *testing.T) *skipFetchFixture {
 	flags.Set(t, "cache.tree_cache_write_probability", 0.0)
 
 	f := &skipFetchFixture{ctx: ctx, spy: spy, cache: c, casClient: casClient, rootDigest2: y}
-	for i, ar := range spy.pointers {
-		meta := &capb.TreeCachePointerMetadata{}
-		require.NoError(t, ar.GetExecutionMetadata().GetAuxiliaryMetadata()[0].UnmarshalTo(meta))
-		if len(meta.GetTreeCacheChildren()) > 0 {
-			f.splitRootBlob = spy.blobRN(i)
-			f.splitChildBlob = meta.GetTreeCacheChildren()[0]
-		}
-	}
-	require.NotNil(t, f.splitRootBlob, "expected a split tree cache entry")
+	// The split entry is w's: it is the one reached from y as a cached subtree.
+	wPointer, err := digest.Compute(strings.NewReader(w.GetHash()+seed), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	spy.mu.Lock()
+	idx := slices.IndexFunc(spy.pointerRNs, func(rn *rspb.ResourceName) bool {
+		return rn.GetCacheType() == rspb.CacheType_AC && rn.GetDigest().GetHash() == wPointer.GetHash()
+	})
+	spy.mu.Unlock()
+	require.GreaterOrEqual(t, idx, 0, "expected a tree cache pointer for w")
+	meta := &capb.TreeCachePointerMetadata{}
+	require.NoError(t, spy.pointers[idx].GetExecutionMetadata().GetAuxiliaryMetadata()[0].UnmarshalTo(meta))
+	require.NotEmpty(t, meta.GetTreeCacheChildren(), "expected w's entry to be split")
+	f.splitRootBlob = spy.blobRN(idx)
+	f.splitChildBlob = meta.GetTreeCacheChildren()[0]
 	return f
 }

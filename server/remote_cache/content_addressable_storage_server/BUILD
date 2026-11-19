@@ -33,6 +33,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/proto",
         "//server/util/quota",
+        "//server/util/rexec",
         "//server/util/rpcutil",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
