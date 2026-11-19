@@ -27,9 +27,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
