@@ -192,6 +192,10 @@ func TestConvertContainerToErofs_Metadata(t *testing.T) {
 		{Header: hdr(tar.Header{Name: "deleted", Typeflag: tar.TypeReg, Mode: 0o644}), Data: []byte("deleted")},
 	})
 	upper := testtar.EntriesBytes(t, []testtar.Entry{
+		// Archive metadata, as written by e.g. `git archive`; not a file.
+		{Header: &tar.Header{Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader, Format: tar.FormatPAX, PAXRecords: map[string]string{"comment": "abc123"}}},
+		// GNU tar extracts contiguous files as regular files.
+		{Header: hdr(tar.Header{Name: "bin/cont", Typeflag: tar.TypeCont, Mode: 0o644}), Data: []byte("cont")},
 		// Precedes its parent dir's entry, which comes from the lower layer.
 		{Header: hdr(tar.Header{Name: "etc/hostname", Typeflag: tar.TypeReg, Mode: 0o644, Uid: 9, Gid: 9}), Data: []byte("box")},
 		// Precedes its target, which comes from the lower layer.
@@ -215,6 +219,7 @@ func TestConvertContainerToErofs_Metadata(t *testing.T) {
 		"bin/su":       2,
 		"bin/su2":      2,
 		"bin/ping":     4,
+		"bin/cont":     4,
 	}, regularFileSizes(t, fsys))
 
 	etc := erofsStat(t, fsys, "etc")

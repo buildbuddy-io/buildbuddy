@@ -484,6 +484,11 @@ func tarToErofs(ctx context.Context, tr *tar.Reader, w *erofs.Writer) error {
 		if err != nil {
 			return status.UnavailableErrorf("read image tarball: %s", err)
 		}
+		// Global PAX headers hold archive metadata (e.g. git archive's
+		// commit ID), not files.
+		if hdr.Typeflag == tar.TypeXGlobalHeader {
+			continue
+		}
 		name := path.Join("/", hdr.Name)
 		if hiddenByUpperLayer(w, name, hdr.Typeflag == tar.TypeDir) {
 			continue
@@ -531,7 +536,7 @@ func addTarEntry(tr *tar.Reader, w *erofs.Writer, name string, hdr *tar.Header) 
 		} else if err := w.Mkdir(name, mode); err != nil {
 			return err
 		}
-	case tar.TypeReg:
+	case tar.TypeReg, tar.TypeCont:
 		f, err := w.Create(name)
 		if err != nil {
 			return err
