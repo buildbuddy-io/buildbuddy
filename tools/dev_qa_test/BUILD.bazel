@@ -69,7 +69,7 @@ bazel_integration_test(
     # GitHub job's 30-minute timeout still bounds it.
     timeout = "eternal",
     bazel_binaries = bazel_binaries,
-    bazel_version = "9.3.1",
+    bazel_version = "9.3.3",
     env = {
         "QA_TARBALL_URL": "https://github.com/buildbuddy-io/buildbuddy/tarball/e79378aab31f690ed0315e5f502e39b1db410e9a",
         "QA_STRIP_PREFIX": "buildbuddy-io-buildbuddy-e79378a",
