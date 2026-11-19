@@ -942,7 +942,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 
 	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) (*fetchResult, error)
 	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) (*fetchResult, error) {
-		if len(dirWithDigest.Directory.Directories) == 0 {
+		if len(dirWithDigest.GetDirectory().GetDirectories()) == 0 {
 			return &fetchResult{
 				mainDirectories: []*capb.DirectoryWithDigest{dirWithDigest},
 			}, nil
@@ -976,8 +976,13 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		allCachedSubtrees := make([]*digest.ResourceName, 0)
 		allCachedSubtreeContents := make([]*capb.DirectoryWithDigest, 0)
 
+		leaves := children[:0]
 		eg, egCtx := errgroup.WithContext(ctx)
 		for _, childDirWithDigest := range children {
+			if len(childDirWithDigest.GetDirectory().GetDirectories()) == 0 {
+				leaves = append(leaves, childDirWithDigest)
+				continue
+			}
 			l := level
 			eg.Go(func() error {
 				grandchild, err := fetch(egCtx, childDirWithDigest, l+1)
@@ -1018,6 +1023,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if err := eg.Wait(); err != nil {
 			return nil, err
 		}
+		allDescendents = append(allDescendents, leaves...)
 
 		if *enableTreeCaching && level >= *minTreeCacheLevel && (len(allDescendents)+len(allCachedSubtreeContents)) >= *minTreeCacheDescendents {
 			if r := rand.Float64(); r <= *treeCacheWriteProbability {
