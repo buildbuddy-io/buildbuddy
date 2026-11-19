@@ -7,7 +7,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/stretchr/testify/require"
 
@@ -16,6 +15,7 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 )
 
 // Benchmarks for the apply path of the two mutations that dominate cache write
@@ -94,8 +94,9 @@ func writeStats(db pebble.IPebbleDB) pebbleWriteStats {
 	m := db.Metrics()
 	s := pebbleWriteStats{walBytes: m.WAL.BytesWritten}
 	for _, lm := range m.Levels {
-		s.flushedBytes += lm.BytesFlushed
-		s.compactedBytes += lm.BytesCompacted
+		// Blob bytes are non-zero only with value separation.
+		s.flushedBytes += lm.TableBytesFlushed + lm.BlobBytesFlushed
+		s.compactedBytes += lm.TableBytesCompacted + lm.BlobBytesCompacted
 	}
 	return s
 }

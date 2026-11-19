@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -28,7 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble/vfs"
+	"github.com/cockroachdb/pebble/v2/vfs"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -42,6 +41,7 @@ import (
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	dbrd "github.com/lni/goutils/random"
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 )
 
 func localAddr(t *testing.T) string {
@@ -180,9 +180,9 @@ type StoreOptions struct {
 	CrashablePebble bool
 }
 
-// newCrashableFS syncs dir and its parents so they survive ResetToSyncedState.
+// newCrashableFS syncs dir and its parents so they survive CrashClone.
 func newCrashableFS(t testing.TB, dir string) *vfs.MemFS {
-	fs := vfs.NewStrictMem()
+	fs := vfs.NewCrashableMem()
 	require.NoError(t, fs.MkdirAll(dir, 0755))
 	for {
 		d, err := fs.OpenDir(dir)
@@ -296,10 +296,10 @@ func (ts *TestingStore) Stop() {
 // Requires CrashablePebble; restart with StoreFactory.RecreateStore.
 func (ts *TestingStore) Crash() {
 	require.NotNil(ts.t, ts.pebbleFS, "Crash requires StoreOptions.CrashablePebble")
-	ts.pebbleFS.SetIgnoreSyncs(true)
+	// Clone before Stop so syncs during shutdown are not kept.
+	crashedFS := ts.pebbleFS.CrashClone(vfs.CrashCloneCfg{})
 	ts.Stop()
-	ts.pebbleFS.ResetToSyncedState()
-	ts.pebbleFS.SetIgnoreSyncs(false)
+	ts.pebbleFS = crashedFS
 }
 
 func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {

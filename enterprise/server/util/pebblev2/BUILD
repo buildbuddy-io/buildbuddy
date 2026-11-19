@@ -27,6 +27,7 @@ go_test(
     deps = [
         ":pebblev2",
         "//server/testutil/testfs",
+        "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
