@@ -3,9 +3,11 @@ package ociconv_test
 import (
 	"archive/tar"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -48,6 +51,28 @@ func sharedDiskImageNode(containerImage string) *repb.FileNode {
 }
 
 func TestOciconv(t *testing.T) {
+	testOciconv(t, ociconv.Ext4, func(ctx context.Context, imagePath, outDir string) error {
+		return ext4.ImageToDirectory(ctx, imagePath, outDir, []string{"/"})
+	})
+}
+
+func TestOciconvErofs(t *testing.T) {
+	fc, root, ref := testOciconv(t, ociconv.Erofs, func(ctx context.Context, imagePath, outDir string) error {
+		if out, err := exec.CommandContext(ctx, "fsck.erofs", "--extract="+outDir, imagePath).CombinedOutput(); err != nil {
+			return fmt.Errorf("fsck.erofs: %w: %s", err, out)
+		}
+		return nil
+	})
+	// Formats are cached separately.
+	cached, err := ociconv.IsImageCached(context.Background(), fc, root, ref, ociconv.Ext4)
+	require.NoError(t, err)
+	require.False(t, cached)
+}
+
+// testOciconv converts a test image to the given format, extracts it, and
+// checks that it contains the image's regular files. It returns the filecache,
+// cache root, and image ref used.
+func testOciconv(t *testing.T, format ociconv.ImageFormat, extract func(ctx context.Context, imagePath, outDir string) error) (interfaces.FileCache, string, string) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.local_cache_store_ext4_images", true)
@@ -66,8 +91,8 @@ func TestOciconv(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resolver)
 
-	path := filepath.Join(root, "materialized.ext4")
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, path)
+	path := filepath.Join(root, "materialized."+string(format))
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, format, oci.Credentials{}, false /*=useOCIFetcher*/, path)
 	require.NoError(t, err)
 
 	fi, err := os.Stat(path)
@@ -75,10 +100,8 @@ func TestOciconv(t *testing.T) {
 	require.False(t, fi.IsDir())
 	require.Greater(t, fi.Size(), int64(0))
 
-	// Extract ext4 image.
 	outDir := testfs.MakeTempDir(t)
-	err = ext4.ImageToDirectory(ctx, path, outDir, []string{"/"})
-	require.NoError(t, err)
+	require.NoError(t, extract(ctx, path, outDir))
 
 	// Build path->size map from the container image (regular files only).
 	rc := mutate.Extract(img)
@@ -105,7 +128,7 @@ func TestOciconv(t *testing.T) {
 		}
 	}
 
-	// Build path->size map from the extracted ext4 directory (regular files only).
+	// Build path->size map from the extracted directory (regular files only).
 	extractedFiles := make(map[string]int64)
 	err = filepath.Walk(outDir, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -126,6 +149,7 @@ func TestOciconv(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Empty(t, cmp.Diff(imageFiles, extractedFiles))
+	return fc, root, ref
 }
 
 func TestCreateDiskImage_UsesCredentialsOnCacheMiss(t *testing.T) {
@@ -177,13 +201,13 @@ func TestCreateDiskImage_UsesCredentialsOnCacheMiss(t *testing.T) {
 
 	// This should fail because the credentials are invalid and the image is not
 	// cached yet.
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, outputPath("first"))
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, ociconv.Ext4, oci.Credentials{}, false /*=useOCIFetcher*/, outputPath("first"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401 Unauthorized")
 
 	// This should succeed because the credentials are valid and the image is not
 	// cached yet.
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, ociconv.Ext4, oci.Credentials{
 		Username: "test",
 		Password: "test",
 	}, false /*=useOCIFetcher*/, outputPath("second"))
@@ -193,13 +217,13 @@ func TestCreateDiskImage_UsesCredentialsOnCacheMiss(t *testing.T) {
 	// Once the image is cached, CreateDiskImage's internal re-check should
 	// short-circuit before attempting another registry access, while still
 	// linking the cached image to the requested output path.
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, outputPath("third"))
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, ociconv.Ext4, oci.Credentials{}, false /*=useOCIFetcher*/, outputPath("third"))
 	require.NoError(t, err)
 	require.FileExists(t, outputPath("third"))
 
 	// A subsequent call with valid credentials should also succeed when the
 	// image is already cached.
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, ociconv.Ext4, oci.Credentials{
 		Username: "test",
 		Password: "test",
 	}, false /*=useOCIFetcher*/, outputPath("fourth"))
@@ -224,11 +248,11 @@ func TestLinkCachedImage_SharesAcrossGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx1 := claims.AuthContextWithJWT(context.Background(), &claims.Claims{GroupID: "GR1"}, nil)
-	require.NoError(t, ociconv.CreateDiskImage(ctx1, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, filepath.Join(root, "group1.ext4")))
+	require.NoError(t, ociconv.CreateDiskImage(ctx1, resolver, fc, root, ref, ociconv.Ext4, oci.Credentials{}, false /*=useOCIFetcher*/, filepath.Join(root, "group1.ext4")))
 
 	ctx2 := claims.AuthContextWithJWT(context.Background(), &claims.Claims{GroupID: "GR2"}, nil)
 	linkedPath := filepath.Join(root, "linked.ext4")
-	err = ociconv.LinkCachedImage(ctx2, fc, root, ref, linkedPath)
+	err = ociconv.LinkCachedImage(ctx2, fc, root, ref, ociconv.Ext4, linkedPath)
 	require.NoError(t, err)
 	require.FileExists(t, linkedPath)
 }
@@ -251,11 +275,11 @@ func TestCreateDiskImage_LegacyStorage(t *testing.T) {
 	require.NoError(t, err)
 
 	materializedPath := filepath.Join(root, "materialized.ext4")
-	require.NoError(t, ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, materializedPath))
+	require.NoError(t, ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, ociconv.Ext4, oci.Credentials{}, false /*=useOCIFetcher*/, materializedPath))
 	require.FileExists(t, materializedPath)
 
 	linkedPath := filepath.Join(root, "linked.ext4")
-	err = ociconv.LinkCachedImage(ctx, fc, root, ref, linkedPath)
+	err = ociconv.LinkCachedImage(ctx, fc, root, ref, ociconv.Ext4, linkedPath)
 	require.NoError(t, err)
 	require.FileExists(t, linkedPath)
 }
@@ -279,7 +303,7 @@ func TestMigrateImagesToFileCache(t *testing.T) {
 	require.True(t, fc.ContainsFile(sharedCtx, sharedDiskImageNode(containerImage)))
 
 	linkedPath := filepath.Join(root, "linked.ext4")
-	err = ociconv.LinkCachedImage(ctx, fc, root, containerImage, linkedPath)
+	err = ociconv.LinkCachedImage(ctx, fc, root, containerImage, ociconv.Ext4, linkedPath)
 	require.NoError(t, err)
 
 	content, err := os.ReadFile(linkedPath)
@@ -304,7 +328,7 @@ func TestLinkCachedImage_LegacyStorageWhenFileCacheDisabled(t *testing.T) {
 	require.DirExists(t, filepath.Join(root, "images", "ext4"))
 
 	linkedPath := filepath.Join(root, "linked.ext4")
-	err = ociconv.LinkCachedImage(ctx, fc, root, containerImage, linkedPath)
+	err = ociconv.LinkCachedImage(ctx, fc, root, containerImage, ociconv.Ext4, linkedPath)
 	require.NoError(t, err)
 
 	content, err := os.ReadFile(linkedPath)

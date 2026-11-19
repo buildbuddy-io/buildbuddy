@@ -43,6 +43,15 @@ const (
 	fileCacheSharedImagesNamespace = "ext4_images"
 )
 
+// ImageFormat is the filesystem format of a converted container image.
+type ImageFormat string
+
+const (
+	Ext4 ImageFormat = "ext4"
+	// Erofs is an uncompressed, read-only EROFS image.
+	Erofs ImageFormat = "erofs"
+)
+
 var (
 	isRoot = os.Getuid() == 0
 
@@ -72,11 +81,14 @@ func sharedFileCacheContext(ctx context.Context, fileCache interfaces.FileCache)
 	return fileCache.WithSharedDirectory(ctx, fileCacheSharedImagesNamespace)
 }
 
-func diskImageFileCacheKey(containerImage string) string {
-	// Match the legacy cacheRoot/images/ext4/<hash(containerImage)> layout so
-	// startup migration can reuse the existing directory name as the filecache
-	// key.
-	return hash.String(containerImage)
+func diskImageFileCacheKey(containerImage string, format ImageFormat) string {
+	if format == Ext4 {
+		// Match the legacy cacheRoot/images/ext4/<hash(containerImage)> layout
+		// so startup migration can reuse the existing directory name as the
+		// filecache key.
+		return hash.String(containerImage)
+	}
+	return hash.Strings(string(format), containerImage)
 }
 
 func diskImageFileNodeFromKey(key string) *repb.FileNode {
@@ -88,15 +100,24 @@ func diskImageFileNodeFromKey(key string) *repb.FileNode {
 	}
 }
 
-func diskImageFileNode(containerImage string) *repb.FileNode {
-	return diskImageFileNodeFromKey(diskImageFileCacheKey(containerImage))
+func diskImageFileNode(containerImage string, format ImageFormat) *repb.FileNode {
+	return diskImageFileNodeFromKey(diskImageFileCacheKey(containerImage, format))
 }
 
-// AddDiskImageToFileCache adds a prebuilt ext4 image using the same shared
+// checkLegacyFormat returns an error if format can't be stored in the legacy
+// cache directory, which only holds ext4 images.
+func checkLegacyFormat(format ImageFormat) error {
+	if format != Ext4 {
+		return status.UnimplementedErrorf("%s images require executor.local_cache_store_ext4_images", format)
+	}
+	return nil
+}
+
+// AddDiskImageToFileCache adds a prebuilt disk image using the same shared
 // filecache key that Firecracker uses for converted OCI images.
-func AddDiskImageToFileCache(ctx context.Context, fileCache interfaces.FileCache, containerImage, imagePath string) error {
+func AddDiskImageToFileCache(ctx context.Context, fileCache interfaces.FileCache, containerImage string, format ImageFormat, imagePath string) error {
 	sharedCtx := sharedFileCacheContext(ctx, fileCache)
-	node := diskImageFileNode(containerImage)
+	node := diskImageFileNode(containerImage, format)
 	return fileCache.AddFile(sharedCtx, node, imagePath)
 }
 
@@ -105,7 +126,7 @@ func AddDiskImageToFileCache(ctx context.Context, fileCache interfaces.FileCache
 // the same ref if the ref does not include a content digest (e.g. ":latest"
 // tag).
 func getDiskImagesPath(cacheRoot, containerImage string) string {
-	return filepath.Join(cacheRoot, "images", "ext4", diskImageFileCacheKey(containerImage))
+	return filepath.Join(cacheRoot, "images", "ext4", diskImageFileCacheKey(containerImage, Ext4))
 }
 
 func legacyDiskImagesRoot(cacheRoot string) string {
@@ -148,7 +169,7 @@ func legacyCachedDiskImagePathForKey(ctx context.Context, cacheRoot, cacheKey st
 }
 
 func legacyCachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) (string, error) {
-	return legacyCachedDiskImagePathForKey(ctx, cacheRoot, diskImageFileCacheKey(containerImage))
+	return legacyCachedDiskImagePathForKey(ctx, cacheRoot, diskImageFileCacheKey(containerImage, Ext4))
 }
 
 // MigrateImagesToFileCache scans the legacy images/ext4 tree and migrates the
@@ -199,14 +220,14 @@ func MigrateImagesToFileCache(ctx context.Context, fileCache interfaces.FileCach
 	return nil
 }
 
-// LinkCachedImage links a cached OCI ext4 image.
+// LinkCachedImage links a cached OCI disk image.
 // If outputPath is non-empty, the cached image is hardlinked there.
 //
 // IMPORTANT: Callers are responsible for authorizing access to the image.
-func LinkCachedImage(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage, outputPath string) error {
+func LinkCachedImage(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage string, format ImageFormat, outputPath string) error {
 	if *localCacheStoreExt4Images {
 		sharedCtx := sharedFileCacheContext(ctx, fileCache)
-		node := diskImageFileNode(containerImage)
+		node := diskImageFileNode(containerImage, format)
 		if ok := fileCache.FastLinkFile(sharedCtx, node, outputPath); ok {
 			log.CtxDebugf(ctx, "Linked cached %q disk image to %q", containerImage, outputPath)
 			return nil
@@ -215,6 +236,9 @@ func LinkCachedImage(ctx context.Context, fileCache interfaces.FileCache, cacheR
 		// return "Unknown" here. Since we control FastLinkFile, we should
 		// instead have it return (ok, err) and wrap the actual error.
 		return status.UnknownErrorf("failed to link image %q from local cache", containerImage)
+	}
+	if err := checkLegacyFormat(format); err != nil {
+		return err
 	}
 	legacyPath, err := legacyCachedDiskImagePath(ctx, cacheRoot, containerImage)
 	if err != nil {
@@ -230,13 +254,16 @@ func LinkCachedImage(ctx context.Context, fileCache interfaces.FileCache, cacheR
 	return nil
 }
 
-// IsImageCached checks whether an ext4 image is present in filecache (if
+// IsImageCached checks whether a disk image is present in filecache (if
 // enabled) or the legacy ext4 cache dir (if filecache is not enabled).
-func IsImageCached(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage string) (bool, error) {
+func IsImageCached(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage string, format ImageFormat) (bool, error) {
 	if *localCacheStoreExt4Images {
 		sharedCtx := sharedFileCacheContext(ctx, fileCache)
-		node := diskImageFileNode(containerImage)
+		node := diskImageFileNode(containerImage, format)
 		return fileCache.ContainsFile(sharedCtx, node), nil
+	}
+	if err := checkLegacyFormat(format); err != nil {
+		return false, err
 	}
 	legacyPath, err := legacyCachedDiskImagePath(ctx, cacheRoot, containerImage)
 	if err != nil {
@@ -246,12 +273,12 @@ func IsImageCached(ctx context.Context, fileCache interfaces.FileCache, cacheRoo
 }
 
 // CreateDiskImage pulls the image from the container registry, converts it to
-// ext4 format, stores it in the configured cache directory, and hardlinks the
-// cached image to outputPath.
+// the given format, stores it in the configured cache directory, and hardlinks
+// the cached image to outputPath.
 //
 // This function does NOT re-authenticate with the registry if the image is
 // already cached. Instead, the caller is responsible for doing so if needed.
-func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool, outputPath string) error {
+func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, format ImageFormat, creds oci.Credentials, useOCIFetcher bool, outputPath string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -259,7 +286,7 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	// we might be doing unnecessary concurrent pulls for the same image. In
 	// practice however, container.PullImageIfNecessary only allows one
 	// concurrent pull per image ref, so this should be fine.
-	conversionOpKeyParts := []string{cacheRoot, containerImage, creds.Username, creds.Password}
+	conversionOpKeyParts := []string{cacheRoot, containerImage, string(format), creds.Username, creds.Password}
 	if *localCacheStoreExt4Images {
 		// Dedupe image conversion operations since they are disk IO-heavy.
 		conversionOpKeyParts = append([]string{cacheRoot, fileCache.TempDir()}, conversionOpKeyParts[1:]...)
@@ -272,7 +299,7 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 
 		// Re-check the cache here so we can avoid duplicate conversion work if
 		// another caller populated the cache after the caller's initial lookup.
-		cached, err := IsImageCached(ctx, fileCache, cacheRoot, containerImage)
+		cached, err := IsImageCached(ctx, fileCache, cacheRoot, containerImage, format)
 		if err != nil {
 			return "", err
 		}
@@ -282,30 +309,36 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKeyParts above (if applicable).
-		out, err := createExt4Image(ctx, resolver, fileCache, cacheRoot, containerImage, creds, useOCIFetcher)
+		out, err := createDiskImage(ctx, resolver, fileCache, cacheRoot, containerImage, format, creds, useOCIFetcher)
 		if err != nil {
-			return "", status.WrapErrorf(err, "convert %q from OCI to EXT4 format", containerImage)
+			return "", status.WrapErrorf(err, "convert %q from OCI to %s format", containerImage, format)
 		}
 		return out, nil
 	})
 	if err != nil {
 		return err
 	}
-	// Note: there is a potential race condition here: createExt4Image just
+	// Note: there is a potential race condition here: createDiskImage just
 	// fetched the image into filecache, but there is a short window where it
 	// could potentially get evicted. Since we just pulled, this normally
 	// shouldn't happen unless the filecache is under heavy eviction pressure,
 	// which most likely means it's too small.
-	if err := LinkCachedImage(ctx, fileCache, cacheRoot, containerImage, outputPath); err != nil {
+	if err := LinkCachedImage(ctx, fileCache, cacheRoot, containerImage, format, outputPath); err != nil {
 		return status.WrapError(err, "failed to link cached image")
 	}
 	return nil
 }
 
-func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
+func createDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, format ImageFormat, creds oci.Credentials, useOCIFetcher bool) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	tmpImage, err := os.CreateTemp(cacheRoot, "containerfs-*.ext4")
+	legacy := !*localCacheStoreExt4Images || fileCache == nil
+	if legacy {
+		if err := checkLegacyFormat(format); err != nil {
+			return "", err
+		}
+	}
+	tmpImage, err := os.CreateTemp(cacheRoot, "containerfs-*."+string(format))
 	if err != nil {
 		return "", err
 	}
@@ -322,10 +355,18 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	if err != nil {
 		return "", err
 	}
-	if err := ConvertContainerToExt4FS(ctx, img, cacheRoot, containerImage, tmpImagePath); err != nil {
+	switch format {
+	case Ext4:
+		err = ConvertContainerToExt4FS(ctx, img, cacheRoot, containerImage, tmpImagePath)
+	case Erofs:
+		err = ConvertContainerToErofs(ctx, img, cacheRoot, containerImage, tmpImagePath)
+	default:
+		err = status.InvalidArgumentErrorf("unknown disk image format %q", format)
+	}
+	if err != nil {
 		return "", err
 	}
-	if !*localCacheStoreExt4Images || fileCache == nil {
+	if legacy {
 		imageHash, err := hashFile(tmpImagePath)
 		if err != nil {
 			return "", err
@@ -341,7 +382,7 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 		log.CtxDebugf(ctx, "generated rootfs at %q", containerImagePath)
 		return containerImagePath, nil
 	}
-	if err := AddDiskImageToFileCache(ctx, fileCache, containerImage, tmpImagePath); err != nil {
+	if err := AddDiskImageToFileCache(ctx, fileCache, containerImage, format, tmpImagePath); err != nil {
 		return "", fmt.Errorf("add disk image to filecache: %w", err)
 	}
 	return "", nil
@@ -352,15 +393,49 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 func ConvertContainerToExt4FS(ctx context.Context, img ctr.Image, workspaceDir, containerImage, outputPath string) error {
 	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
 	start := time.Now()
+	tempUnpackDir, err := unpackImage(ctx, img, workspaceDir)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tempUnpackDir)
 
+	// Take the rootfs and write it into an ext4 image.
+	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, outputPath); err != nil {
+		return err
+	}
+	log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
+	return nil
+}
+
+// ConvertContainerToErofs writes a resolved OCI image's root filesystem to an
+// uncompressed EROFS image at outputPath. containerImage identifies the image
+// in log messages.
+func ConvertContainerToErofs(ctx context.Context, img ctr.Image, workspaceDir, containerImage, outputPath string) error {
+	log.CtxInfof(ctx, "Downloading image %s and converting to EROFS format", containerImage)
+	start := time.Now()
+	tempUnpackDir, err := unpackImage(ctx, img, workspaceDir)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tempUnpackDir)
+
+	if out, err := exec.CommandContext(ctx, "mkfs.erofs", "--quiet", outputPath, tempUnpackDir).CombinedOutput(); err != nil {
+		return status.InternalErrorf("mkfs.erofs: %s: %q", err, out)
+	}
+	log.CtxInfof(ctx, "Converted %s to EROFS format in %s", containerImage, time.Since(start))
+	return nil
+}
+
+// unpackImage extracts img's flattened root filesystem into a new directory
+// under workspaceDir. The caller must remove the returned directory.
+func unpackImage(ctx context.Context, img ctr.Image, workspaceDir string) (string, error) {
 	rc := mutate.Extract(img)
 	defer rc.Close()
 
 	tempUnpackDir, err := os.MkdirTemp(workspaceDir, "unpack-*")
 	if err != nil {
-		return status.UnavailableErrorf("error creating temp unpack dir: %s", err)
+		return "", status.UnavailableErrorf("error creating temp unpack dir: %s", err)
 	}
-	defer os.RemoveAll(tempUnpackDir)
 
 	tarArgs := []string{
 		"--extract",
@@ -382,15 +457,10 @@ func ConvertContainerToExt4FS(ctx context.Context, img ctr.Image, workspaceDir, 
 	cmd.Stderr = &stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Run(); err != nil {
-		return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
+		os.RemoveAll(tempUnpackDir)
+		return "", status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
 	}
-
-	// Take the rootfs and write it into an ext4 image.
-	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, outputPath); err != nil {
-		return err
-	}
-	log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
-	return nil
+	return tempUnpackDir, nil
 }
 
 // OverlayfsLayerToTarball converts an extracted overlayfs layer to an

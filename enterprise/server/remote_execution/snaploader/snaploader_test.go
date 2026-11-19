@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
@@ -914,7 +915,7 @@ func TestUnpackContainerImage_RemoteSnapshotDisabledExceptUndirtiedRootfsChunks(
 
 	// Cache the image using the task's original instance name.
 	imageCOW, err := snaploader.UnpackContainerImage(
-		ctx, loader, instanceName, imageRef, imagePath,
+		ctx, loader, instanceName, imageRef, ociconv.Ext4, imagePath,
 		testfs.MakeDirAll(t, workDir, "image-chunks"), chunkSize,
 		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
@@ -925,12 +926,12 @@ func TestUnpackContainerImage_RemoteSnapshotDisabledExceptUndirtiedRootfsChunks(
 
 	// Container image manifests are scoped to the original instance name.
 	// Lookups from other instance names should fail.
-	_, err = snaploader.GetCachedContainerImage(ctx, loader, "other-instance", imageRef, true)
+	_, err = snaploader.GetCachedContainerImage(ctx, loader, "other-instance", imageRef, ociconv.Ext4, true)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 
 	// Lookups from the original instance name should succeed.
-	imageSnapshot, err := snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef, true)
+	imageSnapshot, err := snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef, ociconv.Ext4, true)
 	require.NoError(t, err)
 	rootfs, err := snaploader.UnpackContainerImageSnapshot(
 		ctx, loader, imageSnapshot, testfs.MakeDirAll(t, workDir, "rootfs-chunks"))
@@ -1015,7 +1016,7 @@ func TestUnpackContainerImage_UnpackingFromCacheIsBestEffort(t *testing.T) {
 			expected, err := os.ReadFile(imagePath)
 			require.NoError(t, err)
 			cow, err := snaploader.UnpackContainerImage(
-				ctx, loader, "task-instance", "example.com/image:latest", imagePath,
+				ctx, loader, "task-instance", "example.com/image:latest", ociconv.Ext4, imagePath,
 				testfs.MakeDirAll(t, workDir, "chunks"), 1,
 				snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 
@@ -1044,7 +1045,7 @@ func TestUnpackContainerImage_CleansOutputDirBeforeUnpack(t *testing.T) {
 
 	// Populate the container-image cache.
 	cow, err := snaploader.UnpackContainerImage(
-		ctx, loader, "task-instance", imageRef, imagePath,
+		ctx, loader, "task-instance", imageRef, ociconv.Ext4, imagePath,
 		testfs.MakeDirAll(t, workDir, "initial-chunks"), 1,
 		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
@@ -1058,7 +1059,7 @@ func TestUnpackContainerImage_CleansOutputDirBeforeUnpack(t *testing.T) {
 	// Use a nonexistent EXT4 path to prove the cached snapshot is used. If the
 	// stale directory caused a fallback conversion, this call would fail.
 	cow, err = snaploader.UnpackContainerImage(
-		ctx, loader, "task-instance", imageRef, filepath.Join(workDir, "missing.ext4"), outDir, 1,
+		ctx, loader, "task-instance", imageRef, ociconv.Ext4, filepath.Join(workDir, "missing.ext4"), outDir, 1,
 		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, cow.Close()) })

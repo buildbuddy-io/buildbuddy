@@ -36,6 +36,7 @@ go_test(
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/claims",
