@@ -186,7 +186,14 @@ func (pu *partitionUsage) LocalSizeBytes() int64 {
 		log.Warningf("unable to get local size bytes for partition %q: %s", pu.part.ID, err)
 		return 0
 	}
-	return int64(sizeBytes)
+	// The partition's atime index takes up disk space too.
+	idxStart, idxEnd := keys.AtimeIndexPartitionRange(pu.part.ID)
+	idxSizeBytes, err := db.EstimateDiskUsage(idxStart, idxEnd)
+	if err != nil {
+		log.Warningf("unable to get atime index size bytes for partition %q: %s", pu.part.ID, err)
+		return 0
+	}
+	return int64(sizeBytes + idxSizeBytes)
 }
 
 func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
@@ -1052,6 +1059,9 @@ func (ut *Tracker) TestingWaitForGC(ctx context.Context) error {
 			db.Flush()
 			start, end := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
 			db.Compact(start, end, false /*parallelize*/)
+			// LocalSizeBytes counts the atime index, so compact it too.
+			idxStart, idxEnd := keys.AtimeIndexPartitionRange(pu.part.ID)
+			db.Compact(idxStart, idxEnd, false /*parallelize*/)
 			db.Close()
 			totalSizeBytes := pu.LocalSizeBytes()
 			pu.lru.UpdateSizeBytes(totalSizeBytes)
