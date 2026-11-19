@@ -2,6 +2,7 @@ package usage_test
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -134,6 +135,12 @@ func requireNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
 	dbh.Callback().Delete().Register("fail", fail)
 	dbh.Callback().Row().Register("fail", fail)
 	dbh.Callback().Raw().Register("fail", fail)
+}
+
+type noUsageWrites struct{ interfaces.OLAPDBHandle }
+
+func (noUsageWrites) FlushUsages(context.Context, []*olaptables.RawUsage) error {
+	return fmt.Errorf("unexpected OLAP usage write")
 }
 
 type nopDistributedLock struct{}
@@ -448,6 +455,29 @@ func TestClickHouseUsageView_DedupesDuplicateRawUsageRows(t *testing.T) {
 	}, queryAllOLAPUsages(t, te))
 }
 
+func olapLabels(labels *tables.UsageLabels) sku.Labels {
+	result := sku.Labels{}
+	for key, value := range (sku.Labels{sku.Client: labels.Client, sku.Server: labels.Server, sku.Origin: labels.Origin, sku.Proxy: labels.Proxy}) {
+		if value != "" {
+			result[key] = value
+		}
+	}
+	return result
+}
+
+func requireOLAPUsages(t *testing.T, te *testenv.TestEnv, metric sku.SKU, usages []*tables.Usage) {
+	t.Helper()
+	var want []*olaptables.Usage
+	for _, u := range usages {
+		count := u.CASCacheHits
+		if metric == sku.BuildEventsBESCount {
+			count = u.Invocations
+		}
+		want = append(want, &olaptables.Usage{GroupID: u.GroupID, PeriodStart: time.UnixMicro(u.PeriodStartUsec).UTC(), SKU: metric, Labels: olapLabels(&u.UsageLabels), Count: count})
+	}
+	require.ElementsMatch(t, want, queryAllOLAPUsages(t, te))
+}
+
 func TestUsageTracker_Increment_ImpersonationSuppressesUsage(t *testing.T) {
 	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
@@ -466,6 +496,7 @@ func TestUsageTracker_Increment_ImpersonationSuppressesUsage(t *testing.T) {
 	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 100})
 	require.NoError(t, err)
+	require.NoError(t, ut.IncrementOLAP(ctx, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 100}))
 
 	// Flush redis buffer and verify no usage keys were written.
 	err = te.GetMetricsCollector().Flush(context.Background())
@@ -481,6 +512,9 @@ func TestUsageTracker_Increment_ImpersonationSuppressesUsage(t *testing.T) {
 	require.NoError(t, err)
 	usages := queryAllUsages(t, te)
 	assert.Empty(t, usages, "no usage rows should be flushed for impersonation requests")
+	if *clickhouseEnabled {
+		require.Empty(t, queryAllOLAPUsages(t, te))
+	}
 }
 
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {
@@ -494,12 +528,15 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
+	require.NoError(t, ut.IncrementOLAP(ctx, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 1}))
 	clock.Advance(period2Start.Sub(clock.Now()))
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 10})
 	require.NoError(t, err)
+	require.NoError(t, ut.IncrementOLAP(ctx, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 10}))
 	clock.Advance(period3Start.Sub(clock.Now()))
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 100})
 	require.NoError(t, err)
+	require.NoError(t, ut.IncrementOLAP(ctx, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 100}))
 
 	// Note: we're at the start of the 3rd collection period when flushing.
 	err = te.GetMetricsCollector().Flush(context.Background())
@@ -522,6 +559,9 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 			UsageLabels:     *labels,
 		},
 	}, usages)
+	if *clickhouseEnabled {
+		requireOLAPUsages(t, te, sku.RemoteCacheCASHits, usages)
+	}
 }
 
 func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
@@ -537,6 +577,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
+	require.NoError(t, ut.IncrementOLAP(ctx, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 1}))
 
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
@@ -546,6 +587,10 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 	usages := queryAllUsages(t, te)
 	require.NotEmpty(t, usages)
+	if *clickhouseEnabled {
+		requireOLAPUsages(t, te, sku.RemoteCacheCASHits, usages)
+		te.SetOLAPDBHandle(noUsageWrites{te.GetOLAPDBHandle()})
+	}
 
 	// Make the next Flush call fail if it tries to do anything with the DB,
 	// since there was no usage observed.
@@ -568,9 +613,11 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	// Write 2 collection periods worth of data.
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
+	require.NoError(t, ut.IncrementOLAP(ctx, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 1}))
 	clock.Advance(periodDuration)
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1000})
 	require.NoError(t, err)
+	require.NoError(t, ut.IncrementOLAP(ctx, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 1000}))
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	clock.Advance(2 * periodDuration)
@@ -617,6 +664,9 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 			UsageLabels:     *labels,
 		},
 	}, usages)
+	if *clickhouseEnabled {
+		requireOLAPUsages(t, te, sku.RemoteCacheCASHits, usages)
+	}
 }
 
 func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
@@ -639,8 +689,10 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	// Record and flush usage in 2 different regions.
 	err = ut1.Increment(ctx1, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
+	require.NoError(t, ut1.IncrementOLAP(ctx1, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 1}))
 	err = ut2.Increment(ctx2, labels, &tables.UsageCounts{CASCacheHits: 100})
 	require.NoError(t, err)
+	require.NoError(t, ut2.IncrementOLAP(ctx2, olapLabels(labels), map[sku.SKU]int64{sku.RemoteCacheCASHits: 100}))
 	err = te1.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	err = te2.GetMetricsCollector().Flush(context.Background())
@@ -669,6 +721,9 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 			UsageLabels:     *labels,
 		},
 	}, usages)
+	if *clickhouseEnabled {
+		require.Equal(t, []*olaptables.Usage{{GroupID: "GR1", PeriodStart: period1Start, SKU: sku.RemoteCacheCASHits, Labels: olapLabels(labels), Count: 101}}, queryAllOLAPUsages(t, te1))
+	}
 }
 
 func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
@@ -684,6 +739,22 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	counts := increasingCountsStartingAt(100)
 	err = ut.Increment(ctx, labels, counts)
 	require.NoError(t, err)
+	skuCounts := map[sku.SKU]int64{
+		sku.BuildEventsBESCount:                            1,
+		sku.RemoteCacheCASHits:                             2,
+		sku.RemoteCacheCASDownloadedBytes:                  3,
+		sku.RemoteCacheCASUploadedBytes:                    4,
+		sku.RemoteCacheACHits:                              5,
+		sku.RemoteCacheACCachedExecDurationNanos:           6,
+		sku.RemoteExecutionExecuteWorkerDurationNanos:      7,
+		sku.RemoteExecutionExecuteWorkerCPUNanos:           8,
+		sku.RemoteExecutionExecuteWorkerMemoryGBNanos:      9,
+		sku.RemoteExecutionExecuteFixedComputeNanos:        10,
+		sku.RemoteExecutionExecuteFlexibleComputeNanos:     11,
+		sku.RemoteExecutionExecuteLocalSnapshotSavedBytes:  12,
+		sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes: 13,
+	}
+	require.NoError(t, ut.IncrementOLAP(ctx, olapLabels(labels), skuCounts))
 
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
@@ -699,6 +770,17 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 		UsageCounts:     *counts,
 		Region:          "us-west1",
 	}}, usages)
+	if *clickhouseEnabled {
+		var want []*olaptables.Usage
+		for metric, count := range skuCounts {
+			want = append(want, &olaptables.Usage{GroupID: "GR1", PeriodStart: period1Start, SKU: metric, Labels: sku.Labels{"client": "bazel"}, Count: count})
+		}
+		require.ElementsMatch(t, want, queryAllOLAPUsages(t, te))
+	}
+}
+
+func invocationUsage(period time.Time, labels sku.Labels, count int64) *olaptables.Usage {
+	return &olaptables.Usage{GroupID: "GR1", PeriodStart: period, SKU: sku.BuildEventsBESCount, Labels: labels, Count: count}
 }
 
 func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
@@ -718,6 +800,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	for _, labels := range observedLabels1 {
 		err := ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
 		require.NoError(t, err)
+		require.NoError(t, ut.IncrementOLAP(ctx1, olapLabels(&labels), map[sku.SKU]int64{sku.BuildEventsBESCount: 1}))
 	}
 	// Advance to the next collection period and flush the one we just
 	// populated.
@@ -752,6 +835,14 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			Origin:          "internal",
 		},
 	}, usages)
+	want := []*olaptables.Usage{
+		invocationUsage(period1Start, sku.Labels{}, 1),
+		invocationUsage(period1Start, sku.Labels{"client": "bazel"}, 2),
+		invocationUsage(period1Start, sku.Labels{"client": "executor", "origin": "internal"}, 1),
+	}
+	if *clickhouseEnabled {
+		require.ElementsMatch(t, want, queryAllOLAPUsages(t, te))
+	}
 
 	// Now observe some previously observed labels, and some new ones.
 	observedLabels2 := []tables.UsageLabels{
@@ -761,6 +852,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	for _, labels := range observedLabels2 {
 		err := ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
 		require.NoError(t, err)
+		require.NoError(t, ut.IncrementOLAP(ctx1, olapLabels(&labels), map[sku.SKU]int64{sku.BuildEventsBESCount: 1}))
 	}
 	// Advance to the next collection period and flush the one we just
 	// populated.
@@ -809,6 +901,10 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 			Client:          "executor",
 		},
 	}, usages)
+	if *clickhouseEnabled {
+		want = append(want, invocationUsage(period3Start, sku.Labels{"client": "bazel"}, 1), invocationUsage(period3Start, sku.Labels{"client": "executor"}, 1))
+		require.ElementsMatch(t, want, queryAllOLAPUsages(t, te))
+	}
 }
 
 func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
@@ -845,6 +941,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 	for _, labels := range labelsToTest {
 		err = ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
 		require.NoError(t, err)
+		require.NoError(t, ut.IncrementOLAP(ctx1, olapLabels(&labels), map[sku.SKU]int64{sku.BuildEventsBESCount: 1}))
 	}
 	err = te.GetMetricsCollector().Flush(ctx)
 	require.NoError(t, err)
@@ -927,6 +1024,15 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 			Client:          "Client-TestValue2",
 		},
 	}, usages)
+	if *clickhouseEnabled {
+		want := []*olaptables.Usage{invocationUsage(period1Start, sku.Labels{}, 1)}
+		for key, prefix := range map[string]string{"client": "Client", "server": "Server", "origin": "Origin", "proxy": "Proxy"} {
+			for _, suffix := range []string{"-TestValue1", "-TestValue2"} {
+				want = append(want, invocationUsage(period1Start, sku.Labels{key: prefix + suffix}, 1))
+			}
+		}
+		require.ElementsMatch(t, want, queryAllOLAPUsages(t, te))
+	}
 }
 
 func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) {
@@ -992,13 +1098,8 @@ func addCounts(c1, c2 *tables.UsageCounts) *tables.UsageCounts {
 }
 
 func isDeadlockError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if err, ok := err.(*mysql.MySQLError); ok {
-		return err.Number == 1213
-	}
-	return false
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1213
 }
 
 func newFlushLock(t *testing.T, te *testenv.TestEnv) interfaces.DistributedLock {
