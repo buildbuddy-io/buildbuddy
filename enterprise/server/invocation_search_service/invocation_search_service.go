@@ -123,7 +123,7 @@ func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.
 
 func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest, offset int64, limit int64) ([]*inpb.Invocation, int64, error) {
 	fields := "*"
-	if *mysqlSearchMaxExecutionTime > 0 && s.dbh.GORM(ctx, "dialector").Dialector.Name() == "mysql" {
+	if *mysqlSearchMaxExecutionTime > 0 && s.dbh.DialectName() == "mysql" {
 		fields = fmt.Sprintf("/*+ MAX_EXECUTION_TIME(%d) */ *", mysqlSearchMaxExecutionTime.Milliseconds())
 	}
 	sql, args, err := s.buildPrimaryQuery(ctx, fields, offset, limit, req, false)
