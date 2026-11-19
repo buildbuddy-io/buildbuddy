@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -161,7 +160,11 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 
 func containsArrayFilters(filters []*sfpb.GenericFilter) bool {
 	for _, f := range filters {
-		typeDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())).Options()
+		typeDescriptor := f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())
+		if typeDescriptor == nil {
+			continue
+		}
+		typeDescriptorOptions := typeDescriptor.Options()
 		if typeDescriptorOptions == nil {
 			continue
 		}
