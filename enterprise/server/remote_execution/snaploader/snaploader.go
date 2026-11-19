@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/diskimage"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -1605,10 +1605,10 @@ func getCacheNamespace(ctx context.Context, env environment.Env) (string, error)
 
 // containerImageSnapshotKey returns the key under which the chunked
 // containerfs for the given container image is cached.
-func containerImageSnapshotKey(instanceName, imageRef string, format ociconv.ImageFormat) *fcpb.SnapshotKeySet {
+func containerImageSnapshotKey(instanceName, imageRef string, format diskimage.Format) *fcpb.SnapshotKeySet {
 	parts := []string{"__UnpackContainerImage", runtime.GOOS, runtime.GOARCH, imageRef}
 	// ext4 keys predate the format.
-	if format != ociconv.Ext4 {
+	if format != diskimage.Ext4 {
 		parts = append(parts, string(format))
 	}
 	return &fcpb.SnapshotKeySet{BranchKey: &fcpb.SnapshotKey{
@@ -1661,7 +1661,7 @@ func GetRemoteContainerImageAccessOptions(ctx context.Context, task *repb.Execut
 
 // GetCachedContainerImage returns the cached snapshot for the given
 // container image.
-func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, format ociconv.ImageFormat, remoteEnabled bool) (*Snapshot, error) {
+func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, format diskimage.Format, remoteEnabled bool) (*Snapshot, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1711,7 +1711,7 @@ func resetContainerImageOutputDir(outDir string) error {
 //
 // If the image is not cached, this func will split up the given disk image
 // file and create a new ChunkedFile from it, then add that to cache.
-func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, format ociconv.ImageFormat, imagePath string, outDir string, chunkSize int64, imageOpts RemoteContainerImageAccessOptions) (*copy_on_write.COWStore, error) {
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, format diskimage.Format, imagePath string, outDir string, chunkSize int64, imageOpts RemoteContainerImageAccessOptions) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 

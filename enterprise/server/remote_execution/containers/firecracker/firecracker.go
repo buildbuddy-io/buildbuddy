@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/diskimage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/usernet"
@@ -1795,7 +1796,7 @@ func (c *FirecrackerContainer) cachedContainerfs(ctx context.Context) *snaploade
 		return nil
 	}
 	c.containerfsSnapshotOnce.Do(func() {
-		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, c.imageInstanceName(), c.containerImage, ociconv.Ext4, c.remoteContainerImageAccess.RemoteReadsEnabled)
+		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, c.imageInstanceName(), c.containerImage, diskimage.Ext4, c.remoteContainerImageAccess.RemoteReadsEnabled)
 		if err != nil {
 			if !status.IsNotFoundError(err) {
 				log.CtxWarningf(ctx, "Failed to look up cached containerfs for image %q: %s", c.containerImage, err)
@@ -1821,7 +1822,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 	} else {
 		// If a chunked containerfs is not cached, we need to convert the ext4 image into chunks.
 		containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.imageInstanceName(), c.containerImage, ociconv.Ext4, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess)
+		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.imageInstanceName(), c.containerImage, diskimage.Ext4, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess)
 	}
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
@@ -2760,7 +2761,7 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
 		return status.UnavailableErrorf("check containerfs exists: %s", err)
 	} else if !exists && c.cachedContainerfs(ctx) == nil {
-		if err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, ociconv.Ext4, containerFSPath); err != nil {
+		if err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, diskimage.Ext4, containerFSPath); err != nil {
 			return status.UnavailableErrorf("link cached image: %s", err)
 		}
 	}
@@ -2847,7 +2848,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
 			return status.UnavailableErrorf("check containerfs exists: %s", err)
 		} else if !exists {
-			err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, ociconv.Ext4, containerFSPath)
+			err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, diskimage.Ext4, containerFSPath)
 			if err != nil {
 				return status.UnavailableErrorf("link cached image: %s", err)
 			}
@@ -3460,7 +3461,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	defer span.End()
 
 	// Checking for the EXT4 image on local disk is cheap, so do it first.
-	cached, err := ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, ociconv.Ext4)
+	cached, err := ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, diskimage.Ext4)
 	if err != nil || cached {
 		return cached, err
 	}
@@ -3523,7 +3524,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
 		return status.UnavailableErrorf("create chroot dir: %s", err)
 	}
-	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, ociconv.Ext4, creds, c.useOCIFetcher, containerFSPath)
+	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, diskimage.Ext4, creds, c.useOCIFetcher, containerFSPath)
 	if err != nil {
 		return err
 	}

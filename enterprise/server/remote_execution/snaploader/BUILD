@@ -7,10 +7,10 @@ go_library(
     srcs = ["snaploader.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader",
     deps = [
-        "//enterprise/server/oci/ociconv",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/snaputil",
+        "//enterprise/server/util/diskimage",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -42,10 +42,10 @@ go_test(
     deps = [
         ":snaploader",
         "//enterprise/server/backends/pebble_cache",
-        "//enterprise/server/oci/ociconv",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/snaputil",
+        "//enterprise/server/util/diskimage",
         "//proto:bytestream_go_proto",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
