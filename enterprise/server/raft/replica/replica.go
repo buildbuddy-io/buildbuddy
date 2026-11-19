@@ -1220,7 +1220,7 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			return &rfpb.DeleteResponse{NotFound: true}, nil
+			return &rfpb.DeleteResponse{Missing: true}, nil
 		}
 		return nil, err
 	}

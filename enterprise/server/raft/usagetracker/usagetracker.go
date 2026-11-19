@@ -239,7 +239,7 @@ type evictionKeyMeta = sender.KeyMeta[*evictionCandidate]
 // deleteBatchResult tracks the outcome of evictions on one range.
 type deleteBatchResult struct {
 	evicted   []*evictionCandidate
-	notFound  []*evictionCandidate
+	missing   []*evictionCandidate
 	numFailed int
 	lastErr   error
 }
@@ -279,8 +279,8 @@ func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h 
 			res.lastErr = err
 			continue
 		}
-		if rsp.GetNotFound() {
-			res.notFound = append(res.notFound, candidate)
+		if rsp.GetMissing() {
+			res.missing = append(res.missing, candidate)
 		} else {
 			res.evicted = append(res.evicted, candidate)
 		}
@@ -301,7 +301,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
 	// still returns success, so this path does not need sender-owned sessions.
 	// If the delete was retried, even though the first attempt succeeded,
-	// the second attempt will return not_found=true, so metrics won't be
+	// the second attempt will return missing=true, so metrics won't be
 	// updated.
 	rsps, err := pu.sender.RunMultiKey(ctx, keys, pu.deleteBatch)
 	failed := err != nil
@@ -318,7 +318,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evicti
 
 		// Delete the blob even if the record was already gone: whoever deleted
 		// the record may not have deleted its blob.
-		for _, c := range slices.Concat(res.evicted, res.notFound) {
+		for _, c := range slices.Concat(res.evicted, res.missing) {
 			if gcsMD := c.storageMetadata.GetGcsMetadata(); gcsMD != nil {
 				select {
 				case pu.gcsDeletes <- gcsMD:
