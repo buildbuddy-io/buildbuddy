@@ -1,7 +1,9 @@
 package hit_tracker_service_test
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -26,6 +30,7 @@ import (
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	zlog "github.com/rs/zerolog/log"
 )
 
 func TestHitTrackerService_DetailedStats(t *testing.T) {
@@ -344,6 +349,43 @@ func TestHitTrackerService_Usage(t *testing.T) {
 			require.Equal(t, tc.expectedOLAPUsage, ut.OLAPTotals())
 		})
 	}
+}
+
+type unauthenticatedUsageTracker struct{}
+
+func (unauthenticatedUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
+	return status.UnauthenticatedError("User not found")
+}
+
+func (unauthenticatedUsageTracker) IncrementOLAP(ctx context.Context, labels map[sku.LabelName]sku.LabelValue, skuCounts map[sku.SKU]int64) error {
+	return status.UnauthenticatedError("User not found")
+}
+
+func TestHitTrackerService_LogsOnceForUnauthenticatedRequest(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(authenticator)
+	env.SetUsageTracker(unauthenticatedUsageTracker{})
+	hit_tracker.Register(env)
+	require.NoError(t, hit_tracker_service.Register(env))
+
+	var logs bytes.Buffer
+	previousLogger := zlog.Logger
+	zlog.Logger = zerolog.New(&logs).Level(zerolog.WarnLevel)
+	t.Cleanup(func() { zlog.Logger = previousLogger })
+
+	d := &repb.Digest{Hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SizeBytes: 456}
+	hit := &hitpb.CacheHit{
+		Resource:         digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto(),
+		SizeBytes:        456,
+		CacheRequestType: capb.RequestType_READ,
+	}
+	ctx := authenticator.AuthContextFromAPIKey(context.Background(), "unknown-key")
+	_, err := env.GetHitTrackerServiceServer().Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit, hit, hit}, Server: "servicio"})
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+	require.Len(t, lines, 1, logs.String())
+	require.Contains(t, lines[0], "3 cache hits")
 }
 
 // Note: Can't use bazel_request.WithRequestMetadata here since it sets the
