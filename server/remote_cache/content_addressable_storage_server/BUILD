@@ -39,6 +39,7 @@ go_library(
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_x_sync//errgroup",
     ],
 )
@@ -77,6 +78,7 @@ go_test(
         "//server/util/cdc",
         "//server/util/compression",
         "//server/util/prefix",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_buildbuddy_io_fastcdc2020//fastcdc",
