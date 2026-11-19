@@ -1022,11 +1022,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		// Resource names pointing to subtrees that were found in the cache and
 		// are considered big enough to be worth caching on the client side.
 		cachedSubtrees []*digest.ResourceName
-		// The digests of the directories contained in cachedSubtrees--this is
-		// tracked so that we can validate the full tree after fetching.
+		// The directories contained in cachedSubtrees, kept for ancestor tree
+		// cache writes. Omits subtrees whose contents weren't read.
 		subtreeDirectories []*capb.DirectoryWithDigest
-		// The number of directories in cachedSubtrees.
-		subtreeDirCount int
 	}
 
 	subtreesRequested := *getTreeSubtreeSupport && req.GetSendCachedSubtreeDigests()
@@ -1076,7 +1074,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		allDescendents = append(allDescendents, dirWithDigest)
 		allCachedSubtrees := make([]*digest.ResourceName, 0)
 		allCachedSubtreeContents := make([]*capb.DirectoryWithDigest, 0)
-		subtreeDirCount := 0
 
 		leaves := children[:0]
 		eg, egCtx := errgroup.WithContext(ctx)
@@ -1099,7 +1096,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 					// record the subtree root for our response.  The contents (nil
 					// unless read) are kept for ancestor tree cache writes.
 					allCachedSubtrees = append(allCachedSubtrees, grandchild.cachedRoot)
-					subtreeDirCount += grandchild.cachedDirCount
 					allCachedSubtreeContents = append(allCachedSubtreeContents, grandchild.mainDirectories...)
 				} else {
 					// Three possibilities here:
@@ -1116,7 +1112,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 					if len(grandchild.cachedSubtrees) > 0 {
 						allCachedSubtrees = append(allCachedSubtrees, grandchild.cachedSubtrees...)
 						allCachedSubtreeContents = append(allCachedSubtreeContents, grandchild.subtreeDirectories...)
-						subtreeDirCount += grandchild.subtreeDirCount
 					}
 				}
 				return nil
@@ -1142,7 +1137,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			mainDirectories:    allDescendents,
 			cachedSubtrees:     allCachedSubtrees,
 			subtreeDirectories: allCachedSubtreeContents,
-			subtreeDirCount:    subtreeDirCount,
 		}, nil
 	}
 
@@ -1179,13 +1173,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				Compressor:     st.GetCompressor(),
 			})
 		}
-		dirCount += result.subtreeDirCount
-
 		// Make sure we send all subtree data below.
 		rspSizeBytes = 1
 	}
 
-	log.Debugf("GetTree fetched %d dirs from cache across %d calls (including %d cached subtrees) in cumulative %s (total time: %s)", dirCount, fetchCount, len(result.cachedSubtrees), fetchDuration, time.Since(rpcStart))
+	log.Debugf("GetTree sent %d dirs inline and %d cached subtrees, fetched across %d calls in cumulative %s (total time: %s)", dirCount, len(result.cachedSubtrees), fetchCount, fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)
 	}
