@@ -64,6 +64,7 @@ var (
 
 	urlSecretRegex         = regexp.MustCompile(`(?i)(` + urlScheme + looseUsername + `:)` + loosePassword + `(@` + urlHost + `)`)
 	progressURLSecretRegex = regexp.MustCompile(`(?i)(` + urlScheme + progressUsername + `:)` + progressPassword + `(@` + urlHost + `)`)
+	urlUserinfoRegex       = regexp.MustCompile(`(?i)^(` + urlScheme + `)?[^/@\s]+(@` + urlHost + `)`)
 	residualSecretRegex    = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
@@ -77,6 +78,8 @@ var (
 	// the list of flag names that are permitted to be treated this way.
 	knownMultiFlags   = []string{"build_metadata"}
 	multiFlagKeyRegex = regexp.MustCompile(`,[A-Z_]+=`)
+
+	remoteURLOptionNames = []string{"remote_cache", "remote_executor", "bes_backend", "experimental_remote_downloader"}
 
 	knownGitRepoURLKeys = []string{
 		"REPO_URL", "GIT_URL", "TRAVIS_REPO_SLUG", "BUILDKITE_REPO", "GIT_REPOSITORY_URL",
@@ -222,6 +225,29 @@ func stripURLSecretsFromCmdLine(tokens []string) {
 	}
 }
 
+func stripURLUserinfo(input string) string {
+	values := strings.Split(input, ",")
+	for i, value := range values {
+		values[i] = urlUserinfoRegex.ReplaceAllString(value, "${1}<REDACTED>${2}")
+	}
+	return strings.Join(values, ",")
+}
+
+func stripRemoteURLUserinfoFromCmdLine(tokens []string) {
+	for i, token := range tokens {
+		for _, name := range remoteURLOptionNames {
+			if value, ok := strings.CutPrefix(token, "--"+name+"="); ok {
+				tokens[i] = "--" + name + "=" + stripURLUserinfo(value)
+				break
+			}
+			if token == "--"+name && i+1 < len(tokens) {
+				tokens[i+1] = stripURLUserinfo(tokens[i+1])
+				break
+			}
+		}
+	}
+}
+
 func stripRemoteHeadersFromCmdLine(tokens []string) {
 	for i, token := range tokens {
 		for _, name := range headerOptionNames {
@@ -246,6 +272,7 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 // variable flags that are not explicitly allowed.
 func RedactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
+	stripRemoteURLUserinfoFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
 	stripExplicitCommandLineFromCmdLine(tokens)
 	stripNonAllowedEnvVars(tokens)
@@ -542,6 +569,11 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 				} else {
 					option.OptionValue = stripURLSecrets(option.OptionValue)
 					option.CombinedForm = stripUrlSecretsFromFlag(option.CombinedForm)
+				}
+
+				if slices.Contains(remoteURLOptionNames, option.OptionName) {
+					option.OptionValue = stripURLUserinfo(option.OptionValue)
+					option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + option.OptionValue
 				}
 
 				// Redact remote header values
