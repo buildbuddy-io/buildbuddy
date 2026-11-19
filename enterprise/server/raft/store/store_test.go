@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -30,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
@@ -96,7 +96,7 @@ func TestAutoRatchetPebbleFormat(t *testing.T) {
 	// Each DB handle is a lease; release it before Stop, which waits for
 	// all leases.
 	db := s1.DB()
-	require.Less(t, db.FormatMajorVersion(), pebble.FormatNewest)
+	require.Less(t, db.FormatMajorVersion(), pebble.FormatVirtualSSTables)
 	require.NoError(t, db.Set(key, []byte("value"), pebble.Sync))
 	require.NoError(t, db.Close())
 	s1.Stop()
@@ -105,7 +105,7 @@ func TestAutoRatchetPebbleFormat(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_auto_ratchet", true)
 	sf.RecreateStore(t, s1)
 	db = s1.DB()
-	require.Equal(t, pebble.FormatNewest, db.FormatMajorVersion())
+	require.Equal(t, pebble.FormatVirtualSSTables, db.FormatMajorVersion())
 	requireValue(t, db, key, "value")
 	require.NoError(t, db.Close())
 	s1.Stop()
@@ -114,7 +114,7 @@ func TestAutoRatchetPebbleFormat(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_auto_ratchet", false)
 	sf.RecreateStore(t, s1)
 	db = s1.DB()
-	require.Equal(t, pebble.FormatNewest, db.FormatMajorVersion())
+	require.Equal(t, pebble.FormatVirtualSSTables, db.FormatMajorVersion())
 	requireValue(t, db, key, "value")
 	require.NoError(t, db.Close())
 }

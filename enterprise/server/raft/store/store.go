@@ -40,7 +40,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -69,6 +68,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbConfig "github.com/lni/dragonboat/v4/config"
@@ -84,7 +84,7 @@ var (
 	enableTxnCleanup              = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload         = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
 	enableAutoRatchet             = flag.Bool("cache.raft.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to the version set by cache.raft.auto_ratchet_format_major_version.")
-	autoRatchetFormatMajorVersion = flag.Uint64("cache.raft.auto_ratchet_format_major_version", uint64(pebble.FormatVirtualSSTables), "The pebble format major version to upgrade to when cache.raft.enable_auto_ratchet is set. The default, 16 (FormatVirtualSSTables), is the newest format pebble v1 supports. Upgrades cannot be undone, and versions above 16 require pebble v2.")
+	autoRatchetFormatMajorVersion = flag.Uint64("cache.raft.auto_ratchet_format_major_version", uint64(pebble.FormatVirtualSSTables), "The pebble format major version to upgrade to when cache.raft.enable_auto_ratchet is set. The default, 16 (FormatVirtualSSTables), is the newest format pebble v1 can open. Upgrades cannot be undone, and versions above 16 prevent rolling back to a pebble v1 binary.")
 	blockCacheSizeBytes           = flag.Int64("cache.raft.block_cache_size_bytes", 1e9, "How much ram to give the block cache")
 	dragonboatBlockCacheSizeBytes = flag.Uint64("cache.raft.dragonboat_block_cache_size_bytes", 1e9, "How much ram to give the block cache in dragonboat")
 )
@@ -314,8 +314,8 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		return nil, status.FailedPreconditionError("misconfigured: enable_driver is false but target_range_size_bytes is set; splitting requires the driver to be enabled")
 	}
 	ratchetFormat := pebble.FormatMajorVersion(*autoRatchetFormatMajorVersion)
-	if *enableAutoRatchet && (ratchetFormat < pebble.FormatMostCompatible || ratchetFormat > pebble.FormatNewest) {
-		return nil, status.InvalidArgumentErrorf("misconfigured: auto_ratchet_format_major_version %d is outside the supported range [%s, %s]", *autoRatchetFormatMajorVersion, pebble.FormatMostCompatible, pebble.FormatNewest)
+	if *enableAutoRatchet && (ratchetFormat < pebble.FormatMinSupported || ratchetFormat > pebble.FormatNewest) {
+		return nil, status.InvalidArgumentErrorf("misconfigured: auto_ratchet_format_major_version %d is outside the supported range [%s, %s]", *autoRatchetFormatMajorVersion, pebble.FormatMinSupported, pebble.FormatNewest)
 	}
 
 	raftListener := listener.NewRaftListener()
