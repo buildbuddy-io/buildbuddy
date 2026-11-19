@@ -1675,8 +1675,9 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 	}
-	// Delete the file.
-	{
+	// Delete the file twice. The second delete finds nothing, and still
+	// succeeds.
+	for _, wantMissing := range []bool{false, true} {
 		key, err := fs.PebbleKey(fileRecord)
 		require.NoError(t, err)
 		fileMetadataKey, err := key.Bytes(filestore.Version5)
@@ -1689,6 +1690,9 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 		deleteRsp, err := repl.Update(entries)
 		require.NoError(t, err)
 		require.Equal(t, 1, len(deleteRsp))
+		rsp, err := rbuilder.NewBatchResponse(deleteRsp[0].Result.Data).DeleteResponse(0)
+		require.NoError(t, err)
+		require.Equal(t, wantMissing, rsp.GetMissing())
 	}
 	// Verify that the file is no longer readable and reading it returns a
 	// NotFoundError.
