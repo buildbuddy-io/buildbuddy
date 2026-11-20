@@ -28,3 +28,15 @@ func GetCPUs() ([]CPUInfo, error) {
 	}
 	return cpus, nil
 }
+
+func getNodeMemoryBytes() (map[int]int64, error) {
+	nodeInfos, _, err := sysinfo.GetNodesInfo(sysfs.NewRealSysFs())
+	if err != nil {
+		return nil, err
+	}
+	memoryBytes := make(map[int]int64, len(nodeInfos))
+	for _, nodeInfo := range nodeInfos {
+		memoryBytes[nodeInfo.Id] = int64(nodeInfo.Memory)
+	}
+	return memoryBytes, nil
+}

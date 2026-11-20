@@ -1,9 +1,11 @@
 package cpuset
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,9 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"golang.org/x/exp/constraints"
-	"golang.org/x/exp/slices"
 )
 
 var (
@@ -41,11 +41,14 @@ func LeasingEnabled() bool {
 }
 
 type CPULeaser struct {
-	mu        sync.Mutex
-	cpus      []CPUInfo
-	leases    []lease
-	load      map[int]int
-	numaNodes int
+	mu     sync.Mutex
+	cpus   []CPUInfo
+	leases []lease
+	load   map[int]int
+	// nodeCPUs is the number of leaseable CPUs on each NUMA node.
+	nodeCPUs map[int]int
+	// nodeMemoryBytes is the total memory of each NUMA node.
+	nodeMemoryBytes map[int]int64
 }
 
 type CPUInfo struct {
@@ -73,9 +76,8 @@ func toCPUInfos(processors []int, numaNode int) []CPUInfo {
 // Format formats a set of CPUs as a cpuset list-format compatible string.
 // See https://man7.org/linux/man-pages/man7/cpuset.7.html for list-format.
 func Format[I constraints.Integer](cpus ...I) string {
-	slices.Sort(cpus)
 	cpuStrings := make([]string, len(cpus))
-	for i, cpu := range cpus {
+	for i, cpu := range slices.Sorted(slices.Values(cpus)) {
 		cpuStrings[i] = strconv.Itoa(int(cpu))
 	}
 	return strings.Join(cpuStrings, ",")
@@ -140,21 +142,35 @@ type LeaserOpts struct {
 	// SystemCPUs is the set of available CPUs on the current system. If empty,
 	// CPU information will be fetched from the OS.
 	SystemCPUs []CPUInfo
+
+	// NodeMemoryBytes is the total memory of each NUMA node on the current
+	// system, keyed by node ID. Nodes that are missing have no memory. It is
+	// only used if SystemCPUs is set; otherwise, memory information is
+	// fetched from the OS along with CPU information.
+	NodeMemoryBytes map[int]int64
 }
 
 func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
 	systemCPUs := opts.SystemCPUs
+	nodeMemoryBytes := opts.NodeMemoryBytes
 	if len(systemCPUs) == 0 {
 		c, err := GetCPUs()
 		if err != nil {
 			return nil, fmt.Errorf("get CPUs: %w", err)
 		}
 		systemCPUs = c
+		m, err := getNodeMemoryBytes()
+		if err != nil {
+			return nil, fmt.Errorf("get NUMA node memory: %w", err)
+		}
+		nodeMemoryBytes = m
 	}
 
 	cl := &CPULeaser{
-		leases: make([]lease, 0, MaxNumLeases),
-		load:   make(map[int]int, 0),
+		leases:          make([]lease, 0, MaxNumLeases),
+		load:            make(map[int]int, 0),
+		nodeCPUs:        make(map[int]int, 0),
+		nodeMemoryBytes: nodeMemoryBytes,
 	}
 
 	leaseableCPUs := systemCPUs
@@ -188,14 +204,12 @@ func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
 
 	cl.cpus = make([]CPUInfo, len(leaseableCPUs))
 
-	processors := make(map[int]struct{}, 0)
 	for i, cpu := range leaseableCPUs {
 		cl.cpus[i] = cpu
 		cl.load[cpu.Processor] = 0
-		processors[cpu.NumaNode] = struct{}{}
+		cl.nodeCPUs[cpu.NumaNode]++
 	}
-	cl.numaNodes = len(processors)
-	log.Debugf("NewLeaser with %d processors and %d cores", cl.numaNodes, len(cl.cpus))
+	log.Debugf("NewLeaser with %d NUMA nodes and %d CPUs", len(cl.nodeCPUs), len(cl.cpus))
 	return cl, nil
 }
 
@@ -221,9 +235,11 @@ func WithNoOverhead() Option {
 	}
 }
 
-// Acquire leases a set of CPUs (identified by index) for a task. The returned
-// function should be called to free the CPUs when they are no longer used.
-func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func()) {
+// Acquire leases a set of CPUs (identified by index) for a task with the given
+// CPU and memory estimates, and returns the NUMA nodes whose memory the task
+// may use. The returned function should be called to free the CPUs when they
+// are no longer used.
+func (l *CPULeaser) Acquire(milliCPU, memoryBytes int64, taskID string, opts ...any) ([]int, []int, func()) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -242,75 +258,111 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 		numCPUs = len(l.cpus)
 	}
 
-	// Put all CPUs in a priority queue.
-	pq := priority_queue.New[CPUInfo]()
-	for _, cpuInfo := range l.cpus {
-		numTasks := l.load[cpuInfo.Processor]
-		// we want the least loaded cpus first, so give the
-		// cpus with more tasks a more negative score.
-		pq.Push(cpuInfo, float64(-1*numTasks))
+	// Order the CPUs from least to most loaded. Among equally loaded CPUs, the
+	// ones on less loaded nodes go first, so that equally loaded nodes take
+	// turns receiving tasks instead of the first node filling up before the
+	// others get any.
+	nodeLoad := make(map[int]int, len(l.nodeCPUs))
+	for _, c := range l.cpus {
+		nodeLoad[c.NumaNode] += l.load[c.Processor]
 	}
+	leastLoaded := slices.Clone(l.cpus)
+	slices.SortStableFunc(leastLoaded, func(a, b CPUInfo) int {
+		return cmp.Or(l.load[a.Processor]-l.load[b.Processor], nodeLoad[a.NumaNode]-nodeLoad[b.NumaNode])
+	})
 
-	// Get the set of CPUs, in order of load (incr).
-	leastLoaded := pq.GetAllOrdered()
-
-	// Find the numa node with the largest number of cores in the first
-	// numCPUs CPUs.
-	numaCount := make(map[int]int, l.numaNodes)
-	for i := 0; i < numCPUs; i++ {
-		c := leastLoaded[i]
+	// Rank the NUMA nodes by how many of the first numCPUs least loaded CPUs
+	// they hold. Ties go to the node with less total load, then to the lower
+	// node ID.
+	numaCount := make(map[int]int, len(l.nodeCPUs))
+	for _, c := range leastLoaded[:numCPUs] {
 		numaCount[c.NumaNode]++
 	}
-	selectedNode := -1
-	numCores := 0
-	for numaNode, coreCount := range numaCount {
-		if coreCount > numCores {
-			selectedNode = numaNode
-			numCores = coreCount
+	rankedNodes := make([]int, 0, len(l.nodeCPUs))
+	for node := range l.nodeCPUs {
+		rankedNodes = append(rankedNodes, node)
+	}
+	slices.SortFunc(rankedNodes, func(a, b int) int {
+		return cmp.Or(numaCount[b]-numaCount[a], nodeLoad[a]-nodeLoad[b], a-b)
+	})
+
+	// Pin the task to the highest ranked node that can hold its CPU and
+	// memory estimates. Overhead CPUs are extra room rather than a
+	// requirement, so they are only leased if they fit on the selected nodes.
+	estimatedCPUs := computeNumCPUs(milliCPU, false)
+	var selectedNodes []int
+	for _, node := range rankedNodes {
+		if l.nodeCPUs[node] >= estimatedCPUs && l.nodeMemoryBytes[node] >= memoryBytes {
+			selectedNodes = []int{node}
+			break
+		}
+	}
+	// If no node can hold the task by itself, pin it to several nodes. The
+	// nodes with the most CPUs go first, so that the task spans as few nodes
+	// as possible when nodes have different numbers of leaseable CPUs.
+	if selectedNodes == nil {
+		nodesBySize := slices.Clone(rankedNodes)
+		slices.SortStableFunc(nodesBySize, func(a, b int) int {
+			return l.nodeCPUs[b] - l.nodeCPUs[a]
+		})
+		cpuCapacity, memoryCapacity := 0, int64(0)
+		for _, node := range nodesBySize {
+			selectedNodes = append(selectedNodes, node)
+			cpuCapacity += l.nodeCPUs[node]
+			memoryCapacity += l.nodeMemoryBytes[node]
+			if cpuCapacity >= estimatedCPUs && memoryCapacity >= memoryBytes {
+				break
+			}
 		}
 	}
 
-	// Now filter the set of CPUs to just the selected numaNode.
+	// Lease the least loaded CPUs on the selected nodes.
 	leaseSet := make([]int, 0, numCPUs)
 	for _, c := range leastLoaded {
-		if c.NumaNode != selectedNode {
+		if len(leaseSet) == numCPUs {
+			break
+		}
+		if !slices.Contains(selectedNodes, c.NumaNode) {
 			continue
 		}
 		leaseSet = append(leaseSet, c.Processor)
 		l.load[c.Processor] += 1
-		if len(leaseSet) == numCPUs {
-			break
-		}
 	}
 
-	// If the CPULeaser is enabled, actually track the lease.
-	if *cpuLeaserEnable {
-		if len(l.leases) >= MaxNumLeases {
-			droppedLease := l.leases[0]
-			l.leases = l.leases[1:]
-			for _, processor := range droppedLease.cpus {
-				l.load[processor] -= 1
-			}
-			if *warnAboutLeaks {
-				alert.UnexpectedEvent("cpu_leaser_leak", "Acquire() handle leak at %s!", droppedLease.location)
-			}
-		}
-
-		lease := lease{
-			taskID: taskID,
-			cpus:   leaseSet,
+	// Track the lease even if the CPU leaser is disabled, because node
+	// selection still depends on load, and load only goes down when a tracked
+	// lease is released.
+	if len(l.leases) >= MaxNumLeases {
+		droppedLease := l.leases[0]
+		l.leases = l.leases[1:]
+		for _, processor := range droppedLease.cpus {
+			l.load[processor] -= 1
 		}
 		if *warnAboutLeaks {
-			if _, file, no, ok := runtime.Caller(1); ok {
-				lease.location = fmt.Sprintf("%s:%d", file, no)
-			}
+			alert.UnexpectedEvent("cpu_leaser_leak", "Acquire() handle leak at %s!", droppedLease.location)
 		}
-
-		l.leases = append(l.leases, lease)
 	}
 
-	log.Debugf("Leased %s to task: %q (%d milliCPU)", Format(leaseSet...), taskID, milliCPU)
-	return selectedNode, leaseSet, func() {
+	lease := lease{
+		taskID: taskID,
+		cpus:   leaseSet,
+	}
+	if *warnAboutLeaks {
+		if _, file, no, ok := runtime.Caller(1); ok {
+			lease.location = fmt.Sprintf("%s:%d", file, no)
+		}
+	}
+
+	l.leases = append(l.leases, lease)
+
+	// The kernel rejects cpuset.mems values that include nodes without memory,
+	// so we only return the selected nodes that have memory.
+	numaNodes := slices.DeleteFunc(selectedNodes, func(node int) bool {
+		return l.nodeMemoryBytes[node] == 0
+	})
+
+	log.Debugf("Leased CPUs %s and memory on NUMA nodes %s to task: %q (%d milliCPU, %d memory bytes)", Format(leaseSet...), Format(numaNodes...), taskID, milliCPU, memoryBytes)
+	return numaNodes, leaseSet, func() {
 		l.release(taskID)
 	}
 }

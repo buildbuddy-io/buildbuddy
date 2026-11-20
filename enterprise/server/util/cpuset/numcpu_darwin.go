@@ -18,3 +18,12 @@ func GetCPUs() ([]CPUInfo, error) {
 	}
 	return toCPUInfos(nodes, 0), nil
 }
+
+func getNodeMemoryBytes() (map[int]int64, error) {
+	mem := gosigar.Mem{}
+	if err := mem.Get(); err != nil {
+		return nil, err
+	}
+	// GetCPUs puts every CPU on node 0, so all memory is on node 0 too.
+	return map[int]int64{0: int64(mem.Total)}, nil
+}
