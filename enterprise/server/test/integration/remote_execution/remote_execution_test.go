@@ -43,6 +43,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -2520,6 +2521,9 @@ func testProactiveCancellation(t *testing.T, forward bool) {
 	// Add 2 single-task executors so each can only run one task at a time.
 	executor1 := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "executor1"})
 	executor2 := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "executor2"})
+	initialRemovedCount := testmetrics.CounterValueForLabels(t, metrics.RemoteExecutionProactiveTaskCancellationRequests, prometheus.Labels{
+		metrics.ProactiveTaskCancellationStatus: "removed_from_queue",
+	})
 
 	totalQueueLen := func() int {
 		return executor1.QueueLength() + executor2.QueueLength()
@@ -2563,6 +2567,11 @@ func testProactiveCancellation(t *testing.T, forward bool) {
 	// 0.
 	require.Eventually(t, func() bool {
 		return totalQueueLen() == 0
+	}, time.Minute, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		return testmetrics.CounterValueForLabels(t, metrics.RemoteExecutionProactiveTaskCancellationRequests, prometheus.Labels{
+			metrics.ProactiveTaskCancellationStatus: "removed_from_queue",
+		}) == initialRemovedCount+1
 	}, time.Minute, 10*time.Millisecond)
 
 	// Clean up: exit command1.
