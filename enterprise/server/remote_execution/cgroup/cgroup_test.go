@@ -1,10 +1,12 @@
 package cgroup
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -345,4 +347,74 @@ func TestReadEffectiveCPULimit(t *testing.T) {
 			require.Equal(t, testCase.expected, limit)
 		})
 	}
+}
+
+func TestWriteFreeze(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		initialContent string
+		freeze         bool
+		wantContent    string
+	}{
+		{name: "freeze", initialContent: "0\n", freeze: true, wantContent: "1"},
+		{name: "unfreeze", initialContent: "1\n", freeze: false, wantContent: "0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "cgroup.freeze"), []byte(test.initialContent), 0o644))
+
+			err := WriteFreeze(dir, test.freeze)
+			require.NoError(t, err)
+
+			content, err := os.ReadFile(filepath.Join(dir, "cgroup.freeze"))
+			require.NoError(t, err)
+			require.Equal(t, test.wantContent, string(content))
+		})
+	}
+}
+
+func TestWaitFrozen(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		initialEvents string
+		frozen        bool
+		updatedEvents string
+	}{
+		{name: "frozen", initialEvents: "populated 1\nfrozen 0\n", frozen: true, updatedEvents: "populated 1\nfrozen 1\n"},
+		{name: "not frozen", initialEvents: "populated 1\nfrozen 1\n", frozen: false, updatedEvents: "populated 1\nfrozen 0\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "cgroup.events"), []byte(test.initialEvents), 0o644))
+
+			waitErr := make(chan error, 1)
+			go func() { waitErr <- WaitFrozen(t.Context(), dir, test.frozen) }()
+
+			// WaitFrozen should not return while cgroup.events still reports
+			// the initial state.
+			select {
+			case err := <-waitErr:
+				require.FailNowf(t, "WaitFrozen returned early", "err: %v", err)
+			case <-time.After(20 * time.Millisecond):
+			}
+
+			// Replace cgroup.events with a rename so that WaitFrozen never
+			// reads a partially written file.
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "cgroup.events.tmp"), []byte(test.updatedEvents), 0o644))
+			require.NoError(t, os.Rename(filepath.Join(dir, "cgroup.events.tmp"), filepath.Join(dir, "cgroup.events")))
+			err := <-waitErr
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestWaitFrozenContextDone(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "cgroup.events"), []byte("populated 1\nfrozen 0\n"), 0o644))
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+
+	err := WaitFrozen(ctx, dir, true)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }

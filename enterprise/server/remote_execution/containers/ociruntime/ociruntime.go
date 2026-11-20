@@ -126,6 +126,9 @@ const (
 
 	// Path to tini binary in the container.
 	tiniMountPoint = "/usr/local/buildbuddy-container-tools/tini"
+
+	// How long Pause waits for the container's processes to stop.
+	pauseTimeout = 10 * time.Second
 )
 
 var (
@@ -891,13 +894,24 @@ func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
-	err := c.invokeRuntimeSimple(ctx, "pause", c.cid)
-
+	if c.cid == "" {
+		return status.FailedPreconditionError("container is not created")
+	}
 	if c.releaseCPUs != nil {
-		c.releaseCPUs()
+		defer c.releaseCPUs()
 	}
 
-	return err
+	// Freeze the cgroup directly, because the runtime's pause command costs a
+	// process spawn and returns before the container's processes have stopped.
+	if err := cgroup.WriteFreeze(c.cgroupPath(), true); err != nil {
+		return fmt.Errorf("freeze cgroup: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, pauseTimeout)
+	defer cancel()
+	if err := cgroup.WaitFrozen(ctx, c.cgroupPath(), true); err != nil {
+		return fmt.Errorf("wait for cgroup to freeze: %w", err)
+	}
+	return nil
 }
 
 func (c *ociContainer) Unpause(ctx context.Context) error {
@@ -906,7 +920,10 @@ func (c *ociContainer) Unpause(ctx context.Context) error {
 		return fmt.Errorf("setup cgroup: %w", err)
 	}
 
-	return c.invokeRuntimeSimple(ctx, "resume", c.cid)
+	if err := cgroup.WriteFreeze(c.cgroupPath(), false); err != nil {
+		return fmt.Errorf("unfreeze cgroup: %w", err)
+	}
+	return nil
 }
 
 func (c *ociContainer) Remove(ctx context.Context) error {
