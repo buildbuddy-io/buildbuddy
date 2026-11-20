@@ -808,7 +808,9 @@ func (w *writeHandler) Close() error {
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 	var streamState *writeHandler
+	req := bspb.WriteRequestFromVTPool()
 	defer func() {
+		req.ReturnToVTPool()
 		if streamState == nil {
 			return
 		}
@@ -816,15 +818,8 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			log.Error(err.Error())
 		}
 	}()
-	// Receive into a pooled WriteRequest so the data buffer is reused across
-	// messages instead of reallocated per chunk. This loop never calls Recv,
-	// so in-process callers that pass wrapped streams (e.g.
-	// ByteStreamServerProxy) must put their receive logic in RecvMsg.
-	req := bspb.WriteRequestFromVTPool()
-	defer req.ReturnToVTPool()
 	for {
-		// VT unmarshal doesn't reset, so we need to reset manually.
-		req.ResetVT()
+		req.ResetVT() // VT unmarshal doesn't reset, so we need to reset manually.
 		err := stream.RecvMsg(req)
 		if err == io.EOF {
 			return nil
