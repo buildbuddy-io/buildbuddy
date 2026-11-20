@@ -5,6 +5,7 @@ package xcode
 /*
 #cgo LDFLAGS: -framework CoreServices
 #import <CoreServices/CoreServices.h>
+#include <limits.h>
 */
 import "C"
 
@@ -32,7 +33,6 @@ import (
 const xcodeBundleID = "com.apple.dt.Xcode"
 const versionPlistPath = "Contents/version.plist"
 const developerDirectoryPath = "Contents/Developer"
-const filePrefix = "file://"
 const defaultXcodeVersion = "default-xcode-version"
 
 var desiredXcodeVersions = flag.Slice("executor.desired_xcode_versions", []string{}, "List of Xcode versions desired on the host system. If any of the provided Xcode versions cannot be found on the host, the executor will log a warning message.")
@@ -126,10 +126,10 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 // Locates all Xcode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
 func (x *xcodeLocator) locate() {
-	x.versions = versionMap(applicationURLs(xcodeBundleID))
+	x.versions = versionMap(applicationPaths(xcodeBundleID))
 }
 
-func applicationURLs(bundleID string) []string {
+func applicationPaths(bundleID string) []string {
 	cfBundleID := stringToCFString(bundleID)
 	defer C.CFRelease(C.CFTypeRef(cfBundleID))
 
@@ -139,27 +139,31 @@ func applicationURLs(bundleID string) []string {
 	}
 	defer C.CFRelease(C.CFTypeRef(urls))
 
-	// Copy each URL into Go memory while its owning array is still alive.
+	// Copy each filesystem path into Go memory while its URL is still alive.
 	n := C.CFArrayGetCount(urls)
-	result := make([]string, 0, n)
+	paths := make([]string, 0, n)
+	var path [C.PATH_MAX]C.UInt8
 	for i := range n {
 		url := C.CFURLRef(uintptr(C.CFArrayGetValueAtIndex(urls, i)))
-		result = append(result, stringFromCFString(C.CFURLGetString(url)))
+		if C.CFURLGetFileSystemRepresentation(url, 1, &path[0], C.CFIndex(len(path))) == 0 {
+			log.Warningf("Could not get filesystem path for application URL %d for %s", i, bundleID)
+			continue
+		}
+		paths = append(paths, C.GoString((*C.char)(unsafe.Pointer(&path[0]))))
 	}
-	return result
+	return paths
 }
 
-func versionMap(urls []string) map[string]*xcodeVersion {
+func versionMap(paths []string) map[string]*xcodeVersion {
 	defaultDeveloperDir := xcodeSelectDeveloperDir()
 	versionMap := make(map[string]*xcodeVersion)
-	for _, url := range urls {
-		path := strings.TrimPrefix(url, filePrefix)
-		xcodePlist, err := xcodePlistForPath(path + versionPlistPath)
+	for _, path := range paths {
+		xcodePlist, err := xcodePlistForPath(filepath.Join(path, versionPlistPath))
 		if err != nil {
 			log.Warningf("Error reading plist for Xcode: %s", err.Error())
 			continue
 		}
-		developerDirPath := path + developerDirectoryPath
+		developerDirPath := filepath.Join(path, developerDirectoryPath)
 		sdkPaths, err := fs.Glob(os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
 		if err != nil {
 			log.Warningf("Error reading Xcode SDKs from %s: %s", path, err.Error())
@@ -296,11 +300,6 @@ func stringToCFString(gostr string) C.CFStringRef {
 	defer C.free(unsafe.Pointer(cstr))
 
 	return C.CFStringCreateWithCString(0, cstr, C.kCFStringEncodingUTF8)
-}
-
-// Converts a CFStringRef into a go string.
-func stringFromCFString(cfStr C.CFStringRef) string {
-	return C.GoString(C.CFStringGetCStringPtr(cfStr, C.kCFStringEncodingUTF8))
 }
 
 func sdksString(sdks map[string]string) string {
