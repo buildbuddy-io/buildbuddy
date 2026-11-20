@@ -183,7 +183,10 @@ proto_library(
 proto_library(
     name = "bytestream_proto",
     srcs = ["bytestream.proto"],
-    deps = [":capability_proto"],
+    deps = [
+        ":capability_proto",
+        ":reference_proto",
+    ],
 )
 
 proto_library(
@@ -1189,7 +1192,10 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/bytestream",
     mode = "messages_and_services",
     proto = ":bytestream_proto",
-    deps = [":capability_go_proto"],
+    deps = [
+        ":capability_go_proto",
+        ":reference_go_proto",
+    ],
 )
 
 go_proto_library(
