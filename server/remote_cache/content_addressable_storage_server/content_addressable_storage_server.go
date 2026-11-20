@@ -67,13 +67,22 @@ var (
 	findMissingChunkFallbackConcurrency = expflag.Int64("cache.find_missing_chunk_fallback_concurrency", 8, "The maximum number of chunk manifest lookups that FindMissingBlobs performs in parallel, for missing blobs that may be stored as chunks. Values less than 1 are treated as 1.")
 )
 
-// maxPooledTreeCacheBufSizeBytes is the size of the biggest buffers in
-// treeCacheBufPool. Bigger TreeCaches can still be read, but they grow their
-// buffer while being read.
-const maxPooledTreeCacheBufSizeBytes = 64 * 1024 * 1024
+const (
+	// minPooledTreeCacheSizeBytes is the serialized size of the smallest
+	// TreeCaches that are read into a buffer from treeCacheBufPool. Reading
+	// into a pooled buffer takes a cache.Reader, which costs more than a
+	// cache.Get (in the distributed cache, it's a streaming RPC instead of a
+	// unary one), so smaller TreeCaches aren't worth it.
+	minPooledTreeCacheSizeBytes = 512 * 1024
 
-// treeCacheBufPool holds the buffers that serialized TreeCaches are read into.
-// TreeCaches of big trees are tens of megabytes.
+	// maxPooledTreeCacheBufSizeBytes is the size of the biggest buffers in
+	// treeCacheBufPool. Bigger TreeCaches can still be read, but they grow
+	// their buffer while being read.
+	maxPooledTreeCacheBufSizeBytes = 64 * 1024 * 1024
+)
+
+// treeCacheBufPool holds the buffers that big serialized TreeCaches are read
+// into. TreeCaches of big trees are tens of megabytes.
 var treeCacheBufPool = bytebufferpool.VariableSize(maxPooledTreeCacheBufSizeBytes)
 
 type ContentAddressableStorageServer struct {
@@ -708,6 +717,15 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 // readTreeCache reads and unmarshals the TreeCache stored under rn. It also
 // returns the serialized size of the TreeCache.
 func (s *ContentAddressableStorageServer) readTreeCache(ctx context.Context, rn *rspb.ResourceName) (*capb.TreeCache, int, error) {
+	if rn.GetDigest().GetSizeBytes() < minPooledTreeCacheSizeBytes {
+		// If the tree is small, a unary call is faster than a streaming one.
+		data, err := s.cache.Get(ctx, rn)
+		if err != nil {
+			return nil, 0, err
+		}
+		return unmarshalTreeCache(data)
+	}
+
 	rc, err := s.cache.Reader(ctx, rn, 0, 0)
 	if err != nil {
 		return nil, 0, err
@@ -728,11 +746,15 @@ func (s *ContentAddressableStorageServer) readTreeCache(ctx context.Context, rn 
 	if _, err := io.Copy(buf, rc); err != nil {
 		return nil, 0, err
 	}
+	return unmarshalTreeCache(buf.Bytes())
+}
+
+func unmarshalTreeCache(data []byte) (*capb.TreeCache, int, error) {
 	treeCache := &capb.TreeCache{}
-	if err := proto.Unmarshal(buf.Bytes(), treeCache); err != nil {
+	if err := proto.Unmarshal(data, treeCache); err != nil {
 		return nil, 0, err
 	}
-	return treeCache, buf.Len(), nil
+	return treeCache, len(data), nil
 }
 
 func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.Context, treeCacheRN *digest.ResourceName) ([]*capb.DirectoryWithDigest, int, error) {
