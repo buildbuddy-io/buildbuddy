@@ -291,11 +291,24 @@ However, some `exec_properties` are provided as manual overrides:
 - `EstimatedComputeUnits`: a convenience unit that specifies both CPU
   and memory. One compute unit is defined as 1 CPU and 2.5GB of
   memory. Accepts numerical values, e.g. `1` or `9`.
+- `EstimatedGPUMemory`: GPU memory to allocate when no automatic GPU estimate
+  is available. Accepts bytes or values such as `8GB`. An automatic estimate
+  takes precedence, including an estimate of zero, even when
+  `EstimatedComputeUnits` is set. Compute units do not imply any GPU capacity.
+- `MinGPUMemory`: the minimum GPU memory to allocate, using the same byte-size
+  syntax. This minimum applies to both automatic estimates and the
+  `EstimatedGPUMemory` fallback.
 - `EstimatedFreeDiskBytes`: the amount of disk space allocated to the action.
   Example values:
   - `1M`: 1 MB
   - `2GB`: 2 GB
   - `4.5GB`: 4.5 GB
+
+The GPU properties require the `remote_execution.task_gpu_sizing_enabled`
+experiment. GPU sizing is independent of custom resources, so both sets of
+requirements apply while migrating from custom GPU resources. Executors must
+report GPU capacity configured using `executor.gpu_memory_bytes` or
+`SYS_GPU_MEMORY_BYTES`.
 
 ### Execution timeout properties
 
