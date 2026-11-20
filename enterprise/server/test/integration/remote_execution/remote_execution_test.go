@@ -563,7 +563,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	opts := &rbetest.ExecuteOpts{
 		APIKey: rbe.APIKey1,
 		RemoteHeaders: map[string]string{
-			"x-buildbuddy-platform.pool": "foo",
+			"x-buildbuddy-platform": "pool=foo",
 		},
 	}
 
@@ -681,7 +681,7 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 	}
 	opts := &rbetest.ExecuteOpts{
 		RemoteHeaders: map[string]string{
-			"x-buildbuddy-platform.pool": "foo",
+			"x-buildbuddy-platform": "pool=foo",
 		},
 	}
 
