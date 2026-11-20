@@ -706,7 +706,7 @@ func (p *Provider) buildGenericSnapshots(ctx context.Context, cgroupParent strin
 		}
 		eg.Go(func() error {
 			vmConfig := genericVMConfig(ctx, shape, fcpb.NetworkMode_NETWORK_MODE_OFF)
-			vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
+			vmConfig.BootArgs = getBootArgs(vmConfig, true /*=genericSnapshot*/)
 			p.buildGenericSnapshot(ctx, cgroupParent, nil /*=experiments*/, vmConfig)
 			return nil
 		})
@@ -766,7 +766,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnablePci:         *enablePCI,
 		EnableKvmClock:    execution_experiments.FirecrackerGuestKvmClock.Get(ctx),
 	}
-	vmConfig.BootArgs = getBootArgs(vmConfig, false /*=deferRootfsMount*/)
+	vmConfig.BootArgs = getBootArgs(vmConfig, false /*=genericSnapshot*/)
 	opts := ContainerOpts{
 		VMConfiguration:        vmConfig,
 		ContainerImage:         args.Props.ContainerImage,
@@ -815,7 +815,7 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	}
 	vmConfig := genericVMConfig(ctx, shape, networkMode)
 	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
-	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=deferRootfsMount*/)
+	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=genericSnapshot*/)
 	// The host memory limit is computed from the scheduled size, which the
 	// guest's memory exceeds, so the guest enforces that size instead.
 	cgroupSettings := args.Task.GetSchedulingMetadata().GetCgroupSettings().CloneVT()
@@ -1792,7 +1792,11 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 // erofsRoot reports whether the VM's container root is a read-only EROFS image
 // with writes going to the scratch disk.
 func (c *FirecrackerContainer) erofsRoot() bool {
-	return c.genericSnapshot && *genericErofsRoot
+	return erofsRoot(c.genericSnapshot)
+}
+
+func erofsRoot(genericSnapshot bool) bool {
+	return genericSnapshot && *genericErofsRoot
 }
 
 // imageFormat is the disk image format of the VM's container root.
@@ -2072,7 +2076,7 @@ func (c *FirecrackerContainer) getChroot() string {
 	return filepath.Join(c.jailerRoot, "firecracker", c.id, "root")
 }
 
-func getBootArgs(vmConfig *fcpb.VMConfiguration, deferRootfsMount bool) string {
+func getBootArgs(vmConfig *fcpb.VMConfiguration, genericSnapshot bool) string {
 	kernelArgs := []string{
 		"ro",
 		"console=ttyS0",
@@ -2134,11 +2138,11 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration, deferRootfsMount bool) string {
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		initArgs = append(initArgs, "-enable_rootfs")
 	}
-	if deferRootfsMount {
+	if genericSnapshot {
 		initArgs = append(initArgs, "-defer_rootfs_mount")
-		if *genericErofsRoot {
-			initArgs = append(initArgs, "-scratch_ext4")
-		}
+	}
+	if erofsRoot(genericSnapshot) {
+		initArgs = append(initArgs, "-scratch_ext4")
 	}
 	if vmConfig.EnableVfs {
 		initArgs = append(initArgs, "-enable_vfs")
@@ -2155,7 +2159,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	if c.network != nil {
 		netnsPath = c.network.NamespacePath()
 	}
-	bootArgs := getBootArgs(c.vmConfig, c.genericSnapshot /*=deferRootfsMount*/)
+	bootArgs := getBootArgs(c.vmConfig, c.genericSnapshot)
 	guestKernelPath := c.executorConfig.GuestKernelImagePath
 	if c.shouldUpgradeGuestKernel() {
 		guestKernelPath = c.executorConfig.GuestKernelImagePath6_18
@@ -2219,6 +2223,9 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	}...)
 	// The EROFS root's scratch disk is /dev/vdc.
 	if c.erofsRoot() {
+		if !snaputil.IsChunkedSnapshotSharingEnabled() {
+			return nil, status.FailedPreconditionError("EROFS roots require chunked snapshot sharing")
+		}
 		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
 			DriveID:      new(scratchDriveID),
 			PathOnHost:   &scratchFS,
@@ -2451,8 +2458,14 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 	// Generic VMs call this again after attaching the container root, when
 	// the scratch disk is already mounted.
 	setup := func(driveID string, store *copy_on_write.COWStore, mounted *vbd.FS) (*vbd.FS, error) {
-		if store == nil || mounted != nil {
+		if mounted != nil {
+			if mounted.File() != vbd.BlockDevice(store) {
+				return nil, status.InternalErrorf("%s VBD is mounted from a different store", driveID)
+			}
 			return mounted, nil
+		}
+		if store == nil {
+			return nil, nil
 		}
 		d, err := vbd.New(store)
 		if err != nil {
