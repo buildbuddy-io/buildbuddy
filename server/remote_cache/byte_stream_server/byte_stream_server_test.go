@@ -29,16 +29,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	guuid "github.com/google/uuid"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -1488,6 +1493,115 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 			require.Equal(t, tc.want, cache.maxConcurrentReads())
 			close(cache.release)
 			require.NoError(t, <-errCh)
+		})
+	}
+}
+
+// referenceReaderCache answers ReaderOrReference with ref when it's set.
+type referenceReaderCache struct {
+	interfaces.Cache
+	ref *refpb.Reference
+}
+
+func (c *referenceReaderCache) ReaderOrReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, io.ReadCloser, error) {
+	if c.ref != nil {
+		return c.ref, nil, nil
+	}
+	rc, err := c.Cache.Reader(ctx, r, 0, 0)
+	return nil, rc, err
+}
+
+func TestReadReference(t *testing.T) {
+	const bucket = "test-bucket"
+	readGCS := func(bucket string) *cappb.CacheCapabilities {
+		return &cappb.CacheCapabilities{Capabilities: []*cappb.CacheCapability{
+			{Key: cappb.CacheCapabilityKey_CACHE_CAPABILITY_READ_GCS, Value: bucket},
+		}}
+	}
+	for _, tc := range []struct {
+		name       string
+		experiment bool
+		caps       *cappb.CacheCapabilities
+		offset     int64
+		encrypted  bool
+		hasRef     bool
+		wantRef    bool
+	}{
+		{name: "reference", experiment: true, caps: readGCS(bucket), hasRef: true, wantRef: true},
+		{name: "experiment_off", experiment: false, caps: readGCS(bucket), hasRef: true},
+		{name: "no_capabilities", experiment: true, hasRef: true},
+		{name: "other_bucket", experiment: true, caps: readGCS("other-bucket"), hasRef: true},
+		{name: "encrypted", experiment: true, caps: readGCS(bucket), hasRef: true, encrypted: true},
+		{name: "offset", experiment: true, caps: readGCS(bucket), hasRef: true, offset: 1},
+		{name: "not_in_shared_storage", experiment: true, caps: readGCS(bucket)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache.bytestream_read_references", tc.experiment)
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
+			require.NoError(t, te.GetCache().Set(cacheCtx, rn, buf))
+
+			cache := &referenceReaderCache{Cache: te.GetCache()}
+			if tc.hasRef {
+				cache.ref = &refpb.Reference{
+					Metadata:        &sgpb.FileMetadata{StoredSizeBytes: 1000},
+					Resource:        rn.CloneVT(),
+					StoredSizeBytes: 1000,
+					Gcs: &refpb.GCSLocation{
+						Bucket:             bucket,
+						BlobName:           "blob",
+						LastCustomTimeUsec: 1234,
+						Shared:             true,
+					},
+				}
+				if tc.encrypted {
+					cache.ref.Encryption = &refpb.EncryptionInfo{KeyId: "key"}
+				}
+			}
+			te.SetCache(cache)
+			bsClient := bspb.NewByteStreamClient(runByteStreamServer(ctx, t, te))
+
+			stream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+				ResourceName:      digest.NewCASResourceName(rn.GetDigest(), "", rn.GetDigestFunction()).DownloadString(),
+				ReadOffset:        tc.offset,
+				CacheCapabilities: tc.caps,
+			})
+			require.NoError(t, err)
+			var got []byte
+			var refs []*refpb.Reference
+			for {
+				rsp, err := stream.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+				got = append(got, rsp.GetData()...)
+				if rsp.GetReference() != nil {
+					refs = append(refs, rsp.GetReference())
+				}
+			}
+
+			if !tc.wantRef {
+				require.Empty(t, refs)
+				require.Equal(t, buf[tc.offset:], got)
+				return
+			}
+			require.Empty(t, got)
+			require.Len(t, refs, 1)
+			// Only the fields the client needs are sent.
+			want := &refpb.Reference{
+				Resource:        rn,
+				StoredSizeBytes: 1000,
+				Gcs: &refpb.GCSLocation{
+					Bucket:             bucket,
+					BlobName:           "blob",
+					LastCustomTimeUsec: 1234,
+				},
+			}
+			require.Empty(t, cmp.Diff(want, refs[0], protocmp.Transform()))
 		})
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
+	"slices"
 	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -41,6 +42,7 @@ import (
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -55,6 +57,7 @@ var (
 	bazel6_2_0              = bazel_request.MustParseVersion("6.2.0")
 	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
 
+	readReferences      = expflag.Bool("cache.bytestream_read_references", false, "If true, a ByteStream Read may be answered with a reference to the blob in shared storage, for clients that advertise they can read that storage.")
 	alreadyExistsStatus = expflag.Bool("cache.bytestream_already_exists_status", false, "If true, a ByteStream Write for a blob that already exists ends with an ALREADY_EXISTS status instead of a WriteResponse, for clients that can handle it.")
 )
 
@@ -145,12 +148,16 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	return s.ReadCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+	return s.readCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), req.GetCacheCapabilities(), stream)
 }
 
 // This version of Read accepts the parameters of a ReadRequest directly so it
 // can be called by ByteStreamServerProxy to avoid re-parsing resource names.
 func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error {
+	return s.readCASResource(ctx, r, offset, limit, nil, stream)
+}
+
+func (s *ByteStreamServer) readCASResource(ctx context.Context, r *digest.CASResourceName, offset, limit int64, caps *cappb.CacheCapabilities, stream bspb.ByteStream_ReadServer) error {
 	if !s.supportsCompressor(r.GetCompressor()) {
 		return status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
@@ -210,7 +217,19 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
-	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
+	var reader io.ReadCloser
+	if rr, ok := s.cache.(interfaces.ReferenceReader); ok && offset == 0 && limit == 0 && len(readableGCSBuckets(caps)) > 0 && readReferences.Get(ctx) {
+		var ref *refpb.Reference
+		ref, reader, err = rr.ReaderOrReference(ctx, cacheRN.ToProto())
+		if ref != nil {
+			if clientRef := referenceForClient(ref, caps); clientRef != nil {
+				return s.sendReference(stream, clientRef, downloadTracker)
+			}
+			reader, err = s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
+		}
+	} else {
+		reader, err = s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
+	}
 	if err != nil {
 		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
 			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
@@ -268,6 +287,49 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		log.Debugf("ByteStream Read: downloadTracker.CloseWithBytesTransferred error: %s", err)
 	}
 	return err
+}
+
+func readableGCSBuckets(caps *cappb.CacheCapabilities) []string {
+	var buckets []string
+	for _, c := range caps.GetCapabilities() {
+		if c.GetKey() == cappb.CacheCapabilityKey_CACHE_CAPABILITY_READ_GCS && c.GetValue() != "" {
+			buckets = append(buckets, c.GetValue())
+		}
+	}
+	return buckets
+}
+
+// referenceForClient returns the parts of ref that a client needs to read the
+// blob directly, or nil if the client can't read it: the blob must be
+// unencrypted and stored in a GCS bucket the client said it can read.
+func referenceForClient(ref *refpb.Reference, caps *cappb.CacheCapabilities) *refpb.Reference {
+	gcs := ref.GetGcs()
+	if ref.GetEncryption() != nil || ref.GetMetadata().GetEncryptionMetadata() != nil {
+		return nil
+	}
+	if ref.GetResource() == nil || gcs.GetBlobName() == "" || !slices.Contains(readableGCSBuckets(caps), gcs.GetBucket()) {
+		return nil
+	}
+	return &refpb.Reference{
+		Resource:        ref.GetResource().CloneVT(),
+		StoredSizeBytes: ref.GetStoredSizeBytes(),
+		Gcs: &refpb.GCSLocation{
+			Bucket:             gcs.GetBucket(),
+			BlobName:           gcs.GetBlobName(),
+			LastCustomTimeUsec: gcs.GetLastCustomTimeUsec(),
+		},
+	}
+}
+
+func (s *ByteStreamServer) sendReference(stream bspb.ByteStream_ReadServer, ref *refpb.Reference, downloadTracker interfaces.TransferTimer) error {
+	if err := stream.Send(&bspb.ReadResponse{Reference: ref}); err != nil {
+		return err
+	}
+	// The client reads the stored bytes itself, so count those as downloaded.
+	if err := downloadTracker.CloseWithBytesTransferred(ref.GetStoredSizeBytes(), ref.GetStoredSizeBytes(), ref.GetResource().GetCompressor(), "byte_stream_server"); err != nil {
+		log.Debugf("ByteStream Read: downloadTracker.CloseWithBytesTransferred error: %s", err)
+	}
+	return nil
 }
 
 func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64) (io.ReadCloser, error) {

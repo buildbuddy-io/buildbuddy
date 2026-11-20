@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:bytestream_go_proto",
         "//proto:capability_go_proto",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -51,8 +52,11 @@ go_test(
     embed = [":byte_stream_server"],
     deps = [
         "//proto:bytestream_go_proto",
+        "//proto:capability_go_proto",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
+        "//proto:storage_go_proto",
         "//server/backends/memory_metrics_collector",
         "//server/interfaces",
         "//server/remote_cache/cachetools",
@@ -71,6 +75,7 @@ go_test(
         "//server/util/random",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
@@ -79,5 +84,6 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

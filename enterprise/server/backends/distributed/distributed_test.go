@@ -5007,3 +5007,72 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 	require.Zero(t, caches[nonReplica].lookups[rn.GetDigest().GetHash()])
 	caches[nonReplica].mu.Unlock()
 }
+
+func TestReaderOrReference(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	newCluster := func(t *testing.T, disableLocalLookup bool) (*Cache, *rspb.ResourceName, []byte) {
+		store := &sharedBlobStore{blobs: map[string][]byte{}}
+		var peers []string
+		for range 3 {
+			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+		}
+		var dcs []*Cache
+		for _, peer := range peers {
+			local := &referenceMemoryCache{Cache: newMemoryCache(t, 1_000_000), store: store}
+			dcs = append(dcs, startNewDCache(t, env, Options{
+				ReplicationFactor:  3,
+				Nodes:              slices.Clone(peers),
+				DisableLocalLookup: disableLocalLookup,
+				ListenAddr:         peer,
+			}, local))
+		}
+		for _, peer := range peers {
+			waitForReady(t, peer)
+		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		return dcs[0], rn, buf
+	}
+
+	for _, tc := range []struct {
+		name               string
+		readReferences     bool
+		disableLocalLookup bool
+		wantRef            bool
+	}{
+		{name: "remote_reference", readReferences: true, disableLocalLookup: true, wantRef: true},
+		{name: "remote_bytes", readReferences: false, disableLocalLookup: true},
+		{name: "local_reference", disableLocalLookup: false, wantRef: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setReferenceExperiments(t, map[string]bool{
+				"distributed_cache.read_gcs_references": tc.readReferences,
+			})
+			dc, rn, buf := newCluster(t, tc.disableLocalLookup)
+
+			ref, rc, err := dc.ReaderOrReference(ctx, rn)
+			require.NoError(t, err)
+			if tc.wantRef {
+				require.Nil(t, rc)
+				require.Equal(t, testBlobName(rn), ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
+				return
+			}
+			require.Nil(t, ref)
+			defer rc.Close()
+			got, err := io.ReadAll(rc)
+			require.NoError(t, err)
+			require.Equal(t, buf, got)
+		})
+	}
+
+	t.Run("missing", func(t *testing.T) {
+		dc, _, _ := newCluster(t, true)
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		_, _, err := dc.ReaderOrReference(ctx, rn)
+		require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+	})
+}

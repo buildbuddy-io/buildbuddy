@@ -2178,6 +2178,47 @@ func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedO
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
+// ReaderOrReference is like Reader, except that a peer holding rn in shared
+// storage may answer with a reference to it instead of its bytes.
+func (c *Cache) ReaderOrReference(ctx context.Context, rn *rspb.ResourceName) (*refpb.Reference, io.ReadCloser, error) {
+	ps := c.readPeers(rn)
+	lookups := 0
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		lookups++
+		ref, r, err := c.remoteReaderOrReference(ctx, peer, rn)
+		if err == nil {
+			c.backfillPeers(ctx, c.getBackfillOrders(rn, ps))
+			metrics.DistributedCachePeerLookups.WithLabelValues("ReaderOrReference", metrics.HitStatusLabel).Observe(float64(lookups))
+			return ref, r, nil
+		}
+		if status.IsNotFoundError(err) {
+			c.log.CtxDebugf(ctx, "ReaderOrReference(%q) not found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
+			continue
+		}
+		c.log.CtxDebugf(ctx, "ReaderOrReference(%q) error on peer %s: %s", distributed_client.ResourceIsolationString(rn), peer, err)
+		ps.MarkPeerAsFailed(peer)
+	}
+	metrics.DistributedCachePeerLookups.WithLabelValues("ReaderOrReference", metrics.MissStatusLabel).Observe(float64(lookups))
+	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
+}
+
+func (c *Cache) remoteReaderOrReference(ctx context.Context, peer string, rn *rspb.ResourceName) (*refpb.Reference, io.ReadCloser, error) {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
+		if refCache, ok := c.local.(interfaces.ReferenceCache); ok {
+			if ref, err := refCache.ReadReference(ctx, rn); err == nil {
+				recordRead("ReaderOrReference", "local_reference", rn.GetDigest())
+				return ref, nil, nil
+			}
+		}
+		rc, err := c.local.Reader(ctx, rn, 0, 0)
+		if err == nil {
+			recordRead("ReaderOrReference", "local", rn.GetDigest())
+		}
+		return nil, rc, err
+	}
+	return c.distributedProxy.RemoteReaderOrReference(ctx, peer, rn)
+}
+
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	mwc, err := c.multiWriter(ctx, r)
 	if err != nil {

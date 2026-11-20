@@ -375,6 +375,16 @@ type ReferenceCache interface {
 	WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error
 }
 
+// A Cache that can answer a read with a reference to the blob in shared
+// storage instead of its bytes.
+type ReferenceReader interface {
+	// ReaderOrReference reads the whole resource named by r like Reader, except
+	// that if the blob is in shared storage it may return a reference to it
+	// instead. Exactly one of the reference and the reader is non-nil on
+	// success.
+	ReaderOrReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, io.ReadCloser, error)
+}
+
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
 	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
