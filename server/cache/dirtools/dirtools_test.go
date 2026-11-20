@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -2466,6 +2467,82 @@ func BenchmarkUploadTree(b *testing.B) {
 			for b.Loop() {
 				_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, cmd, &repb.ActionResult{}, false /*=addToFileCache*/, nil /*=chunkingParams*/)
 				require.NoError(b, err)
+			}
+		})
+	}
+}
+
+func BenchmarkDownloadTree(b *testing.B) {
+	for _, numFiles := range []int{1_000, 10_000, 100_000} {
+		b.Run(fmt.Sprintf("files=%d", numFiles), func(b *testing.B) {
+			env, ctx := testEnv(b)
+			srcDir := testfs.MakeTempDir(b)
+			testfs.WriteRandomTree(b, filepath.Join(srcDir, "out"), numFiles, int64(numFiles)*2048 /*=totalBytes*/)
+			cmd := &repb.Command{OutputPaths: []string{"out"}}
+			dirHelper := dirtools.NewDirHelper(srcDir, cmd, fs.FileMode(0o755))
+			// Upload the files and add them to the file cache, since most
+			// inputs are linked from the file cache.
+			actionResult := &repb.ActionResult{}
+			_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, cmd, actionResult, true /*=addToFileCache*/, nil /*=chunkingParams*/)
+			require.NoError(b, err)
+			tree := &repb.Tree{}
+			treeRN := digest.NewCASResourceName(actionResult.GetOutputDirectories()[0].GetTreeDigest(), "", repb.DigestFunction_SHA256)
+			err = cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), treeRN, tree)
+			require.NoError(b, err)
+
+			b.Run("workspace=new", func(b *testing.B) {
+				rootDir := filepath.Join(testfs.MakeTempDir(b), "root")
+				for b.Loop() {
+					b.StopTimer()
+					err := os.RemoveAll(rootDir)
+					require.NoError(b, err)
+					err = os.Mkdir(rootDir, 0o755)
+					require.NoError(b, err)
+					b.StartTimer()
+					info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir})
+					require.NoError(b, err)
+					require.Zero(b, info.FileCount, "files downloaded")
+				}
+			})
+			for _, tc := range []struct {
+				name string
+				// halfChanged is whether half of the inputs differ from the
+				// ones that the previous task left in the workspace.
+				halfChanged bool
+			}{
+				{name: "workspace=reused", halfChanged: false},
+				{name: "workspace=reused_half_changed", halfChanged: true},
+			} {
+				b.Run(tc.name, func(b *testing.B) {
+					rootDir := testfs.MakeTempDir(b)
+					tf, err := dirtools.NewTreeFetcher(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir, TrackTransfers: true})
+					require.NoError(b, err)
+					inputs, err := tf.Start()
+					require.NoError(b, err)
+					_, err = tf.Wait()
+					require.NoError(b, err)
+					knownInputs := make(map[fspath.Key]*repb.FileNode, len(inputs.NeedFetching))
+					wantLinkCount := int64(0)
+					for i, relPath := range slices.Sorted(maps.Keys(inputs.NeedFetching)) {
+						node := inputs.NeedFetching[relPath]
+						if tc.halfChanged && i%2 == 0 {
+							// Give the known input a different digest, so that
+							// DownloadTree replaces the file. It links files
+							// from the file cache, but writes empty files.
+							if node.GetDigest().GetSizeBytes() > 0 {
+								wantLinkCount++
+							}
+							node = &repb.FileNode{Name: node.GetName(), Digest: &repb.Digest{Hash: strings.Repeat("0", 64), SizeBytes: node.GetDigest().GetSizeBytes()}}
+						}
+						knownInputs[fspath.NewKey(relPath, false /*=caseInsensitive*/)] = node
+					}
+					for b.Loop() {
+						info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: rootDir, KnownInputs: knownInputs})
+						require.NoError(b, err)
+						require.Zero(b, info.FileCount, "files downloaded")
+						require.Equal(b, wantLinkCount, info.LinkCount, "files linked from the file cache")
+					}
+				})
 			}
 		})
 	}
