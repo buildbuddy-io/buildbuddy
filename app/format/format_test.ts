@@ -99,6 +99,19 @@ describe("durationSec", () => {
   });
 });
 
+describe("formatGitUrl", () => {
+  it("should strip the scheme, host and .git suffix", () => {
+    expect(format.formatGitUrl("https://github.com/buildbuddy-io/buildbuddy.git")).toEqual("buildbuddy-io/buildbuddy");
+    expect(format.formatGitUrl("git@github.com:buildbuddy-io/buildbuddy.git")).toEqual("buildbuddy-io/buildbuddy");
+    expect(format.formatGitUrl("https://gitlab.com/group/project.git")).toEqual("gitlab.com/group/project");
+  });
+  it("should keep .git inside the repo name", () => {
+    expect(format.formatGitUrl("https://github.com/foo/foo.github.io.git")).toEqual("foo/foo.github.io");
+    expect(format.formatGitUrl("git@github.com:foo/foo.github.io.git")).toEqual("foo/foo.github.io");
+    expect(format.formatGitUrl("https://github.com/foo/foo.github.io")).toEqual("foo/foo.github.io");
+  });
+});
+
 describe("formatWithCommas", () => {
   it("should handle 0", () => {
     expect(format.formatWithCommas(new Long(0, 0))).toEqual("0");
