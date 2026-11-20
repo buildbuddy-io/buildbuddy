@@ -225,6 +225,55 @@ func DelegateControllers(path string) error {
 	return nil
 }
 
+// WriteFreeze writes to the cgroup.freeze file of the cgroup at the given
+// absolute path. Writing true stops all processes in the cgroup and in its
+// descendants, and writing false resumes them.
+//
+// The kernel stops the processes asynchronously after the write. This usually
+// takes a few microseconds, but a process has to finish any system call that
+// it has started before it can stop, and it cannot stop while its cgroup is
+// throttled by cpu.max. Call WaitFrozen to wait until they have stopped.
+func WriteFreeze(path string, freeze bool) error {
+	value := "0"
+	if freeze {
+		value = "1"
+	}
+	return writeFile(filepath.Join(path, "cgroup.freeze"), []byte(value))
+}
+
+// WaitFrozen waits until the cgroup.events file of the cgroup at the given
+// absolute path reports the given frozen state. The kernel reports a cgroup as
+// frozen once all processes in it and in its descendants have stopped, so that
+// none of them can still be running or be in the middle of a system call.
+func WaitFrozen(ctx context.Context, path string, frozen bool) error {
+	want := int64(0)
+	if frozen {
+		want = 1
+	}
+	start := time.Now()
+	for {
+		got, err := readCgroupInt64Field(filepath.Join(path, "cgroup.events"), "frozen")
+		if err != nil {
+			return err
+		}
+		if got == want {
+			return nil
+		}
+		// Re-read without sleeping for the first millisecond. On Linux, the Go
+		// runtime waits for timers using epoll_wait, whose timeout has
+		// millisecond precision, so even a shorter timer takes about a
+		// millisecond to fire. See https://github.com/golang/go/issues/53824
+		if time.Since(start) < time.Millisecond {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
 func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
 	m := map[string]string{}
 	if s == nil {

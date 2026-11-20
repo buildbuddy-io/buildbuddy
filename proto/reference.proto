@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/resource.proto";
 import "proto/storage.proto";
 
 package reference;
@@ -7,5 +8,33 @@ package reference;
 // A reference to a blob that resides in shared storage (e.g. GCS or S3),
 // addressable by all peers backed by the same storage.
 message Reference {
+  // Deprecated: prefer to use the fields below.
   storage.FileMetadata metadata = 1;
+
+  // The resource the referenced blob holds. The compressor is the encoding of
+  // the stored bytes, which may differ from the compressor a reader requests.
+  resource.ResourceName resource = 2;
+
+  // The size of the stored blob, after compression.
+  int64 stored_size_bytes = 3;
+
+  // Set if the stored blob is encrypted.
+  EncryptionInfo encryption = 4;
+
+  // Where the blob is stored in GCS.
+  GCSLocation gcs = 5;
+}
+
+message EncryptionInfo {
+  string key_id = 1;
+  int64 version = 2;
+}
+
+message GCSLocation {
+  string bucket = 1;
+  string blob_name = 2;
+
+  // The last custom time applied to the object, in unix micros. Objects are
+  // deleted by a bucket lifecycle rule once this is too old.
+  int64 last_custom_time_usec = 3;
 }

@@ -572,6 +572,8 @@ type CommandContainer interface {
 	Unpause(ctx context.Context) error
 
 	// Pause freezes a container so that it no longer consumes CPU resources.
+	// Implementations must wait until all execution in the container has
+	// stopped before returning.
 	Pause(ctx context.Context) error
 
 	// Remove kills any processes currently running inside the container and
