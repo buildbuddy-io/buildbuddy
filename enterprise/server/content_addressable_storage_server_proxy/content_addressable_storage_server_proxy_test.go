@@ -68,7 +68,7 @@ func requestCountingStreamInterceptor(count *atomic.Int32) grpc.StreamClientInte
 	}
 }
 
-func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*grpc.ClientConn, *atomic.Int32, *atomic.Int32) {
+func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB, opts ...grpc.DialOption) (*grpc.ClientConn, *atomic.Int32, *atomic.Int32) {
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	require.NoError(t, err)
 	bsServer, err := byte_stream_server.NewByteStreamServer(env)
@@ -79,9 +79,10 @@ func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*gr
 	go runFunc()
 	unaryRequestCounter := atomic.Int32{}
 	streamRequestCounter := atomic.Int32{}
-	conn, err := testenv.LocalGRPCConn(t, ctx, lis,
+	opts = append(opts,
 		grpc.WithUnaryInterceptor(requestCountingUnaryInterceptor(&unaryRequestCounter)),
 		grpc.WithStreamInterceptor(requestCountingStreamInterceptor(&streamRequestCounter)))
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return conn, &unaryRequestCounter, &streamRequestCounter
@@ -862,7 +863,26 @@ func TestGetTreeMissingDirectory(t *testing.T) {
 func TestGetTreeWideLevel(t *testing.T) {
 	flags.Set(t, "cache_proxy.enable_get_tree_caching", true)
 	ctx := testContext()
-	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	// Don't let the first child batch finish until the second is in flight.
+	// A serial read never unblocks it and the request deadline fails the test.
+	var readCount atomic.Int32
+	secondChildBatch := make(chan struct{})
+	waitForOverlap := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if method == repb.ContentAddressableStorage_BatchReadBlobs_FullMethodName {
+			switch readCount.Add(1) {
+			case 2: // first child batch
+				select {
+				case <-secondChildBatch:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			case 3: // second child batch
+				close(secondChildBatch)
+			}
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t, grpc.WithChainUnaryInterceptor(waitForOverlap))
 	bsClient := bspb.NewByteStreamClient(conn)
 	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
@@ -900,7 +920,9 @@ func TestGetTreeWideLevel(t *testing.T) {
 	unaryRequests.Store(0)
 	streamRequests.Store(0)
 
-	stream, err := casProxy.GetTree(ctx, &repb.GetTreeRequest{
+	readCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	stream, err := casProxy.GetTree(readCtx, &repb.GetTreeRequest{
 		RootDigest:     rootDigest,
 		DigestFunction: repb.DigestFunction_SHA256,
 	})
@@ -920,7 +942,7 @@ func TestGetTreeWideLevel(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t, expected, received)
-	require.Greater(t, unaryRequests.Load(), int32(2))
+	require.Equal(t, int32(3), unaryRequests.Load())
 	require.Zero(t, streamRequests.Load())
 }
 

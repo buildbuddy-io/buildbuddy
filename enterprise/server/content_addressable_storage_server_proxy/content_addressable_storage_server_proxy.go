@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	"google.golang.org/grpc/codes"
 
@@ -555,64 +556,93 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 
 	resp := &repb.GetTreeResponse{}
 	respSizeBytes := 0
-	for dirsToGet := []*repb.Digest{req.RootDigest}; len(dirsToGet) > 0; {
-		// BatchReadBlobs limits the sum of the requested blob sizes, even for
-		// local reads. Split wide levels before making the request.
-		batchSizeBytes := int64(0)
-		batchCount := 0
-		for _, d := range dirsToGet {
-			size := d.GetSizeBytes()
-			if size < 0 || size > rpcutil.GRPCMaxSizeBytes-batchSizeBytes {
-				break
-			}
-			batchSizeBytes += size
-			batchCount++
-		}
-		// Let BatchReadBlobs return its usual error for an invalid singleton.
-		batchCount = max(batchCount, 1)
-		brbreq := repb.BatchReadBlobsRequest{
-			InstanceName:   req.InstanceName,
-			Digests:        dirsToGet[:batchCount],
-			DigestFunction: req.DigestFunction,
-		}
-		brbresps, err := s.BatchReadBlobs(ctx, &brbreq)
+	for ready := []*repb.Digest{req.RootDigest}; len(ready) > 0; {
+		firstEnd := getTreeBatchSize(ready)
+		secondEnd := firstEnd + getTreeBatchSize(ready[firstEnd:])
+		batches, err := s.readTreeBatches(ctx, req, ready[:firstEnd], ready[firstEnd:secondEnd])
 		if err != nil {
 			return err
 		}
 
-		dirsToGet = dirsToGet[batchCount:]
-		for _, brbresp := range brbresps.Responses {
-			blobStatus := brbresp.GetStatus()
-			if code := codes.Code(blobStatus.GetCode()); code != codes.OK {
-				if code == codes.NotFound {
-					return digest.MissingDigestError(brbresp.GetDigest())
+		ready = ready[secondEnd:]
+		for _, batch := range batches {
+			for _, brbresp := range batch.GetResponses() {
+				blobStatus := brbresp.GetStatus()
+				if code := codes.Code(blobStatus.GetCode()); code != codes.OK {
+					if code == codes.NotFound {
+						return digest.MissingDigestError(brbresp.GetDigest())
+					}
+					return gstatus.FromProto(blobStatus).Err()
 				}
-				return gstatus.FromProto(blobStatus).Err()
-			}
-			dir := &repb.Directory{}
-			if err := proto.Unmarshal(brbresp.Data, dir); err != nil {
-				return err
-			}
-
-			// Include the tag and length prefix for this directory. A single
-			// directory cannot be split across responses.
-			dirSizeBytes := proto.Size(&repb.GetTreeResponse{Directories: []*repb.Directory{dir}})
-			if len(resp.Directories) > 0 && int64(respSizeBytes+dirSizeBytes) > rpcutil.GRPCMaxSizeBytes {
-				if err := stream.Send(resp); err != nil {
+				dir := &repb.Directory{}
+				if err := proto.Unmarshal(brbresp.Data, dir); err != nil {
 					return err
 				}
-				resp = &repb.GetTreeResponse{}
-				respSizeBytes = 0
-			}
 
-			resp.Directories = append(resp.Directories, dir)
-			respSizeBytes += dirSizeBytes
-			for _, subDir := range dir.Directories {
-				dirsToGet = append(dirsToGet, subDir.Digest)
+				// Include the tag and length prefix for this directory. A single
+				// directory cannot be split across responses.
+				dirSizeBytes := proto.Size(&repb.GetTreeResponse{Directories: []*repb.Directory{dir}})
+				if len(resp.Directories) > 0 && int64(respSizeBytes+dirSizeBytes) > rpcutil.GRPCMaxSizeBytes {
+					if err := stream.Send(resp); err != nil {
+						return err
+					}
+					resp = &repb.GetTreeResponse{}
+					respSizeBytes = 0
+				}
+
+				resp.Directories = append(resp.Directories, dir)
+				respSizeBytes += dirSizeBytes
+				for _, subDir := range dir.Directories {
+					ready = append(ready, subDir.Digest)
+				}
 			}
 		}
 	}
 	return stream.Send(resp)
+}
+
+func getTreeBatchSize(ready []*repb.Digest) int {
+	// BatchReadBlobs limits the sum of the requested blob sizes, even for
+	// local reads.
+	var batchSizeBytes int64
+	for i, d := range ready {
+		size := d.GetSizeBytes()
+		if size < 0 || size > rpcutil.GRPCMaxSizeBytes-batchSizeBytes {
+			// Let BatchReadBlobs return its usual error for an invalid singleton.
+			return max(i, 1)
+		}
+		batchSizeBytes += size
+	}
+	return len(ready)
+}
+
+func (s *CASServerProxy) readTreeBatches(ctx context.Context, req *repb.GetTreeRequest, first, second []*repb.Digest) ([2]*repb.BatchReadBlobsResponse, error) {
+	read := func(ctx context.Context, digests []*repb.Digest) (*repb.BatchReadBlobsResponse, error) {
+		return s.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+			InstanceName:   req.InstanceName,
+			Digests:        digests,
+			DigestFunction: req.DigestFunction,
+		})
+	}
+	var responses [2]*repb.BatchReadBlobsResponse
+	if len(second) == 0 {
+		resp, err := read(ctx, first)
+		responses[0] = resp
+		return responses, err
+	}
+
+	// Overlap only two ready batches, and let the caller consume their
+	// responses in traversal order before reading another pair.
+	eg, readCtx := errgroup.WithContext(ctx)
+	for i, batch := range [2][]*repb.Digest{first, second} {
+		eg.Go(func() error {
+			resp, err := read(readCtx, batch)
+			responses[i] = resp
+			return err
+		})
+	}
+	err := eg.Wait()
+	return responses, err
 }
 
 func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
