@@ -40,7 +40,7 @@ You can ⌘ + click on these urls to quickly view the invocation's details.
 
 BuildBuddy offers two authentication options which are easy to configure:
 
-- **Unauthenticated** - your build logs are uploaded over an encrypted gRPCS/TLS connection and be accessible with anyone you share your BuildBuddy URL with, without credentials. They will not be associated with any BuildBuddy account or organization.
+- **Unauthenticated** - your build logs are uploaded over an encrypted gRPCS/TLS connection and will be accessible to anyone you share your BuildBuddy URL with, without credentials. They will not be associated with any BuildBuddy account or organization.
 - **API key based auth** - your build logs are uploaded over an encrypted gRPCS/TLS connection, and will be associated with your account. Only your account and members of your BuildBuddy organization will be able to view your build logs.
 
 To configure one of these authentication methods:

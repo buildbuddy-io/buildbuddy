@@ -66,7 +66,7 @@ If you run or have access to a Kubernetes cluster, and you have the "kubectl" co
 
 This script uses [this deployment file](https://github.com/buildbuddy-io/buildbuddy/blob/master/deployment/buildbuddy-app.enterprise.yaml), if you want to see the details of what is being configured.
 
-To kick of the Kubernetes deploy, use the following command:
+To kick off the Kubernetes deploy, use the following command:
 
 ```bash
 bash k8s_on_prem.sh -enterprise
