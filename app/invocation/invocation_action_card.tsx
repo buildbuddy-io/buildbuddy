@@ -188,7 +188,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const prevExecutionId = prevProps.search.get("executionId") || prevState.execution?.executionId;
     const executionId = this.getExecutionId();
-    if (prevExecutionId !== executionId) {
+    const buildFinished = prevProps.model.isInProgress() && !this.props.model.isInProgress();
+    const waitingForFirstPage =
+      !this.state.executionDownloads.length &&
+      (this.state.executionDownloadsLoading || this.state.executionDownloadsNotFound);
+    if (prevExecutionId !== executionId || (buildFinished && waitingForFirstPage)) {
       this.fetchExecutionDownloads("");
     }
   }
@@ -1053,7 +1057,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
           ) : null}
           {this.state.executionDownloadsNotFound && (
             <div className="action-downloads-empty">
-              Fetched input details not found. They may have expired from the cache.
+              {this.props.model.isInProgress()
+                ? "Fetched input details are not available yet."
+                : "Fetched input details not found. They may have expired from the cache."}
             </div>
           )}
         </div>
