@@ -5240,6 +5240,7 @@ func TestFirecrackerGenericSnapshot(t *testing.T) {
 	}{
 		{name: "default kernel"},
 		{name: "6.18 kernel", experiments: []string{"upgrade-fc-guest-kernel"}},
+		{name: "default kernel with EROFS root", erofsRoot: true},
 		{name: "6.18 kernel with EROFS root", experiments: []string{"upgrade-fc-guest-kernel"}, erofsRoot: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

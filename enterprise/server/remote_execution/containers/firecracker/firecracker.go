@@ -105,7 +105,7 @@ var (
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_18                       = flag.Bool("executor.firecracker_enable_linux_6_18", false, "Enable the 6.18 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 	enableGenericSnapshots                = flag.Bool("executor.firecracker_enable_generic_snapshots", false, "Build generic snapshots on startup for each shape that fits on the executor. Actions with use-generic-snapshot are rounded up to the smallest shape that fits them.")
-	genericErofsRoot                      = flag.Bool("executor.firecracker_generic_erofs_root", false, "Give generic snapshot VMs a read-only EROFS container root under an overlay whose writes go to a sparse ext4 scratch disk.", flag.Internal)
+	genericErofsRoot                      = flag.Bool("executor.firecracker_generic_erofs_root", true, "Give generic snapshot VMs a read-only EROFS container root under an overlay whose writes go to a sparse ext4 scratch disk.", flag.Internal)
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
