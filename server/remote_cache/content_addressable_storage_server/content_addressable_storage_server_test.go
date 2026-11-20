@@ -685,6 +685,38 @@ func TestGetTreeCaching(t *testing.T) {
 	assert.Less(t, fetch2Time, fetch1Time/2)
 }
 
+// The TreeCaches in this test are too small to be read into pooled buffers.
+func TestGetTreeCachingSmallTree(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	rootDigest, uploadedFiles := cas.MakeTree(ctx, t, bsClient, instanceName, 3, 2)
+	treeCacheHits := func() float64 {
+		return testmetrics.CounterValueForLabels(t, metrics.TreeCacheLookupCount, prometheus.Labels{
+			metrics.TreeCacheLookupStatus: "hit",
+			metrics.TreeCacheLookupLevel:  "1",
+		})
+	}
+
+	// Fill the tree cache.
+	require.ElementsMatch(t, uploadedFiles, cas.ReadTree(ctx, t, casClient, instanceName, rootDigest))
+
+	// Tree cache writes are asynchronous, so retry until there's a hit.
+	hitsBefore := treeCacheHits()
+	for i := 0; i < 100 && treeCacheHits() == hitsBefore; i++ {
+		require.ElementsMatch(t, uploadedFiles, cas.ReadTree(ctx, t, casClient, instanceName, rootDigest))
+	}
+	require.Greater(t, treeCacheHits(), hitsBefore)
+}
+
 func NestForTest(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, dirToNest *repb.Directory, prefix string, levels int) (*repb.Digest, []string) {
 	outFiles := make([]string, 0)
 	rootDir := dirToNest
