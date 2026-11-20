@@ -2543,6 +2543,16 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 				}
 			}
 		}
+
+		if removeDataReq.GetRange() != nil {
+			// RemoveData only deletes the range data of a replica that is
+			// marked as removed.
+			rd, err = j.store.markZombieForRemoval(ctx, task.replicaID, rd)
+			if err != nil {
+				return zombieCleanupRemoveReplica, status.WrapErrorf(err, "failed to mark zombie c%dn%d for removal", task.rangeID, task.replicaID)
+			}
+			removeDataReq.Range = rd
+		}
 	}
 
 	_, err := j.store.RemoveData(ctx, removeDataReq)
@@ -3897,6 +3907,36 @@ func (s *Store) markReplicaForRemovalFromRangeDescriptor(ctx context.Context, ra
 		newDescriptor.LastAddedReplicaId = nil
 		newDescriptor.LastReplicaAddedAtUsec = nil
 	}
+	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
+		return nil, err
+	}
+	return newDescriptor, nil
+}
+
+// markZombieForRemoval adds a replica on this node that is not in the range
+// descriptor to its removed list. That makes RemoveData delete the replica's
+// range data, and keeps the range from being added to this node until then.
+//
+// It does nothing if the descriptor has another replica on this node, because
+// the range data is then that replica's.
+func (s *Store) markZombieForRemoval(ctx context.Context, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+	onThisNode := func(repl *rfpb.ReplicaDescriptor) bool {
+		return repl.GetNhid() == s.NHID()
+	}
+	// A deleted range has no replicas left to apply a descriptor update.
+	if oldDescriptor.GetDeleted() ||
+		rangeDescriptorHasReplica(oldDescriptor, replicaID) ||
+		slices.ContainsFunc(oldDescriptor.GetReplicas(), onThisNode) ||
+		slices.ContainsFunc(oldDescriptor.GetStaging(), onThisNode) {
+		return oldDescriptor, nil
+	}
+	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+	newDescriptor.Removed = append(newDescriptor.Removed, &rfpb.ReplicaDescriptor{
+		RangeId:   oldDescriptor.GetRangeId(),
+		ReplicaId: replicaID,
+		Nhid:      proto.String(s.NHID()),
+	})
+	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
