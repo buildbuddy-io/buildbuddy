@@ -753,6 +753,55 @@ func TestGetTreeUsesUpstreamForPagination(t *testing.T) {
 	}
 }
 
+func TestGetTreeBypassesLocalCacheForEncryption(t *testing.T) {
+	flags.Set(t, "cache_proxy.enable_get_tree_caching", true)
+	flags.Set(t, "crypter.allow_local_cache_encryption", true)
+	users := testauth.TestUsers("cacheable", "cacheable-group")
+	encrypted := testauth.User("encrypted", "encrypted-group")
+	encrypted.CacheEncryptionEnabled = true
+	users[encrypted.GetUserID()] = encrypted
+	authenticator := testauth.NewTestAuthenticator(t, users)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	remoteEnv.SetAuthenticator(authenticator)
+	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, remoteEnv, t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetAuthenticator(authenticator)
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
+	bsClient := bspb.NewByteStreamClient(conn)
+	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	for _, tc := range []struct {
+		name              string
+		user              string
+		wantUpstreamReads int32
+		wantUpstreamTrees int32
+	}{
+		{
+			name:              "cacheable tree fills the proxy one level at a time",
+			user:              "cacheable",
+			wantUpstreamReads: 4,
+		},
+		{
+			name:              "uncacheable tree uses one upstream stream",
+			user:              "encrypted",
+			wantUpstreamTrees: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, tc.user)
+			rootDigest, files := makeTree(ctx, bsClient, t)
+			unaryRequests.Store(0)
+			streamRequests.Store(0)
+
+			require.ElementsMatch(t, files, cas.ReadTree(ctx, t, casProxy, "", rootDigest))
+			require.Equal(t, tc.wantUpstreamReads, unaryRequests.Load())
+			require.Equal(t, tc.wantUpstreamTrees, streamRequests.Load())
+		})
+	}
+}
+
 func TestGetTreeMissingDirectory(t *testing.T) {
 	flags.Set(t, "cache_proxy.enable_get_tree_caching", true)
 	ctx := testContext()

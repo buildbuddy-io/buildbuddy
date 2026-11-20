@@ -181,8 +181,7 @@ func compressorLabel(compressor repb.Compressor_Value) string {
 	}
 }
 
-func (m *cacheMetrics) addGetTreeMetrics(digests, bytes int) *cacheMetrics {
-	status := metrics.MissStatusLabel
+func (m *cacheMetrics) addGetTreeMetrics(status string, digests, bytes int) *cacheMetrics {
 	compressor := repb.Compressor_IDENTITY.String()
 	m.digestsPerStatusAndCompressor[status][compressor] += digests
 	m.bytesPerStatusAndCompressor[status][compressor] += bytes
@@ -327,6 +326,10 @@ func (s *CASServerProxy) findMissingBlobsCacheKey(groupID string, req *repb.Find
 	return groupID + "/" + digest.NewCASResourceName(d, req.GetInstanceName(), req.GetDigestFunction()).DownloadString()
 }
 
+func (s *CASServerProxy) shouldBypassLocalCacheForEncryption(ctx context.Context) bool {
+	return !s.supportsEncryption && authutil.EncryptionEnabled(ctx, s.authenticator)
+}
+
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
 		return s.local.BatchUpdateBlobs(ctx, req)
@@ -340,7 +343,7 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 
 	recordMetrics("BatchUpdateBlobs", metrics.MissStatusLabel, newCacheMetrics().addUpdateMetrics(req.Requests))
 
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption {
+	if s.shouldBypassLocalCacheForEncryption(ctx) {
 		return s.remote.BatchUpdateBlobs(ctx, req)
 	}
 
@@ -392,7 +395,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
 	localResp := &repb.BatchReadBlobsResponse{}
-	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption
+	remoteOnly := s.shouldBypassLocalCacheForEncryption(ctx)
 	if !remoteOnly {
 		resp, err := s.local.BatchReadBlobs(ctx, req)
 		if err != nil {
@@ -488,7 +491,7 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 			Compressor: response.Compressor,
 		})
 	}
-	if !authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption {
+	if !s.shouldBypassLocalCacheForEncryption(ctx) {
 		if _, err := s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
 			log.CtxWarningf(ctx, "Error locally updating blobs: %s", err)
 		}
@@ -497,26 +500,30 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 }
 
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
-	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(stream.Context(), s.authenticator) {
+	ctx := stream.Context()
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
 		return s.local.GetTree(req, stream)
 	}
-	if proxy_util.SkipRemote(stream.Context()) {
+	if proxy_util.SkipRemote(ctx) {
 		return status.UnimplementedError("Skip remote not implemented")
 	}
 
 	// Only the upstream GetTree server can interpret its pagination tokens.
-	if *enableGetTreeCaching && req.GetPageSize() == 0 && req.GetPageToken() == "" {
-		return s.getTree(req, stream)
+	if !*enableGetTreeCaching || req.GetPageSize() != 0 || req.GetPageToken() != "" {
+		return s.getTreeWithoutCaching(req, stream, metrics.MissStatusLabel)
 	}
-	return s.getTreeWithoutCaching(req, stream)
+	if s.shouldBypassLocalCacheForEncryption(ctx) {
+		return s.getTreeWithoutCaching(req, stream, metrics.UncacheableStatusLabel)
+	}
+	return s.getTree(req, stream)
 }
 
-func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer, cacheStatus string) error {
 	digests := 0
 	bytes := 0
 	defer func() {
-		recordMetrics("GetTree", metrics.MissStatusLabel,
-			newCacheMetrics().addGetTreeMetrics(digests, bytes))
+		recordMetrics("GetTree", cacheStatus,
+			newCacheMetrics().addGetTreeMetrics(cacheStatus, digests, bytes))
 	}()
 	remoteStream, err := s.remote.GetTree(stream.Context(), req)
 	if err != nil {
