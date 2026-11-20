@@ -23,6 +23,8 @@ use_repo(
     "com_github_firecracker_microvm_firecracker_arm64",
     "com_github_googlecloudplatform_docker-credential-gcr-linux-amd64",
     "com_github_googlecloudplatform_docker-credential-gcr-linux-arm64",
+    "com_github_gvisor_gvisor-linux-amd64",
+    "com_github_gvisor_gvisor-linux-arm64",
     "com_github_krallin_tini_tini-linux-amd64",
     "com_github_krallin_tini_tini-linux-arm64",
     "com_github_opencontainers_runc_runc-linux-amd64",
