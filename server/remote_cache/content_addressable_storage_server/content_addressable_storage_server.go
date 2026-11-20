@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"slices"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -64,6 +66,15 @@ var (
 
 	findMissingChunkFallbackConcurrency = expflag.Int64("cache.find_missing_chunk_fallback_concurrency", 8, "The maximum number of chunk manifest lookups that FindMissingBlobs performs in parallel, for missing blobs that may be stored as chunks. Values less than 1 are treated as 1.")
 )
+
+// maxPooledTreeCacheBufSizeBytes is the size of the biggest buffers in
+// treeCacheBufPool. Bigger TreeCaches can still be read, but they grow their
+// buffer while being read.
+const maxPooledTreeCacheBufSizeBytes = 64 * 1024 * 1024
+
+// treeCacheBufPool holds the buffers that serialized TreeCaches are read into.
+// TreeCaches of big trees are tens of megabytes.
+var treeCacheBufPool = bytebufferpool.VariableSize(maxPooledTreeCacheBufSizeBytes)
 
 type ContentAddressableStorageServer struct {
 	env   environment.Env
@@ -694,55 +705,82 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 	return nil
 }
 
+// readTreeCache reads and unmarshals the TreeCache stored under rn. It also
+// returns the serialized size of the TreeCache.
+func (s *ContentAddressableStorageServer) readTreeCache(ctx context.Context, rn *rspb.ResourceName) (*capb.TreeCache, int, error) {
+	rc, err := s.cache.Reader(ctx, rn, 0, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rc.Close()
+
+	// The serialized bytes are only needed until they are unmarshaled
+	// (unmarshaling copies everything it keeps), so read them into a pooled
+	// buffer. Leave bytes.MinRead of spare capacity, because
+	// bytes.Buffer.ReadFrom grows a full buffer just to observe EOF.
+	bufSize := digest.SafeBufferSize(rn, maxPooledTreeCacheBufSizeBytes) + bytes.MinRead
+	pooled := treeCacheBufPool.Get(int64(bufSize))
+	defer treeCacheBufPool.Put(pooled)
+	buf := bytes.NewBuffer(pooled[:0])
+
+	// Read until EOF, which the cache may need to see in order to finish its
+	// own bookkeeping for the read (e.g. populating a read-through cache).
+	if _, err := io.Copy(buf, rc); err != nil {
+		return nil, 0, err
+	}
+	treeCache := &capb.TreeCache{}
+	if err := proto.Unmarshal(buf.Bytes(), treeCache); err != nil {
+		return nil, 0, err
+	}
+	return treeCache, buf.Len(), nil
+}
+
 func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.Context, treeCacheRN *digest.ResourceName) ([]*capb.DirectoryWithDigest, int, error) {
-	if buf, err := s.cache.Get(ctx, treeCacheRN.ToProto()); err == nil {
-		treeCache := &capb.TreeCache{}
-		if err := proto.Unmarshal(buf, treeCache); err == nil {
-			if !*enableTreeCacheSplitting && len(treeCache.GetTreeCacheChildren()) > 0 {
-				// Don't return split trees if splitting is disabled.
-				return nil, 0, status.NotFoundErrorf("tree-cache-not-found")
-			}
+	treeCache, bytesRead, err := s.readTreeCache(ctx, treeCacheRN.ToProto())
+	if err != nil {
+		return nil, 0, status.NotFoundErrorf("tree-cache-not-found")
+	}
+	if !*enableTreeCacheSplitting && len(treeCache.GetTreeCacheChildren()) > 0 {
+		// Don't return split trees if splitting is disabled.
+		return nil, 0, status.NotFoundErrorf("tree-cache-not-found")
+	}
 
-			// If we split out any directories, we need to also fetch all of those.
-			bytesRead := len(buf)
-			if len(treeCache.GetTreeCacheChildren()) > 0 {
-				mu := &sync.Mutex{}
-				eg, egCtx := errgroup.WithContext(ctx)
-				for _, childTreeCache := range treeCache.GetTreeCacheChildren() {
-					childRN := digest.ResourceNameFromProto(childTreeCache)
-					eg.Go(func() error {
-						extraKids, extraBytes, err := s.lookupCachedTreeNodeInCAS(egCtx, childRN)
-						if err != nil {
-							if status.IsNotFoundError(err) {
-								metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
-									metrics.TreeCacheSplitLookupStatus: "miss",
-								}).Inc()
-							} else {
-								metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
-									metrics.TreeCacheSplitLookupStatus: "failure",
-								}).Inc()
-							}
-
-							return err
-						}
+	// If we split out any directories, we need to also fetch all of those.
+	if len(treeCache.GetTreeCacheChildren()) > 0 {
+		mu := &sync.Mutex{}
+		eg, egCtx := errgroup.WithContext(ctx)
+		for _, childTreeCache := range treeCache.GetTreeCacheChildren() {
+			childRN := digest.ResourceNameFromProto(childTreeCache)
+			eg.Go(func() error {
+				extraKids, extraBytes, err := s.lookupCachedTreeNodeInCAS(egCtx, childRN)
+				if err != nil {
+					if status.IsNotFoundError(err) {
 						metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
-							metrics.TreeCacheSplitLookupStatus: "hit",
+							metrics.TreeCacheSplitLookupStatus: "miss",
 						}).Inc()
-						mu.Lock()
-						defer mu.Unlock()
-						treeCache.Children = append(treeCache.Children, extraKids...)
-						bytesRead += extraBytes
-						return nil
-					})
+					} else {
+						metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
+							metrics.TreeCacheSplitLookupStatus: "failure",
+						}).Inc()
+					}
+
+					return err
 				}
-				if err := eg.Wait(); err != nil {
-					return nil, 0, err
-				}
-			}
-			return treeCache.GetChildren(), bytesRead, nil
+				metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
+					metrics.TreeCacheSplitLookupStatus: "hit",
+				}).Inc()
+				mu.Lock()
+				defer mu.Unlock()
+				treeCache.Children = append(treeCache.Children, extraKids...)
+				bytesRead += extraBytes
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, 0, err
 		}
 	}
-	return nil, 0, status.NotFoundErrorf("tree-cache-not-found")
+	return treeCache.GetChildren(), bytesRead, nil
 }
 
 // Given a resource name for the AC pointer to a cached tree, this returns the

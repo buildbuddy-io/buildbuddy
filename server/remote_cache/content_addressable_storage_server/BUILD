@@ -22,6 +22,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
+        "//server/util/bytebufferpool",
         "//server/util/capabilities",
         "//server/util/cdc",
         "//server/util/compression",
