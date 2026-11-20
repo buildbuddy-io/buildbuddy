@@ -2448,3 +2448,76 @@ func TestReconnectFromDifferentOwnerDoesNotChangeInvocation(t *testing.T) {
 		})
 	}
 }
+
+func TestEventForOtherInvocationIsRejected(t *testing.T) {
+	anonymousStarted := func() *anypb.Any { return startedEvent("--remote_upload_local_results") }
+	for _, tc := range []struct {
+		name string
+		// The stream is opened for the first event's invocation ID, and the
+		// last event, for the other invocation ID, must be rejected.
+		events func(ownerIID, otherIID string) []*pepb.PublishBuildToolEventStreamRequest
+	}{
+		{"before registration", func(ownerIID, otherIID string) []*pepb.PublishBuildToolEventStreamRequest {
+			return []*pepb.PublishBuildToolEventStreamRequest{
+				streamRequest(progressEvent(), ownerIID, 1),
+				streamRequest(anonymousStarted(), otherIID, 2),
+			}
+		}},
+		{"after registration", func(ownerIID, otherIID string) []*pepb.PublishBuildToolEventStreamRequest {
+			return []*pepb.PublishBuildToolEventStreamRequest{
+				streamRequest(anonymousStarted(), otherIID, 1),
+				streamRequest(progressEvent(), ownerIID, 2),
+			}
+		}},
+		{"voided channel", func(ownerIID, otherIID string) []*pepb.PublishBuildToolEventStreamRequest {
+			return []*pepb.PublishBuildToolEventStreamRequest{
+				streamRequest(progressEvent(), ownerIID, 2),
+				streamRequest(anonymousStarted(), otherIID, 3),
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+			auth.NullAuthenticator = nullauth.NewNullAuthenticator(true /*anonymousUsageEnabled*/)
+			te.SetAuthenticator(auth)
+			clock := clockwork.NewFakeClock()
+			te.SetClock(clock)
+			handler := build_event_handler.NewBuildEventHandler(te)
+			getRow := func(iid string) *tables.Invocation {
+				ti := &tables.Invocation{}
+				err := te.GetDBHandle().NewQuery(t.Context(), "test_get_invocation").Raw(`SELECT * FROM "Invocations" WHERE invocation_id = ?`, iid).Take(ti)
+				require.NoError(t, err)
+				return ti
+			}
+
+			ownerIID := uuid.New().String()
+			owner, err := handler.OpenChannel(t.Context(), ownerIID)
+			require.NoError(t, err)
+			defer owner.Close()
+			err = owner.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'"), ownerIID, 1))
+			require.NoError(t, err)
+			before := getRow(ownerIID)
+
+			events := tc.events(ownerIID, uuid.New().String())
+			streamIID := events[0].GetOrderedBuildEvent().GetStreamId().GetInvocationId()
+			channel, err := handler.OpenChannel(t.Context(), streamIID)
+			require.NoError(t, err)
+			defer channel.Close()
+			for _, event := range events[:len(events)-1] {
+				require.NoError(t, channel.HandleEvent(event))
+			}
+			// Past the period at which a streaming invocation's row is updated.
+			clock.Advance(te.GetInvocationDB().GetInvocationReconnectWindow())
+			err = channel.HandleEvent(events[len(events)-1])
+			require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+			_ = channel.FinalizeInvocation(streamIID)
+
+			after := getRow(ownerIID)
+			assert.Equal(t, "GROUP1", after.GroupID)
+			assert.Equal(t, "USER1", after.UserID)
+			assert.Equal(t, before.Perms, after.Perms)
+			assert.Equal(t, before.UpdatedAtUsec, after.UpdatedAtUsec)
+		})
+	}
+}
