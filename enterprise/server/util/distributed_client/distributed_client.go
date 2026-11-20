@@ -55,8 +55,8 @@ const (
 	// GetMulti response are dereferenced concurrently.
 	getMultiDereferenceConcurrency = 10
 
-	// The maximum buffer size to allocate when dereferencing a reference. 10MB.
-	maxDereferenceBufferBytes = 10 * 1024 * 1024
+	// The maximum buffer size to allocate when dereferencing a reference. 64MB.
+	maxDereferenceBufferBytes = 64 * 1024 * 1024
 )
 
 var (
