@@ -1,6 +1,7 @@
 package usagetracker
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -31,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+	"golang.org/x/time/rate"
 
 	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -56,6 +58,8 @@ var (
 	numGCSDeleteWorkers                = flag.Int("cache.raft.num_gcs_delete_worker", 32, "Number of parallel GCS blob deletion workers (per partition).")
 	gcsDeleteBufferSize                = flag.Int("cache.raft.gcs_delete_buffer_size", 10000, "Buffer up to this many GCS deletion requests")
 	gcsDeleteDrainTimeout              = flag.Duration("cache.raft.gcs_delete_drain_timeout", 10*time.Second, "Max time to spend draining buffered GCS deletes on shutdown.")
+	atimeIndexBuildRateLimit           = flag.Int("cache.raft.atime_index_build_rate_limit", 20_000, "Maximum number of records to scan per second (per partition) while building the partition's atime index. The index is not built if this is not positive.")
+	atimeIndexVerifyRateLimit          = flag.Int("cache.raft.atime_index_verify_rate_limit", 1000, "Maximum number of records to scan per second (per partition) when verifying the partition's atime index after it is built. The index is not verified if this is not positive.")
 )
 
 const (
@@ -75,6 +79,18 @@ const (
 	samplerSleepThreshold = float64(0.2)
 	evictFlushPeriod      = 10 * time.Second
 	metricsRefreshPeriod  = 30 * time.Second
+
+	// atimeIndexVersion is stored in a partition's marker once its atime index
+	// is built. Bump it to make every node build the index again.
+	atimeIndexVersion = byte(1)
+
+	// A pass over a partition's records uses a new snapshot this often. An
+	// open snapshot keeps old data from being compacted away.
+	atimeIndexMaxSnapshotAge = 30 * time.Second
+
+	// A pass over a partition's records starts at most this often, so passes
+	// that end right away (a small partition, an error) don't spin.
+	atimeIndexMinPassPeriod = time.Minute
 )
 
 type Tracker struct {
@@ -130,6 +146,10 @@ type metricSet struct {
 
 	evictionSamplesChanSize prometheus.Gauge
 	evictionGCSChanSize     prometheus.Gauge
+
+	atimeIndexBuilt     prometheus.Gauge
+	atimeIndexRepairs   prometheus.Counter
+	atimeIndexSizeBytes prometheus.Gauge
 }
 
 type partitionUsage struct {
@@ -170,6 +190,10 @@ type partitionUsage struct {
 	numGCSDeleteWorkers      int
 	fileStorer               filestore.Store
 
+	atimeIndexBuildRateLimit  int
+	atimeIndexVerifyRateLimit int
+	atimeIndexMaxSnapshotAge  time.Duration
+
 	metrics metricSet
 }
 
@@ -193,6 +217,7 @@ func (pu *partitionUsage) LocalSizeBytes() int64 {
 		log.Warningf("unable to get atime index size bytes for partition %q: %s", pu.part.ID, err)
 		return 0
 	}
+	pu.metrics.atimeIndexSizeBytes.Set(float64(idxSizeBytes))
 	return int64(sizeBytes + idxSizeBytes)
 }
 
@@ -671,6 +696,121 @@ func (pu *partitionUsage) updateMetrics() {
 	pu.metrics.evictionGCSChanSize.Set(float64(len(pu.gcsDeletes)))
 }
 
+// maintainAtimeIndex keeps the partition's atime index complete. Until the
+// first pass completes, the partition is building. After that the apply path
+// keeps the index complete, so a missing entry is a bug and is counted as a
+// repair.
+func (pu *partitionUsage) maintainAtimeIndex(ctx context.Context) {
+	for ctx.Err() == nil {
+		start := pu.clock.Now()
+		if err := pu.atimeIndexPass(ctx); err != nil && ctx.Err() == nil {
+			log.Warningf("partition %q: atime index pass failed: %s", pu.part.ID, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-pu.clock.After(atimeIndexMinPassPeriod - pu.clock.Since(start)):
+		}
+	}
+}
+
+func (pu *partitionUsage) atimeIndexPass(ctx context.Context) error {
+	db, err := pu.dbGetter.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	markerKey := keys.AtimeIndexBuiltKey(pu.part.ID)
+	built := false
+	val, closer, err := db.Get(markerKey)
+	if err == nil {
+		built = bytes.Equal(val, []byte{atimeIndexVersion})
+		closer.Close()
+	} else if err != pebble.ErrNotFound {
+		return err
+	}
+	rateLimit := pu.atimeIndexBuildRateLimit
+	if built {
+		rateLimit = pu.atimeIndexVerifyRateLimit
+		pu.metrics.atimeIndexBuilt.Set(1)
+	} else {
+		pu.metrics.atimeIndexBuilt.Set(0)
+	}
+	if rateLimit <= 0 {
+		return nil
+	}
+	// Setting a burst higher than 1 reduces limiter overhead.
+	limiter := rate.NewLimiter(rate.Limit(rateLimit), max(rateLimit/10, 1))
+	start := pu.clock.Now()
+	scanned, added := 0, 0
+	lower, upper := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
+	for lower != nil {
+		var chunkScanned, chunkAdded int
+		lower, chunkScanned, chunkAdded, err = pu.atimeIndexChunk(ctx, db, limiter, lower, upper, built)
+		scanned += chunkScanned
+		added += chunkAdded
+		if err != nil {
+			return err
+		}
+	}
+	if !built {
+		if err := db.Set(markerKey, []byte{atimeIndexVersion}, pebble.Sync); err != nil {
+			return err
+		}
+		pu.metrics.atimeIndexBuilt.Set(1)
+	}
+	log.Infof("partition %q: atime index pass (built=%t): scanned %d records, added %d entries in %s", pu.part.ID, built, scanned, added, pu.clock.Since(start))
+	return nil
+}
+
+func (pu *partitionUsage) atimeIndexChunk(ctx context.Context, db pebble.IPebbleDB, limiter *rate.Limiter, lower, upper []byte, built bool) (next []byte, scanned, added int, err error) {
+	// Read records and entries from one snapshot: the apply path writes them together, so an entry missing here is really missing.
+	snap := db.NewSnapshot()
+	defer snap.Close()
+	iter, err := snap.NewIter(&pebble.IterOptions{LowerBound: lower, UpperBound: upper})
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer iter.Close()
+
+	start := pu.clock.Now()
+	for iter.First(); iter.Valid(); iter.Next() {
+		// Scan at least one record per chunk, so the pass makes progress.
+		if scanned > 0 && pu.clock.Since(start) >= pu.atimeIndexMaxSnapshotAge {
+			return bytes.Clone(iter.Key()), scanned, added, nil
+		}
+		if err := limiter.Wait(ctx); err != nil {
+			return nil, scanned, added, err
+		}
+		scanned++
+		var md sgpb.FileMetadataRaftFindView
+		if err := md.UnmarshalWire(iter.Value()); err != nil {
+			log.Warningf("partition %q: skipping non-FileMetadata key %q: %s", pu.part.ID, iter.Key(), err)
+			continue
+		}
+		entryKey := keys.AtimeIndexKey(pu.part.ID, md.LastAccessUsec, iter.Key())
+		_, closer, err := snap.Get(entryKey)
+		if err == nil {
+			// Found the correct atime index entry, so the index is complete for this record.
+			closer.Close()
+			continue
+		}
+		if err != pebble.ErrNotFound {
+			return nil, scanned, added, err
+		}
+		if err := db.Set(entryKey, nil, pebble.NoSync); err != nil {
+			return nil, scanned, added, err
+		}
+		added++
+		if built {
+			pu.metrics.atimeIndexRepairs.Inc()
+			log.Warningf("partition %q: record %q (atime %d) had no atime index entry", pu.part.ID, iter.Key(), md.LastAccessUsec)
+		}
+	}
+	return nil, scanned, added, iter.Error()
+}
+
 func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock, fileStorer filestore.Store) (*Tracker, error) {
 	ut := &Tracker{
 		gossipManager: gossipManager,
@@ -699,6 +839,9 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			cacheBytesEvicted:           metrics.DiskCacheBytesEvicted.With(lbls),
 			evictionSamplesChanSize:     metrics.RaftEvictionSamplesChanSize.With(partitionLabel),
 			evictionGCSChanSize:         metrics.RaftEvictionGCSChanSize.With(partitionLabel),
+			atimeIndexBuilt:             metrics.RaftAtimeIndexBuilt.With(partitionLabel),
+			atimeIndexRepairs:           metrics.RaftAtimeIndexMissingEntriesRepaired.With(partitionLabel),
+			atimeIndexSizeBytes:         metrics.RaftAtimeIndexSizeBytes.With(partitionLabel),
 		}
 		u := &partitionUsage{
 			part:                     p,
@@ -718,7 +861,12 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			numDeleteWorkers:         *numDeleteWorkers,
 			numGCSDeleteWorkers:      *numGCSDeleteWorkers,
 			fileStorer:               fileStorer,
-			metrics:                  metricSet,
+
+			atimeIndexBuildRateLimit:  *atimeIndexBuildRateLimit,
+			atimeIndexVerifyRateLimit: *atimeIndexVerifyRateLimit,
+			atimeIndexMaxSnapshotAge:  atimeIndexMaxSnapshotAge,
+
+			metrics: metricSet,
 		}
 		ut.byPartition[p.ID] = u
 		maxSizeBytes := int64(EvictionCutoffThreshold * float64(p.MaxSizeBytes))
@@ -778,6 +926,10 @@ func (ut *Tracker) Start() {
 		}
 		pu.eg.Go(func() error {
 			pu.updateLocalSizeBytes(gctx)
+			return nil
+		})
+		pu.eg.Go(func() error {
+			pu.maintainAtimeIndex(gctx)
 			return nil
 		})
 		pu.lru.Start()

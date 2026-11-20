@@ -3635,6 +3635,33 @@ var (
 		PartitionID,
 	})
 
+	RaftAtimeIndexBuilt = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_index_built",
+		Help:      "1 once this node has built the partition's atime index, 0 while it is building.",
+	}, []string{
+		PartitionID,
+	})
+
+	RaftAtimeIndexMissingEntriesRepaired = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_index_missing_entries_repaired",
+		Help:      "Records found without an atime-index entry after the partition's index was built. Should stay at zero.",
+	}, []string{
+		PartitionID,
+	})
+
+	RaftAtimeIndexSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_index_size_bytes",
+		Help:      "Estimated disk usage of the partition's atime index on this node.",
+	}, []string{
+		PartitionID,
+	})
+
 	RaftAtimeUpdateGCSCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
