@@ -83,6 +83,7 @@ type schedulerServerMock struct {
 	canceledCount int
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 	scheduleErr   error
+	trustedTaskID string
 	// WatchTaskLiveness returns taskLost for every task. Tests close it to
 	// simulate the scheduler losing a task.
 	taskLost chan struct{}
@@ -108,12 +109,19 @@ func (s *schedulerServerMock) GetSharedExecutorPoolGroupID() string {
 	return sharedPoolGroupID
 }
 
-func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
+func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest, allowTrustedPublication bool) (*scpb.ScheduleTaskResponse, error) {
+	if allowTrustedPublication {
+		s.trustedTaskID = req.GetTaskId()
+	}
 	s.scheduleReqs = append(s.scheduleReqs, req)
 	if s.scheduleErr != nil {
 		return nil, s.scheduleErr
 	}
 	return &scpb.ScheduleTaskResponse{}, nil
+}
+
+func (s *schedulerServerMock) AuthorizeTrustedActionResult(ctx context.Context, taskID, token string) (bool, error) {
+	return s.trustedTaskID == taskID && token == "test-publication-token", nil
 }
 
 func (s *schedulerServerMock) AuthorizeTaskWrites(ctx context.Context, taskID string) error {

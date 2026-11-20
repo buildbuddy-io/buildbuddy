@@ -139,6 +139,9 @@ type UserInfo interface {
 	HasCapability(cappb.Capability) bool
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
+	// GetTrustExecutorActionResults is a cached org policy hint. A privileged
+	// write must verify the current org policy independently.
+	GetTrustExecutorActionResults() bool
 	GetEnforceIPRules() bool
 	GetGroupStatus() grpb.Group_GroupStatus
 	// IsCustomerSSO indicates whether the user logged in via a customer SSO integration (SAML/OIDC).
@@ -525,6 +528,7 @@ type APIKeyGroup interface {
 	GetChildGroupIDs() []string
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
+	GetTrustExecutorActionResults() bool
 	GetEnforceIPRules() bool
 	GetUserAccountType() uidpb.AccountType
 	IsImpersonating() bool
@@ -1097,16 +1101,27 @@ type CacheProxyRegistryService interface {
 	GetCacheProxy(ctx context.Context, req *cppb.GetCacheProxyRequest) (*cppb.GetCacheProxyResponse, error)
 }
 
+// TrustedExecutionPublicationTokenHeader carries the scheduler-issued proof on
+// PublishOperation, never in the Operation streamed to the execution client.
+// It is a worker credential, not a proxy-attested header: forward it unchanged
+// and accept it only with a verified executor identity and a live task claim.
+const TrustedExecutionPublicationTokenHeader = "x-buildbuddy-execution-publication-token"
+
 type SchedulerService interface {
 	RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
-	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
+	// ScheduleTask is an in-process API, not a wire RPC. Only the execution
+	// service can mark tasks as eligible for trusted result publication.
+	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest, allowTrustedPublication bool) (*scpb.ScheduleTaskResponse, error)
 	CancelTask(ctx context.Context, taskID string) (bool, error)
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
 	// AuthorizeTaskWrites returns nil if the caller may write updates for the
 	// task, NotFound if the task does not exist, and PermissionDenied
 	// otherwise.
 	AuthorizeTaskWrites(ctx context.Context, taskID string) error
+	// AuthorizeTrustedActionResult checks whether the caller is a managed
+	// executor holding the matching proof for the current task attempt.
+	AuthorizeTrustedActionResult(ctx context.Context, taskID, publicationToken string) (bool, error)
 	// WatchTaskLiveness returns a channel that the scheduler closes if it
 	// loses the task, meaning that the task no longer exists and so no
 	// executor will run it again. The scheduler watches the task until ctx is
@@ -1251,6 +1266,10 @@ type TaskLeaser interface {
 // The executor may assume that the lease is valid as long as the Context() is
 // not done and Close() has not been called.
 type TaskLease interface {
+	// TrustedExecutionPublicationToken is the optional proof for the
+	// current execution attempt. It stays the same across lease reconnects.
+	TrustedExecutionPublicationToken() string
+
 	// Task contains the execution details required to run the leased task.
 	Task() *repb.ExecutionTask
 

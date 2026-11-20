@@ -1358,6 +1358,10 @@ type FakeLease struct {
 	closed chan struct{}
 }
 
+func (f *FakeLease) TrustedExecutionPublicationToken() string {
+	return ""
+}
+
 func (f *FakeLease) Task() *repb.ExecutionTask {
 	return &repb.ExecutionTask{
 		ExecutionId: f.taskID,

@@ -216,14 +216,15 @@ type apiKeyGroup struct {
 	// those child groups will appear in this list. This is currently only used
 	// for external user management via SCIM/API where an admin API key from the
 	// parent group is used to manage all the related groups and their users.
-	ChildGroupIDs          []string `gorm:"-"`
-	Capabilities           int32
-	UseGroupOwnedExecutors bool
-	CacheEncryptionEnabled bool
-	EnforceIPRules         bool
-	UserAccountType        uidpb.AccountType
-	Impersonation          bool
-	Status                 int32
+	ChildGroupIDs              []string `gorm:"-"`
+	Capabilities               int32
+	UseGroupOwnedExecutors     bool
+	CacheEncryptionEnabled     bool
+	TrustExecutorActionResults bool
+	EnforceIPRules             bool
+	UserAccountType            uidpb.AccountType
+	Impersonation              bool
+	Status                     int32
 }
 
 func (g *apiKeyGroup) GetAPIKeyID() string {
@@ -258,6 +259,10 @@ func (g *apiKeyGroup) GetCacheEncryptionEnabled() bool {
 	return g.CacheEncryptionEnabled
 }
 
+func (g *apiKeyGroup) GetTrustExecutorActionResults() bool {
+	return g.TrustExecutorActionResults
+}
+
 func (g *apiKeyGroup) GetEnforceIPRules() bool {
 	return g.EnforceIPRules
 }
@@ -283,12 +288,13 @@ func (g *apiKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 type apiKeyGroupRow struct {
 	tables.APIKey
 
-	UseGroupOwnedExecutors bool
-	CacheEncryptionEnabled bool
-	EnforceIPRules         bool
-	IsParent               bool
-	GroupStatus            int32  `gorm:"column:group_status"`
-	UserSubID              string `gorm:"column:user_sub_id"`
+	UseGroupOwnedExecutors     bool
+	CacheEncryptionEnabled     bool
+	TrustExecutorActionResults bool
+	EnforceIPRules             bool
+	IsParent                   bool
+	GroupStatus                int32  `gorm:"column:group_status"`
+	UserSubID                  string `gorm:"column:user_sub_id"`
 	// Role from direct group membership for user-owned keys.
 	DirectMembershipRole *uint32 `gorm:"column:direct_membership_role"`
 	// Role from indirect membership via user lists for user-owned keys.
@@ -301,17 +307,18 @@ func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
 		accountType = tables.AccountTypeFromSubID(r.UserSubID)
 	}
 	return &apiKeyGroup{
-		APIKeyID:               r.APIKeyID,
-		UserID:                 r.UserID,
-		GroupID:                r.GroupID,
-		IsParent:               r.IsParent,
-		Capabilities:           r.Capabilities,
-		UseGroupOwnedExecutors: r.UseGroupOwnedExecutors,
-		CacheEncryptionEnabled: r.CacheEncryptionEnabled,
-		EnforceIPRules:         r.EnforceIPRules,
-		UserAccountType:        accountType,
-		Impersonation:          r.Impersonation,
-		Status:                 r.GroupStatus,
+		APIKeyID:                   r.APIKeyID,
+		UserID:                     r.UserID,
+		GroupID:                    r.GroupID,
+		IsParent:                   r.IsParent,
+		Capabilities:               r.Capabilities,
+		UseGroupOwnedExecutors:     r.UseGroupOwnedExecutors,
+		CacheEncryptionEnabled:     r.CacheEncryptionEnabled,
+		TrustExecutorActionResults: r.TrustExecutorActionResults,
+		EnforceIPRules:             r.EnforceIPRules,
+		UserAccountType:            accountType,
+		Impersonation:              r.Impersonation,
+		Status:                     r.GroupStatus,
 	}
 }
 
@@ -708,6 +715,7 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string, includeExpired bool) *qu
 			%s AS user_list_membership_role,
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
+			g.trust_executor_action_results,
 			g.enforce_ip_rules,
 			g.is_parent,
 			g.status AS group_status

@@ -81,19 +81,24 @@ type TaskLease struct {
 	supportsExperimentFlags bool
 	taskID                  string
 
-	ctx            context.Context
-	execTask       *repb.ExecutionTask
-	leaseID        string
-	reconnectToken string
-	quit           chan struct{}
-	mu             sync.Mutex // protects stream
-	stream         *leaseStream
-	ttl            time.Duration
-	cancelFunc     context.CancelFunc
+	ctx              context.Context
+	execTask         *repb.ExecutionTask
+	publicationToken string
+	leaseID          string
+	reconnectToken   string
+	quit             chan struct{}
+	mu               sync.Mutex // protects stream
+	stream           *leaseStream
+	ttl              time.Duration
+	cancelFunc       context.CancelFunc
 }
 
 func (t *TaskLease) Context() context.Context {
 	return t.ctx
+}
+
+func (t *TaskLease) TrustedExecutionPublicationToken() string {
+	return t.publicationToken
 }
 
 func (t *TaskLease) Task() *repb.ExecutionTask {
@@ -117,7 +122,7 @@ func (t *TaskLease) sendRequest(req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskResp
 	return t.stream.nextResponse()
 }
 
-func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
+func (t *TaskLease) pingServer(ctx context.Context) (*scpb.LeaseTaskResponse, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -181,7 +186,7 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 		t.leaseID = rsp.GetLeaseId()
 	}
 	t.ttl = time.Duration(rsp.GetLeaseDurationSeconds()) * time.Second
-	return rsp.GetSerializedTask(), nil
+	return rsp, nil
 }
 
 func (t *TaskLease) reEnqueueTask(ctx context.Context, reason string) error {
@@ -238,14 +243,15 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 		return nil, nil, err
 	}
 	t.stream = newLeaseStream(stream)
-	serializedTask, err := t.pingServer(ctx)
+	rsp, err := t.pingServer(ctx)
 	if err == nil {
+		t.publicationToken = rsp.GetTrustedExecutionPublicationToken()
 		defer t.keepLease(ctx)
 		log.CtxDebugf(ctx, "Worker leased task: %q", t.taskID)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	t.cancelFunc = cancel
-	return ctx, serializedTask, err
+	return ctx, rsp.GetSerializedTask(), err
 }
 
 func (t *TaskLease) closed() bool {

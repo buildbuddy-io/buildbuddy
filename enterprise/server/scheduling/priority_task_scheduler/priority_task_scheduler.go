@@ -661,7 +661,7 @@ func (q *PriorityTaskScheduler) publishOperation(ctx context.Context, executionI
 	return operation.Publish(ctx, q.env.GetRemoteExecutionClient(), executionID)
 }
 
-func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledTask) (retry bool, err error) {
+func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledTask, publicationToken string) (retry bool, err error) {
 	ctx = q.enrichContext(ctx)
 	if q.env.GetRemoteExecutionClient() == nil {
 		return false, status.FailedPreconditionError("Execution client not configured")
@@ -672,7 +672,11 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
 		ctx = log.EnrichContext(ctx, "group_id", u.GetGroupID())
 	}
-	clientStream, err := q.publishOperation(ctx, execTask.GetExecutionId())
+	publishCtx := ctx
+	if publicationToken != "" {
+		publishCtx = metadata.AppendToOutgoingContext(publishCtx, interfaces.TrustedExecutionPublicationTokenHeader, publicationToken)
+	}
+	clientStream, err := q.publishOperation(publishCtx, execTask.GetExecutionId())
 	if err != nil {
 		log.CtxWarningf(ctx, "Error opening publish operation stream: %s", err)
 		return true, status.WrapError(err, "failed to open execution status update stream")
@@ -1031,7 +1035,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			SchedulingMetadata:    reservation.GetSchedulingMetadata(),
 			WorkerQueuedTimestamp: timestamppb.New(reservation.WorkerQueuedTimestamp),
 		}
-		retry, err := q.runTask(ctx, scheduledTask)
+		retry, err := q.runTask(ctx, scheduledTask, lease.TrustedExecutionPublicationToken())
 		if err != nil {
 			log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}

@@ -924,14 +924,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Jwt = jwt
 	}
 
-	executionTask.PlatformOverrides = &repb.Platform{
-		Properties: platform.RemoteHeaderOverrides(ctx),
-	}
+	clientPlatformOverrides := platform.RemoteHeaderOverrides(ctx)
+	executionTask.PlatformOverrides = &repb.Platform{Properties: clientPlatformOverrides}
 	s.applySnapshotSaveQuota(ctx, command, executionTask.PlatformOverrides)
 
 	taskGroupID := interfaces.AuthAnonymousUser
+	var trustedCacheCandidate bool
 	if user, err := s.authenticator.AuthenticatedUser(ctx); err == nil {
 		taskGroupID = user.GetGroupID()
+		trustedCacheCandidate = user.GetTrustExecutorActionResults() &&
+			user.HasCapability(capability.Capability_CAS_WRITE) && !user.HasCapability(capability.Capability_CACHE_WRITE)
 	}
 
 	props, err := platform.ParseProperties(executionTask)
@@ -1182,7 +1184,10 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Metadata:       schedulingMetadata,
 		SerializedTask: serializedTask,
 	}
-	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
+	// Header overrides are not part of the action digest. Do not authorize
+	// publication under that digest for a task whose caller supplied overrides.
+	allowTrustedPublication := trustedCacheCandidate && len(clientPlatformOverrides) == 0
+	if _, err := scheduler.ScheduleTask(ctx, scheduleReq, allowTrustedPublication); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, deletePendingExecutionExtraTimeout)
 		defer cancel()
 		if opts.recordActionMergingState {

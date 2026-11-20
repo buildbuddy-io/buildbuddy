@@ -102,6 +102,12 @@ message LeaseTaskResponse {
   // If true, indicates that the client may reclaim an existing lease by
   // resending a LeaseTaskRequest with the same lease_id.
   bool supports_reconnect = 6;
+
+  // Optional proof for a managed executor to publish an action result for this
+  // execution attempt. Returned on claims and preserved on valid reconnects.
+  // Send only to the execution service, not in the operation streamed to the
+  // caller.
+  string trusted_execution_publication_token = 7;
 }
 
 // CustomResource represents a user-defined resource.

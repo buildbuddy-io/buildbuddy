@@ -39,7 +39,7 @@ func requireClaimsEqual(t *testing.T, expected *claims.Claims, actual *claims.Cl
 }
 
 func TestJWT(t *testing.T) {
-	c := &claims.Claims{UserID: "US123"}
+	c := &claims.Claims{UserID: "US123", TrustExecutorActionResults: true}
 	testContext := contextWithUnverifiedJWT(c)
 
 	parsedClaims, err := claims.ClaimsFromContext(testContext)
@@ -97,17 +97,18 @@ func TestJWTKeyRotation(t *testing.T) {
 }
 
 type fakeAPIKeyGroup struct {
-	capabilities           int32
-	apiKeyID               string
-	userID                 string
-	groupID                string
-	childGroupIDs          []string
-	useGroupOwnedExecutors bool
-	cacheEncryptionEnabled bool
-	enforceIPRules         bool
-	userAccountType        uidpb.AccountType
-	impersonation          bool
-	groupStatus            grpb.Group_GroupStatus
+	capabilities               int32
+	apiKeyID                   string
+	userID                     string
+	groupID                    string
+	childGroupIDs              []string
+	useGroupOwnedExecutors     bool
+	cacheEncryptionEnabled     bool
+	trustExecutorActionResults bool
+	enforceIPRules             bool
+	userAccountType            uidpb.AccountType
+	impersonation              bool
+	groupStatus                grpb.Group_GroupStatus
 }
 
 func (f *fakeAPIKeyGroup) GetCapabilities() int32 {
@@ -136,6 +137,10 @@ func (f *fakeAPIKeyGroup) GetUseGroupOwnedExecutors() bool {
 
 func (f *fakeAPIKeyGroup) GetCacheEncryptionEnabled() bool {
 	return f.cacheEncryptionEnabled
+}
+
+func (f *fakeAPIKeyGroup) GetTrustExecutorActionResults() bool {
+	return f.trustExecutorActionResults
 }
 
 func (f *fakeAPIKeyGroup) GetEnforceIPRules() bool {
@@ -197,10 +202,11 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	// Now update the API key information to have a child group.
 	childGroupID := "GR9999"
 	akg = &fakeAPIKeyGroup{
-		groupID:       baseGroupID,
-		childGroupIDs: []string{childGroupID},
-		capabilities:  capabilities.ToInt(caps),
-		groupStatus:   grpb.Group_FREE_TIER_GROUP_STATUS,
+		groupID:                    baseGroupID,
+		childGroupIDs:              []string{childGroupID},
+		capabilities:               capabilities.ToInt(caps),
+		groupStatus:                grpb.Group_FREE_TIER_GROUP_STATUS,
+		trustExecutorActionResults: true,
 	}
 
 	// Regular call should return the parent group as the effective group.
@@ -215,6 +221,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.Equal(t, []string{baseGroupID, childGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership, expectedChildMembership}, c.GetGroupMemberships())
 	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, c.GetGroupStatus())
+	require.True(t, c.GetTrustExecutorActionResults())
 
 	// Should be able to change the effective group ID to the child group using the request context.
 	rctx = requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: childGroupID})
@@ -224,6 +231,7 @@ func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
 	require.Equal(t, baseGroupID, c.GetAPIKeyInfo().OwnerGroupID) // onwer group should still be parent
 	require.Equal(t, []string{baseGroupID, childGroupID}, c.GetAllowedGroups())
 	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership, expectedChildMembership}, c.GetGroupMemberships())
+	require.False(t, c.GetTrustExecutorActionResults(), "parent org opt-in does not apply to the child")
 
 	// Trying to set any other group ID should still yield an error.
 	rctx = requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: "BADGROUP"})

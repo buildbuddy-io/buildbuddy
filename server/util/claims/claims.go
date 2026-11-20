@@ -151,13 +151,14 @@ type Claims struct {
 	APIKeyOwnerGroupID string `json:"api_key_owner_group_id,omitempty"`
 	Impersonating      bool   `json:"impersonating"`
 	// TODO(bduffany): remove this field
-	AllowedGroups          []string                      `json:"allowed_groups"`
-	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
-	Capabilities           []cappb.Capability            `json:"capabilities"`
-	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
-	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
-	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
-	GroupStatus            grpb.Group_GroupStatus        `json:"group_status,omitempty"`
+	AllowedGroups              []string                      `json:"allowed_groups"`
+	GroupMemberships           []*interfaces.GroupMembership `json:"group_memberships"`
+	Capabilities               []cappb.Capability            `json:"capabilities"`
+	UseGroupOwnedExecutors     bool                          `json:"use_group_owned_executors,omitempty"`
+	CacheEncryptionEnabled     bool                          `json:"cache_encryption_enabled,omitempty"`
+	TrustExecutorActionResults bool                          `json:"trust_executor_action_results,omitempty"`
+	EnforceIPRules             bool                          `json:"enforce_ip_rules,omitempty"`
+	GroupStatus                grpb.Group_GroupStatus        `json:"group_status,omitempty"`
 	// TODO(vadim): remove this field
 	SAML        bool `json:"saml,omitempty"`
 	CustomerSSO bool `json:"customer_sso,omitempty"`
@@ -215,6 +216,10 @@ func (c *Claims) GetUseGroupOwnedExecutors() bool {
 
 func (c *Claims) GetCacheEncryptionEnabled() bool {
 	return c.CacheEncryptionEnabled
+}
+
+func (c *Claims) GetTrustExecutorActionResults() bool {
+	return c.TrustExecutorActionResults
 }
 
 func (c *Claims) GetEnforceIPRules() bool {
@@ -328,6 +333,8 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		Capabilities:               capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
+		// The API key lookup only knows the owning group's policy.
+		TrustExecutorActionResults: effectiveGroup == akg.GetGroupID() && akg.GetTrustExecutorActionResults(),
 		EnforceIPRules:             akg.GetEnforceIPRules(),
 		SAML:                       accountType == uidpb.AccountType_SAML,
 		CustomerSSO:                accountType == uidpb.AccountType_SAML || accountType == uidpb.AccountType_OIDC,
@@ -411,6 +418,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
+	trustExecutorActionResults := false
 	enforceIPRules := false
 	groupStatus := grpb.Group_UNKNOWN_GROUP_STATUS
 	var capabilities []cappb.Capability
@@ -423,20 +431,22 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 		if g.Group.GroupID == effectiveGroup {
 			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
+			trustExecutorActionResults = g.Group.TrustExecutorActionResults
 			enforceIPRules = g.Group.EnforceIPRules
 			groupStatus = g.Group.Status
 			capabilities = g.Capabilities
 		}
 	}
 	return &Claims{
-		UserID:                 u.UserID,
-		GroupID:                effectiveGroup,
-		GroupMemberships:       groupMemberships,
-		AllowedGroups:          allowedGroups,
-		Capabilities:           capabilities,
-		CacheEncryptionEnabled: cacheEncryptionEnabled,
-		EnforceIPRules:         enforceIPRules,
-		GroupStatus:            groupStatus,
+		UserID:                     u.UserID,
+		GroupID:                    effectiveGroup,
+		GroupMemberships:           groupMemberships,
+		AllowedGroups:              allowedGroups,
+		Capabilities:               capabilities,
+		CacheEncryptionEnabled:     cacheEncryptionEnabled,
+		TrustExecutorActionResults: trustExecutorActionResults,
+		EnforceIPRules:             enforceIPRules,
+		GroupStatus:                groupStatus,
 	}, nil
 }
 

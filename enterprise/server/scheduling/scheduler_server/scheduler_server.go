@@ -125,6 +125,10 @@ const (
 	redisTaskAttempCountField        = "attemptCount"
 	redisTaskClaimedField            = "claimed"
 	redisTaskReconnectPeriodEndField = "reconnectPeriodEnd"
+	redisTaskLeaseIDField            = "leaseId"
+	redisTaskAllowPublicationField   = "allowTrustedPublication"
+	redisTaskPublicationTokenField   = "executionPublicationToken"
+	redisTaskPublicationLeaseField   = "executionPublicationLeaseId"
 	// JWT of the task owner. Sent to executors with every task reservation so
 	// that requests made on behalf of the task are authenticated as the task
 	// owner rather than as the executor.
@@ -184,8 +188,7 @@ var (
 	// Claim field is set only if task exists & claim field is not present, or
 	// if the current lease holder is reconnecting.
 	// Return values:
-	//  - 0 claim failed for unknown reason (shouldn't happen)
-	//  - 1 claim successful
+	//  - string publication token (possibly empty) if claim successful
 	//  - 10 task doesn't exist
 	//  - 11 task already claimed
 	//  - 12 task is unclaimed but is waiting for another executor to reconnect
@@ -195,14 +198,35 @@ var (
 			return 10
 		end
 	
+		-- A token is scoped to this attempt. The extra lease ID binding also
+		-- invalidates it if an older scheduler changes the primary lease ID
+		-- without updating the proof.
+		local function setPublicationToken(isNewAttempt)
+			local token = ""
+			if ARGV[5] ~= "" and redis.call("hget", KEYS[1], "allowTrustedPublication") == "1" then
+				if isNewAttempt then
+					token = ARGV[5]
+				elseif redis.call("hget", KEYS[1], "executionPublicationLeaseId") == redis.call("hget", KEYS[1], "leaseId") then
+					token = redis.call("hget", KEYS[1], "executionPublicationToken") or ""
+				end
+			end
+			if token ~= "" then
+				redis.call("hset", KEYS[1], "executionPublicationToken", token, "executionPublicationLeaseId", ARGV[4])
+			else
+				redis.call("hdel", KEYS[1], "executionPublicationToken", "executionPublicationLeaseId")
+			end
+			return token
+		end
+
 		-- Task already claimed.
 		if redis.call("hexists", KEYS[1], "claimed") == 1 then
 			-- Let the current lease holder reconnect on a new stream before the
 			-- scheduler has released the claim from its old stream. This isn't
 			-- a new attempt.
 			if ARGV[1] == "true" and ARGV[2] ~= "" and redis.call("hget", KEYS[1], "leaseId") == ARGV[2] then
+				local token = setPublicationToken(false)
 				redis.call("hset", KEYS[1], "leaseId", ARGV[4])
-				return 1
+				return token
 			end
 			return 11
 		end
@@ -251,9 +275,9 @@ var (
 		if isNewAttempt then
 			redis.call("hincrby", KEYS[1], "attemptCount", 1)
 		end
-		redis.call("hset", KEYS[1], "leaseId", ARGV[4])
-
-		return redis.call("hset", KEYS[1], "claimed", "1")
+		local token = setPublicationToken(isNewAttempt)
+		redis.call("hset", KEYS[1], "leaseId", ARGV[4], "claimed", "1")
+		return token
 		`)
 	// Releases a claim if currently claimed, placing the lease into
 	// "reconnecting" state if the reconnect token arg is set.
@@ -1377,11 +1401,15 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 }
 
 type persistedTask struct {
-	taskID          string
-	metadata        *scpb.SchedulingMetadata
-	serializedTask  []byte
-	queuedTimestamp time.Time
-	attemptCount    int64
+	taskID         string
+	metadata       *scpb.SchedulingMetadata
+	serializedTask []byte
+
+	// True for a task that the execution service admitted for trusted
+	// result publication.
+	allowTrustedPublication bool
+	queuedTimestamp         time.Time
+	attemptCount            int64
 	// reconnectPeriodEnd is the time until which the task is reserved for the
 	// previous lease holder to reconnect. Zero if the task is not reserved.
 	reconnectPeriodEnd time.Time
@@ -2026,7 +2054,7 @@ func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID, 
 	return nil
 }
 
-func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte, jwt string) error {
+func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte, jwt string, allowTrustedPublication bool) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2036,11 +2064,12 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 	}
 
 	props := map[string]any{
-		redisTaskProtoField:       serializedTask,
-		redisTaskMetadataField:    serializedMetadata,
-		redisTaskQueuedAtUsec:     time.Now().UnixMicro(),
-		redisTaskAttempCountField: 0,
-		redisTaskJWTField:         jwt,
+		redisTaskProtoField:            serializedTask,
+		redisTaskMetadataField:         serializedMetadata,
+		redisTaskQueuedAtUsec:          time.Now().UnixMicro(),
+		redisTaskAttempCountField:      0,
+		redisTaskJWTField:              jwt,
+		redisTaskAllowPublicationField: allowTrustedPublication,
 	}
 	c, err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), props).Result()
 	if err != nil {
@@ -2174,47 +2203,47 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, expectedLease
 	return nil
 }
 
-func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken string, clientSupportsReconnect bool) (string, error) {
+func (s *SchedulerServer) claimTask(ctx context.Context, task *persistedTask, reconnectToken string, clientSupportsReconnect bool) (leaseID, publicationToken string, err error) {
 	leaseId, err := random.RandomString(20)
 	if err != nil {
-		return "", status.InternalErrorf("could not generate lease ID: %s", err)
+		return "", "", status.InternalErrorf("could not generate lease ID: %s", err)
+	}
+	newToken := ""
+	if task.allowTrustedPublication && s.isManagedExecutorForTask(ctx, task.metadata) {
+		newToken, err = random.RandomString(32)
+		if err != nil {
+			return "", "", status.InternalErrorf("could not generate execution publication token: %s", err)
+		}
 	}
 	checkTaskReconnectToken := *leaseReconnectGracePeriod > 0 && clientSupportsReconnect
 	r, err := redisAcquireClaim.Run(
 		ctx, s.rdb,
-		[]string{s.redisKeyForTask(taskID)},
-		strconv.FormatBool(checkTaskReconnectToken), reconnectToken, time.Now().UnixNano(), leaseId,
+		[]string{s.redisKeyForTask(task.taskID)},
+		strconv.FormatBool(checkTaskReconnectToken), reconnectToken, time.Now().UnixNano(), leaseId, newToken,
 	).Result()
 	if err != nil {
 		log.CtxErrorf(ctx, "claimTask error: redis script failed: %s", err)
-		return "", err
+		return "", "", err
 	}
 
-	c, ok := r.(int64)
-	if !ok {
-		log.CtxErrorf(ctx, "unexpected result from claim attempt: %v (type %T)", r, r)
-		return "", status.FailedPreconditionErrorf("unexpected result from claim attempt: %v", r)
+	if token, ok := r.(string); ok {
+		return leaseId, token, nil
 	}
-
+	c, _ := r.(int64)
 	switch c {
-	case 1:
-		// Success
-		break
 	case 10:
-		log.CtxInfof(ctx, "claimTask %q error: task does not exist", taskID)
-		return "", status.NotFoundError("task does not exist")
+		log.CtxInfof(ctx, "claimTask %q error: task does not exist", task.taskID)
+		return "", "", status.NotFoundError("task does not exist")
 	case 11:
 		// Don't log this; it's extremely common.
-		return "", status.NotFoundError("task already claimed")
+		return "", "", status.NotFoundError("task already claimed")
 	case 12:
 		// Don't log this either; it is common during rollouts.
-		return "", status.NotFoundError("task is waiting for another executor to reconnect")
+		return "", "", status.NotFoundError("task is waiting for another executor to reconnect")
 	default:
-		log.CtxErrorf(ctx, "claimTask %q error: unknown error code: %d", taskID, c)
-		return "", status.UnknownErrorf("unknown error %d", c)
+		log.CtxErrorf(ctx, "claimTask %q error: unknown error code: %d", task.taskID, c)
+		return "", "", status.UnknownErrorf("unknown error %d", c)
 	}
-
-	return leaseId, nil
 }
 
 func (s *SchedulerServer) readTasks(ctx context.Context, taskIDs []string) ([]*persistedTask, error) {
@@ -2346,6 +2375,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskAttempCountField,
 		redisTaskReconnectPeriodEndField,
 		redisTaskJWTField,
+		redisTaskAllowPublicationField,
 	}
 	key := s.redisKeyForTask(taskID)
 	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
@@ -2413,13 +2443,14 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 	jwt, _ := vals[5].(string)
 
 	return &persistedTask{
-		taskID:             taskID,
-		metadata:           metadata,
-		serializedTask:     serializedTask,
-		queuedTimestamp:    time.UnixMicro(queuedAtUsec),
-		attemptCount:       attemptCount,
-		reconnectPeriodEnd: reconnectPeriodEnd,
-		jwt:                jwt,
+		taskID:                  taskID,
+		metadata:                metadata,
+		serializedTask:          serializedTask,
+		allowTrustedPublication: vals[6] == "1",
+		queuedTimestamp:         time.UnixMicro(queuedAtUsec),
+		attemptCount:            attemptCount,
+		reconnectPeriodEnd:      reconnectPeriodEnd,
+		jwt:                     jwt,
 	}, nil
 }
 
@@ -2572,7 +2603,8 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			if err := s.checkTaskAccess(ctx, task, executorID); err != nil {
 				return err
 			}
-			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
+			var publicationToken string
+			leaseID, publicationToken, err = s.claimTask(ctx, task, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {
 				log.CtxDebugf(ctx, "LeaseTask claim attempt (reconnect=%t) failed: %s", req.GetReconnectToken() != "", err)
 				return err
@@ -2604,6 +2636,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 			rsp.SerializedTask = task.serializedTask
 			rsp.LeaseId = leaseID
+			rsp.TrustedExecutionPublicationToken = publicationToken
 			// If both the client and server have lease reconnect enabled,
 			// generate a reconnect token.
 			if *leaseReconnectGracePeriod > 0 && req.GetSupportsReconnect() {
@@ -3142,7 +3175,7 @@ func (s *SchedulerServer) cancelOnRemoteExecutor(ctx context.Context, node *exec
 	}
 }
 
-func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
+func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest, allowTrustedPublication bool) (*scpb.ScheduleTaskResponse, error) {
 	if req.GetTaskId() == "" {
 		return nil, status.FailedPreconditionError("A task_id is required")
 	}
@@ -3158,7 +3191,7 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	taskID := req.GetTaskId()
 	metadata := req.GetMetadata()
 	jwt := s.env.GetAuthenticator().TrustedJWTFromAuthContext(ctx)
-	if err := s.insertTask(ctx, taskID, metadata, req.GetSerializedTask(), jwt); err != nil {
+	if err := s.insertTask(ctx, taskID, metadata, req.GetSerializedTask(), jwt, allowTrustedPublication); err != nil {
 		return nil, err
 	}
 	enqueueRequest := &scpb.EnqueueTaskReservationRequest{
@@ -3222,6 +3255,53 @@ func (s *SchedulerServer) AuthorizeTaskWrites(ctx context.Context, taskID string
 		return status.PermissionDeniedErrorf("caller may not act on task %q", taskID)
 	}
 	return nil
+}
+
+// isManagedExecutorForTask requires both the signed worker identity and the
+// task owner. A self-hosted executor's registration or its task JWT is not
+// evidence of a BuildBuddy-managed executor.
+func (s *SchedulerServer) isManagedExecutorForTask(ctx context.Context, md *scpb.SchedulingMetadata) bool {
+	groupID := md.GetTaskGroupId()
+	if groupID == "" || groupID == interfaces.AuthAnonymousUser || md.GetExecutorGroupId() != s.GetSharedExecutorPoolGroupID() {
+		return false
+	}
+	identityService := s.env.GetClientIdentityService()
+	if identityService == nil {
+		return false
+	}
+	identity, err := identityService.IdentityFromContext(ctx)
+	if err != nil || identity == nil || identity.Client != interfaces.ClientIdentityExecutor {
+		return false
+	}
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	return err == nil && user.GetGroupID() == groupID
+}
+
+func (s *SchedulerServer) AuthorizeTrustedActionResult(ctx context.Context, taskID, publicationToken string) (bool, error) {
+	if publicationToken == "" {
+		return false, nil
+	}
+	// Read the complete proof in one Redis command: it must describe an
+	// active claim of the same record and lease at the time of validation.
+	vals, err := s.rdb.HMGet(ctx, s.redisKeyForTask(taskID),
+		redisTaskClaimedField, redisTaskLeaseIDField, redisTaskPublicationLeaseField, redisTaskPublicationTokenField,
+		redisTaskAllowPublicationField, redisTaskMetadataField,
+	).Result()
+	if err != nil {
+		return false, status.InternalErrorf("read execution publication proof: %s", err)
+	}
+	if vals[0] != "1" || vals[1] == nil || vals[1] == "" || vals[1] != vals[2] || vals[3] != publicationToken || vals[4] != "1" {
+		return false, nil
+	}
+	metadataBytes, ok := vals[5].(string)
+	if !ok {
+		return false, nil
+	}
+	md := &scpb.SchedulingMetadata{}
+	if err := proto.Unmarshal([]byte(metadataBytes), md); err != nil {
+		return false, status.InternalErrorf("unmarshal task metadata: %s", err)
+	}
+	return s.isManagedExecutorForTask(ctx, md), nil
 }
 
 func (s *SchedulerServer) TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error) {

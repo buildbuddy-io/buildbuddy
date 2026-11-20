@@ -460,6 +460,44 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 	}
 }
 
+func TestTrustExecutorActionResultsClaims(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	ctx := t.Context()
+	env := setupEnv(t)
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	admin := enterprise_testauth.CreateRandomUser(t, env, "executor-results.test")
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	user, err := env.GetUserDB().GetUser(adminCtx)
+	require.NoError(t, err)
+	require.Len(t, user.Groups, 1)
+	group := user.Groups[0].Group
+	keys, err := env.GetAuthDB().GetAPIKeys(adminCtx, group.GroupID, false /*=includeExpired*/)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	group.URLIdentifier = "executor-results"
+
+	for _, trust := range []bool{false, true} {
+		_, err := env.GetUserDB().UpdateGroup(adminCtx, &group, func(opts *interfaces.UpdateGroupOpts) {
+			opts.TrustExecutorActionResults = &trust
+		})
+		require.NoError(t, err)
+
+		userCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+		require.NoError(t, err)
+		userClaims, err := auth.AuthenticatedUser(userCtx)
+		require.NoError(t, err)
+		require.Equal(t, trust, userClaims.GetTrustExecutorActionResults())
+
+		keyCtx := auth.AuthContextFromAPIKey(ctx, keys[0].Value)
+		keyClaims, err := auth.AuthenticatedUser(keyCtx)
+		require.NoError(t, err)
+		require.Equal(t, trust, keyClaims.GetTrustExecutorActionResults())
+	}
+}
+
 func TestInvalidAPIKeyCache(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

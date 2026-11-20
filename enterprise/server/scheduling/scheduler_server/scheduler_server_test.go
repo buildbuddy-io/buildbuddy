@@ -725,12 +725,13 @@ func (e *fakeExecutor) ResetTasks() {
 }
 
 type taskLease struct {
-	t       *testing.T
-	stream  scpb.Scheduler_LeaseTaskClient
-	cancel  context.CancelFunc
-	leaseID string
-	taskID  string
-	task    *repb.ExecutionTask
+	t                *testing.T
+	stream           scpb.Scheduler_LeaseTaskClient
+	cancel           context.CancelFunc
+	leaseID          string
+	taskID           string
+	task             *repb.ExecutionTask
+	publicationToken string
 }
 
 func (tl *taskLease) Renew() error {
@@ -827,12 +828,13 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 	}
 
 	lease := &taskLease{
-		t:       e.t,
-		stream:  stream,
-		cancel:  cancel,
-		taskID:  taskID,
-		task:    task,
-		leaseID: rsp.GetLeaseId(),
+		t:                e.t,
+		stream:           stream,
+		cancel:           cancel,
+		taskID:           taskID,
+		task:             task,
+		leaseID:          rsp.GetLeaseId(),
+		publicationToken: rsp.GetTrustedExecutionPublicationToken(),
 	}
 	// Like a real executor, close the lease while still registered, so that
 	// the scheduler can promptly re-enqueue a task that is still claimed.
@@ -884,7 +886,7 @@ func newScheduleRequest(ctx context.Context, t *testing.T, env environment.Env, 
 
 func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: props})
-	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req, false /*=allowTrustedPublication*/)
 	require.NoError(t, err)
 	return req.GetTaskId()
 }
@@ -1104,7 +1106,7 @@ func TestExecutorJoin_OffersWorkSizedForJoiningExecutor(t *testing.T) {
 		EstimatedMilliCpu:    3_000,
 	}
 	require.NotEqual(t, req.GetMetadata().GetMeasuredTaskSize().GetEstimatedMilliCpu(), req.GetMetadata().GetTaskSize().GetEstimatedMilliCpu())
-	_, err := s.ScheduleTask(ctx, req)
+	_, err := s.ScheduleTask(ctx, req, false /*=allowTrustedPublication*/)
 	require.NoError(t, err)
 	nextReservation(t, executor1, req.GetTaskId())
 
@@ -1609,7 +1611,7 @@ func TestUnclaimTask_ReturnsNotFoundForFinalizedTask(t *testing.T) {
 func scheduleTaskForGroup(ctx context.Context, t *testing.T, env environment.Env, groupID string) string {
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
 	req.Metadata.TaskGroupId = groupID
-	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req, false /*=allowTrustedPublication*/)
 	require.NoError(t, err)
 	return req.GetTaskId()
 }
@@ -1911,7 +1913,7 @@ func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
 		},
 	}
 
-	_, err = env.GetSchedulerService().ScheduleTask(ctx, req)
+	_, err = env.GetSchedulerService().ScheduleTask(ctx, req, false /*=allowTrustedPublication*/)
 	require.NoError(t, err)
 	fe.WaitForTask(req.GetTaskId())
 	lease := fe.Claim(req.GetTaskId())
@@ -2173,7 +2175,7 @@ func TestAuthorizeTaskWrites(t *testing.T) {
 
 			req := newScheduleRequest(ctx, t, env, scheduleOpts{})
 			req.GetMetadata().TaskGroupId = tc.taskGroupID
-			_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+			_, err := env.GetSchedulerService().ScheduleTask(ctx, req, false /*=allowTrustedPublication*/)
 			require.NoError(t, err)
 
 			callerCtx := context.Background()
@@ -2193,6 +2195,113 @@ func TestAuthorizeTaskWrites(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTrustedActionResultPublication(t *testing.T) {
+	env, ownerCtx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+	flags.Set(t, "remote_execution.shared_executor_pool_group_id", "")
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", time.Minute)
+	enterprise_testenv.AddClientIdentity(t, env, interfaces.ClientIdentityApp)
+	identityService := env.GetClientIdentityService()
+	identityHeader, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+		Origin: interfaces.ClientIdentityInternalOrigin,
+		Client: interfaces.ClientIdentityExecutor,
+	}, time.Minute)
+	require.NoError(t, err)
+	executorCtx := metadata.AppendToOutgoingContext(ownerCtx, authutil.ClientIdentityHeaderName, identityHeader)
+	withManagedIdentity := func(ctx context.Context) context.Context {
+		t.Helper()
+		ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(authutil.ClientIdentityHeaderName, identityHeader))
+		validatedCtx, err := identityService.ValidateIncomingIdentity(ctx)
+		require.NoError(t, err)
+		return validatedCtx
+	}
+	publisherCtx := withManagedIdentity(ownerCtx)
+	executor := newFakeExecutor(executorCtx, t, env.GetSchedulerClient())
+	executor.Register()
+
+	// Ordinary scheduling does not mark a task as eligible for trusted publication.
+	ordinaryReq := newScheduleRequest(ownerCtx, t, env, scheduleOpts{})
+	ordinaryReq.Metadata.TaskGroupId = "group1"
+	_, err = s.ScheduleTask(ownerCtx, ordinaryReq, false /*=allowTrustedPublication*/)
+	require.NoError(t, err)
+	executor.WaitForTask(ordinaryReq.GetTaskId())
+	ordinaryLease := executor.Claim(ordinaryReq.GetTaskId())
+	require.Empty(t, ordinaryLease.publicationToken)
+	require.NoError(t, ordinaryLease.Finalize())
+
+	req := newScheduleRequest(ownerCtx, t, env, scheduleOpts{})
+	req.Metadata.TaskGroupId = "group1"
+	taskID := req.GetTaskId()
+	_, err = s.ScheduleTask(ownerCtx, req, true /*=allowTrustedPublication*/)
+	require.NoError(t, err)
+	executor.WaitForTask(taskID)
+	lease := executor.Claim(taskID)
+	require.NotEmpty(t, lease.publicationToken)
+
+	// An eligible, currently claimed task can publish only as its owner via
+	// a verified managed executor.
+	for _, tc := range []struct {
+		name  string
+		ctx   context.Context
+		token string
+		want  bool
+	}{
+		{
+			name:  "managed lease holder",
+			ctx:   publisherCtx,
+			token: lease.publicationToken,
+			want:  true,
+		},
+		{
+			name:  "same group without managed identity",
+			ctx:   ownerCtx,
+			token: lease.publicationToken,
+		},
+		{
+			name:  "managed identity in another group",
+			ctx:   withManagedIdentity(authenticatedContext(t, env, "user2")),
+			token: lease.publicationToken,
+		},
+		{
+			name: "managed identity without lease proof",
+			ctx:  publisherCtx,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := s.AuthorizeTrustedActionResult(tc.ctx, taskID, tc.token)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, ok)
+		})
+	}
+
+	// A reconnect rotates the lease ID but keeps the same attempt proof.
+	reconnectedLease, err := executor.Reconnect(taskID, lease.leaseID)
+	require.NoError(t, err)
+	require.NotEqual(t, lease.leaseID, reconnectedLease.leaseID)
+	require.Equal(t, lease.publicationToken, reconnectedLease.publicationToken)
+	ok, err := s.AuthorizeTrustedActionResult(publisherCtx, taskID, lease.publicationToken)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	// Releasing the claim invalidates the proof until the attempt reconnects.
+	require.NoError(t, reconnectedLease.ReEnqueue())
+	ok, err = s.AuthorizeTrustedActionResult(publisherCtx, taskID, lease.publicationToken)
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	// A fresh attempt cannot use the previous executor's proof.
+	nextLease := executor.Claim(taskID)
+	require.NotEmpty(t, nextLease.publicationToken)
+	require.NotEqual(t, lease.publicationToken, nextLease.publicationToken)
+	ok, err = s.AuthorizeTrustedActionResult(publisherCtx, taskID, lease.publicationToken)
+	require.NoError(t, err)
+	require.False(t, ok)
+	ok, err = s.AuthorizeTrustedActionResult(publisherCtx, taskID, nextLease.publicationToken)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, nextLease.Finalize())
 }
 
 func TestPublishOperation_TaskOwnership(t *testing.T) {
@@ -2256,7 +2365,7 @@ func TestScheduleTask_DeletesTaskOnEnqueueFailure(t *testing.T) {
 	// Don't register any executors, so enqueuing task reservations will fail
 	// with an "No registered executors" error.
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
-	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req, false /*=allowTrustedPublication*/)
 	require.Error(t, err)
 
 	resp, err := env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: req.GetTaskId()})
@@ -2317,7 +2426,7 @@ func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
 
 			req := newScheduleRequest(ctx, t, env, scheduleOpts{})
 			req.Metadata.RoutingConfig = tc.routingConfig
-			_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+			_, err := env.GetSchedulerService().ScheduleTask(ctx, req, false /*=allowTrustedPublication*/)
 			if tc.expectSchedulingError {
 				require.Error(t, err)
 				return
@@ -3034,7 +3143,7 @@ func TestScheduleTask_NoExecutorSupportsRequestedIsolationType(t *testing.T) {
 	// the unsupported isolation type, rather than enqueueing the task on an
 	// executor that would reject it.
 	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: map[string]string{"workload-isolation-type": "firecracker"}})
-	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req, false /*=allowTrustedPublication*/)
 	require.True(t, status.IsUnavailableError(err), "expected Unavailable error, got: %v", err)
 	require.Contains(t, err.Error(), `support workload isolation type "firecracker"`)
 	ociExecutor.EnsureTaskNotReceived(req.GetTaskId())
