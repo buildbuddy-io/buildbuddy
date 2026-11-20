@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -503,7 +504,8 @@ func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAd
 		return status.UnimplementedError("Skip remote not implemented")
 	}
 
-	if *enableGetTreeCaching {
+	// Only the upstream GetTree server can interpret its pagination tokens.
+	if *enableGetTreeCaching && req.GetPageSize() == 0 && req.GetPageToken() == "" {
 		return s.getTree(req, stream)
 	}
 	return s.getTreeWithoutCaching(req, stream)
@@ -559,6 +561,13 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 
 		dirsToGet = []*repb.Digest{}
 		for _, brbresp := range brbresps.Responses {
+			blobStatus := brbresp.GetStatus()
+			if code := codes.Code(blobStatus.GetCode()); code != codes.OK {
+				if code == codes.NotFound {
+					return digest.MissingDigestError(brbresp.GetDigest())
+				}
+				return gstatus.FromProto(blobStatus).Err()
+			}
 			dir := &repb.Directory{}
 			if err := proto.Unmarshal(brbresp.Data, dir); err != nil {
 				return err

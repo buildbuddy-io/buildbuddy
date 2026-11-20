@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strings"
@@ -699,6 +700,112 @@ func testGetTree(t *testing.T, withCaching bool) {
 		require.Equal(t, int32(0), unaryRequests.Load())
 		require.Equal(t, int32(1), streamRequests.Load())
 	}
+}
+
+func TestGetTreeUsesUpstreamForPagination(t *testing.T) {
+	flags.Set(t, "cache_proxy.enable_get_tree_caching", true)
+	ctx := testContext()
+	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
+	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	root := &repb.Directory{
+		Symlinks: []*repb.SymlinkNode{{Name: "link", Target: "target"}},
+	}
+	rootDigest, err := cachetools.UploadProto(ctx, bspb.NewByteStreamClient(conn), "", repb.DigestFunction_SHA256, root)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name      string
+		pageSize  int32
+		pageToken string
+	}{
+		{
+			name:     "page size",
+			pageSize: 1,
+		},
+		{
+			name:      "page token",
+			pageToken: "next-page",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			unaryRequests.Store(0)
+			streamRequests.Store(0)
+			stream, err := casProxy.GetTree(ctx, &repb.GetTreeRequest{
+				RootDigest:     rootDigest,
+				DigestFunction: repb.DigestFunction_SHA256,
+				PageSize:       tc.pageSize,
+				PageToken:      tc.pageToken,
+			})
+			require.NoError(t, err)
+			resp, err := stream.Recv()
+			require.NoError(t, err)
+			require.Len(t, resp.GetDirectories(), 1)
+			_, err = stream.Recv()
+			require.ErrorIs(t, err, io.EOF)
+
+			require.Zero(t, unaryRequests.Load())
+			require.Equal(t, int32(1), streamRequests.Load())
+		})
+	}
+}
+
+func TestGetTreeMissingDirectory(t *testing.T) {
+	flags.Set(t, "cache_proxy.enable_get_tree_caching", true)
+	ctx := testContext()
+	conn, _, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	bsClient := bspb.NewByteStreamClient(conn)
+	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
+	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	// Store the parent and file contents, but leave the child Directory absent.
+	fileDigest, err := cachetools.UploadBlob(ctx, bsClient, "", repb.DigestFunction_SHA256, strings.NewReader("file contents"))
+	require.NoError(t, err)
+	missingDir := &repb.Directory{
+		Files: []*repb.FileNode{{Name: "file.txt", Digest: fileDigest}},
+	}
+	missingDigest, err := digest.ComputeForMessage(missingDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	root := &repb.Directory{
+		Directories: []*repb.DirectoryNode{{Name: "child", Digest: missingDigest}},
+	}
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, root)
+	require.NoError(t, err)
+
+	// The same absent digest must be reported whether requested as the root or
+	// referenced by a stored parent.
+	for _, tc := range []struct {
+		name string
+		root *repb.Digest
+	}{
+		{
+			name: "missing root",
+			root: missingDigest,
+		},
+		{
+			name: "missing child",
+			root: rootDigest,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream, err := casProxy.GetTree(ctx, &repb.GetTreeRequest{
+				RootDigest:     tc.root,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			require.NoError(t, err)
+			_, err = stream.Recv()
+			require.Equal(t, codes.FailedPrecondition, status.Code(err))
+			want := status.Convert(digest.MissingDigestError(missingDigest))
+			require.Equal(t, want.Details(), status.Convert(err).Details())
+		})
+	}
+
+	// Unlike a failed lookup, the canonical empty Directory succeeds without a
+	// stored blob.
+	emptyDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.Empty(t, cas.ReadTree(ctx, t, casProxy, "", emptyDigest))
 }
 
 func BenchmarkFindMissingBlobs(b *testing.B) {
