@@ -4,7 +4,7 @@ title: On-prem Quickstart
 sidebar_label: On-prem Quickstart
 ---
 
-BuildBuddy is designed to be easy to run on-premise for those use cases where data absolutely must not leave a company's servers. It can be run your own servers, or in your own cloud environment. It supports major cloud providers like GCP, AWS, and Azure.
+BuildBuddy is designed to be easy to run on-premise for those use cases where data absolutely must not leave a company's servers. It can be run on your own servers, or in your own cloud environment. It supports major cloud providers like GCP, AWS, and Azure.
 
 The software itself is open-source and easy to audit.
 
@@ -63,7 +63,7 @@ If you run or have access to a Kubernetes cluster, and you have the "kubectl" co
 
 This script uses [this deployment file](https://github.com/buildbuddy-io/buildbuddy/blob/master/deployment/buildbuddy-app.onprem.yaml), if you want to see the details of what is being configured.
 
-To kick of the Kubernetes deploy, use the following command:
+To kick off the Kubernetes deploy, use the following command:
 
 ```bash
 bash k8s_on_prem.sh
