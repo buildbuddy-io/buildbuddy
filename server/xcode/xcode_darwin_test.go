@@ -4,11 +4,53 @@ package xcode
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestXcodeDiscoverySkipsUnusablePaths(t *testing.T) {
+	root := t.TempDir()
+	xcode := filepath.Join(root, "Xcode.app")
+	developerDir := filepath.Join(xcode, developerDirectoryPath)
+	sdkDir := filepath.Join(developerDir, "Platforms/MacOSX.platform/Developer/SDKs")
+	writeVersionPlist(t, xcode, "26.1", "17B55")
+	require.NoError(t, os.MkdirAll(filepath.Join(sdkDir, "MacOSX26.1.sdk"), 0755))
+	require.NoError(t, os.Symlink("MacOSX26.1.sdk", filepath.Join(sdkDir, "MacOSX.sdk")))
+	require.NoError(t, os.Symlink("MacOSX26.0.sdk", filepath.Join(sdkDir, "MacOSX26.sdk")))
+	require.NoError(t, os.WriteFile(filepath.Join(sdkDir, "MacOSX26.2.sdk"), nil, 0644))
+	require.NoError(t, os.Mkdir(filepath.Join(sdkDir, "Documentation"), 0755))
+	incomplete := filepath.Join(root, "Incomplete Xcode.app")
+	writeVersionPlist(t, incomplete, "26.2", "17C52")
+
+	xl := &xcodeLocator{versions: versionMap([]string{xcode, incomplete}, developerDir)}
+	require.Equal(t, []string{"26.1.0.17B55"}, xl.Versions())
+	for _, sdk := range []string{"MacOSX", "MacOSX26.1"} {
+		dev, sdkRoot, err := xl.PathsForVersionAndSDK("26", sdk)
+		require.NoError(t, err)
+		require.Equal(t, developerDir, dev)
+		require.Equal(t, filepath.Join(sdkDir, sdk+".sdk"), sdkRoot)
+	}
+	for _, sdk := range []string{"MacOSX26", "MacOSX26.2", "Documentation"} {
+		_, _, err := xl.PathsForVersionAndSDK("26", sdk)
+		require.ErrorContains(t, err, "SDK "+sdk+" not available")
+	}
+}
+
+func writeVersionPlist(t *testing.T, bundle, version, build string) {
+	t.Helper()
+	path := filepath.Join(bundle, versionPlistPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+	contents := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleShortVersionString</key><string>%s</string>
+<key>ProductBuildVersion</key><string>%s</string>
+</dict></plist>`, version, build)
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0644))
+}
 
 func TestXcodeLocator(t *testing.T) {
 	xl := NewXcodeLocator()
