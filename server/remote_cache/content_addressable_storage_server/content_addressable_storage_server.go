@@ -68,21 +68,14 @@ var (
 )
 
 const (
-	// minPooledTreeCacheSizeBytes is the serialized size of the smallest
-	// TreeCaches that are read into a buffer from treeCacheBufPool. Reading
-	// into a pooled buffer takes a cache.Reader, which costs more than a
-	// cache.Get (in the distributed cache, it's a streaming RPC instead of a
-	// unary one), so smaller TreeCaches aren't worth it.
+	// TreeCaches of at least this size are read into pooled buffers.
 	minPooledTreeCacheSizeBytes = 512 * 1024
 
-	// maxPooledTreeCacheBufSizeBytes is the size of the biggest buffers in
-	// treeCacheBufPool. Bigger TreeCaches can still be read, but they grow
-	// their buffer while being read.
+	// The biggest pooled buffer size. Bigger TreeCaches grow their buffer.
 	maxPooledTreeCacheBufSizeBytes = 64 * 1024 * 1024
 )
 
-// treeCacheBufPool holds the buffers that big serialized TreeCaches are read
-// into. TreeCaches of big trees are tens of megabytes.
+// treeCacheBufPool holds the buffers that big TreeCaches are read into.
 var treeCacheBufPool = bytebufferpool.VariableSize(maxPooledTreeCacheBufSizeBytes)
 
 type ContentAddressableStorageServer struct {
@@ -714,8 +707,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 	return nil
 }
 
-// readTreeCache reads and unmarshals the TreeCache stored under rn. It also
-// returns the serialized size of the TreeCache.
+// readTreeCache returns the TreeCache stored under rn and its serialized size.
 func (s *ContentAddressableStorageServer) readTreeCache(ctx context.Context, rn *rspb.ResourceName) (*capb.TreeCache, int, error) {
 	if rn.GetDigest().GetSizeBytes() < minPooledTreeCacheSizeBytes {
 		// If the tree is small, a unary call is faster than a streaming one.
@@ -732,17 +724,13 @@ func (s *ContentAddressableStorageServer) readTreeCache(ctx context.Context, rn 
 	}
 	defer rc.Close()
 
-	// The serialized bytes are only needed until they are unmarshaled
-	// (unmarshaling copies everything it keeps), so read them into a pooled
-	// buffer. Leave bytes.MinRead of spare capacity, because
-	// bytes.Buffer.ReadFrom grows a full buffer just to observe EOF.
+	// Unmarshaling copies, so the buffer can be pooled. bytes.MinRead of
+	// spare capacity lets io.Copy see EOF without growing the buffer.
 	bufSize := digest.SafeBufferSize(rn, maxPooledTreeCacheBufSizeBytes) + bytes.MinRead
 	pooled := treeCacheBufPool.Get(int64(bufSize))
 	defer treeCacheBufPool.Put(pooled)
 	buf := bytes.NewBuffer(pooled[:0])
 
-	// Read until EOF, which the cache may need to see in order to finish its
-	// own bookkeeping for the read (e.g. populating a read-through cache).
 	if _, err := io.Copy(buf, rc); err != nil {
 		return nil, 0, err
 	}

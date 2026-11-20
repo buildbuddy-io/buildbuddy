@@ -685,8 +685,7 @@ func TestGetTreeCaching(t *testing.T) {
 	assert.Less(t, fetch2Time, fetch1Time/2)
 }
 
-// Small TreeCaches are read differently from the big ones in the other tree
-// caching tests (the big ones are read into pooled buffers).
+// The TreeCaches in this test are too small to be read into pooled buffers.
 func TestGetTreeCachingSmallTree(t *testing.T) {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	instanceName := ""
@@ -699,8 +698,6 @@ func TestGetTreeCachingSmallTree(t *testing.T) {
 	bsClient := bspb.NewByteStreamClient(clientConn)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
-	// The subtrees one level below the root have 7 directories each, so their
-	// TreeCaches are a few kilobytes.
 	rootDigest, uploadedFiles := cas.MakeTree(ctx, t, bsClient, instanceName, 3, 2)
 	treeCacheHits := func() float64 {
 		return testmetrics.CounterValueForLabels(t, metrics.TreeCacheLookupCount, prometheus.Labels{
@@ -712,8 +709,7 @@ func TestGetTreeCachingSmallTree(t *testing.T) {
 	// Fill the tree cache.
 	require.ElementsMatch(t, uploadedFiles, cas.ReadTree(ctx, t, casClient, instanceName, rootDigest))
 
-	// The tree cache is written in the background, so the first few reads
-	// might not be served from it.
+	// Tree cache writes are asynchronous, so retry until there's a hit.
 	hitsBefore := treeCacheHits()
 	for i := 0; i < 100 && treeCacheHits() == hitsBefore; i++ {
 		require.ElementsMatch(t, uploadedFiles, cas.ReadTree(ctx, t, casClient, instanceName, rootDigest))
