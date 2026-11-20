@@ -9,6 +9,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
+// RemoteRunnerComputeNamespace is the quota namespace for compute-unit
+// nanoseconds consumed by workflow and Remote Bazel runners.
+// We use a separate namespace so we can apply different quotas to RBE and remote runner compute.
+const RemoteRunnerComputeNamespace = "remote_runners.execute.fixed_compute_nanos"
+
 func getGroupID(ctx context.Context, env environment.Env) string {
 	if a := env.GetAuthenticator(); a != nil {
 		user, err := a.AuthenticatedUser(ctx)

@@ -2254,7 +2254,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 	assert.Equal(t, (5 * time.Second).Microseconds(), foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
 
 	// OLAP snapshot bytes are only recorded when the snapshot fields actually
-	// reach the StoredExecution that updateUsageFromStoredExecution reads.
+	// reach the StoredExecution that updateUsageAndQuotaFromStoredExecution reads.
 	// That only happens on the flushAfterCleanup path; on the legacy path
 	// the second COMPLETED is dropped before the OLAP flush runs.
 	var foundRemoteSnapshotBytes, foundLocalSnapshotBytes int64
@@ -3209,18 +3209,27 @@ func TestRedactCachedExecuteResponse(t *testing.T) {
 	}
 }
 
-// fakeQuotaManager reports the configured namespaces as over quota and
-// records all usage charged to it.
+// fakeQuotaManager records usage and rejects requests once a configured limit
+// is exceeded. Individual namespaces can also be marked exhausted up front.
 type fakeQuotaManager struct {
 	mu           sync.Mutex
 	exhausted    map[string]bool
 	recorded     map[string]int64
 	allowForced  map[string]bool
 	recordForced map[string]bool
+	limits       map[string]int64
+	calls        map[string]int
 }
 
 func newFakeQuotaManager(exhausted ...string) *fakeQuotaManager {
-	qm := &fakeQuotaManager{exhausted: map[string]bool{}, recorded: map[string]int64{}, allowForced: map[string]bool{}, recordForced: map[string]bool{}}
+	qm := &fakeQuotaManager{
+		exhausted:    map[string]bool{},
+		recorded:     map[string]int64{},
+		allowForced:  map[string]bool{},
+		recordForced: map[string]bool{},
+		limits:       map[string]int64{},
+		calls:        map[string]int{},
+	}
 	for _, ns := range exhausted {
 		qm.exhausted[ns] = true
 	}
@@ -3242,6 +3251,10 @@ func (qm *fakeQuotaManager) RecordUsage(ctx context.Context, namespace string, q
 	defer qm.mu.Unlock()
 	qm.recordForced[namespace] = force
 	qm.recorded[namespace] += quantity
+	qm.calls[namespace]++
+	if limit, ok := qm.limits[namespace]; ok && qm.recorded[namespace] > limit {
+		qm.exhausted[namespace] = true
+	}
 	return !qm.exhausted[namespace], nil
 }
 
@@ -3261,10 +3274,228 @@ func (qm *fakeQuotaManager) Forced(namespace string) (allow, record bool) {
 	return qm.allowForced[namespace], qm.recordForced[namespace]
 }
 
+func (qm *fakeQuotaManager) RecordCount(namespace string) int {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+	return qm.calls[namespace]
+}
+
 var (
-	localSnapshotQuotaKey  = quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes)
-	remoteSnapshotQuotaKey = quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes)
+	localSnapshotQuotaKey   = quota.GetSKUKey(sku.RemoteExecutionExecuteLocalSnapshotSavedBytes)
+	remoteSnapshotQuotaKey  = quota.GetSKUKey(sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes)
+	workflowComputeQuotaKey = quota.RemoteRunnerComputeNamespace
 )
+
+func TestExecute_ComputeQuota(t *testing.T) {
+	const quotaNanos = int64(10 * time.Second)
+	cpuQuotaKey := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
+	for _, tc := range []struct {
+		name                 string
+		isRemoteRunner       bool
+		secondIsRemoteRunner bool
+		executionDuration    time.Duration
+		pauseDuration        time.Duration
+		cpuNanos             int64
+		props                map[string]string
+		firstSelfHosted      bool
+		secondSelfHosted     bool
+		wantComputeNanos     int64
+		wantCPUNanos         int64
+		wantSecondRejected   bool
+	}{
+		{
+			name: "runner execution fits but pause exceeds quota", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 4 * time.Second, pauseDuration: 2 * time.Second,
+			wantComputeNanos: int64(12 * time.Second), wantSecondRejected: true,
+		},
+		{
+			name: "runner execution alone exceeds quota", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 6 * time.Second,
+			wantComputeNanos:  int64(12 * time.Second), wantSecondRejected: true,
+		},
+		{
+			name: "execution and pause stay within quota", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 2 * time.Second, pauseDuration: 2 * time.Second,
+			wantComputeNanos: int64(8 * time.Second),
+		},
+		{
+			name: "execution and pause exactly reach quota", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 3 * time.Second, pauseDuration: 2 * time.Second,
+			wantComputeNanos: int64(10 * time.Second),
+		},
+		{
+			name: "memory determines compute units", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 2 * time.Second, pauseDuration: time.Second,
+			props:            map[string]string{"EstimatedMemory": "10GiB"},
+			wantComputeNanos: int64(12 * time.Second), wantSecondRejected: true,
+		},
+		{
+			name: "CPU request determines compute units", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 2 * time.Second, pauseDuration: time.Second,
+			props:            map[string]string{"EstimatedCPU": "4"},
+			wantComputeNanos: int64(12 * time.Second), wantSecondRejected: true,
+		},
+		{
+			name: "self hosted usage does not exhaust quota", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 6 * time.Second, pauseDuration: 2 * time.Second,
+			firstSelfHosted:    true,
+			wantSecondRejected: false,
+		},
+		{
+			name: "self hosted runner allowed after hosted quota exhausted", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 6 * time.Second, pauseDuration: 2 * time.Second,
+			secondSelfHosted: true, wantComputeNanos: int64(16 * time.Second),
+			wantSecondRejected: false,
+		},
+		{
+			name:                 "RBE CPU usage exceeds quota",
+			isRemoteRunner:       false,
+			secondIsRemoteRunner: false,
+			executionDuration:    6 * time.Second, cpuNanos: int64(12 * time.Second),
+			wantCPUNanos:       int64(12 * time.Second),
+			wantSecondRejected: true,
+		},
+		{
+			name:                 "RBE quota uses CPU time without pause",
+			isRemoteRunner:       false,
+			secondIsRemoteRunner: false,
+			executionDuration:    6 * time.Second, pauseDuration: 10 * time.Second, cpuNanos: int64(8 * time.Second),
+			wantCPUNanos: int64(8 * time.Second),
+		},
+		{
+			name:                 "RBE allowed after runner compute quota exhausted",
+			isRemoteRunner:       true,
+			secondIsRemoteRunner: false,
+			executionDuration:    6 * time.Second, wantComputeNanos: int64(12 * time.Second),
+			wantSecondRejected: false,
+		},
+		{
+			name:                 "runner allowed after RBE CPU quota exhausted",
+			isRemoteRunner:       false,
+			secondIsRemoteRunner: true,
+			executionDuration:    6 * time.Second, cpuNanos: int64(12 * time.Second), wantCPUNanos: int64(12 * time.Second),
+			wantSecondRejected: false,
+		},
+		{
+			name: "runner uses fixed compute rather than actual CPU time", isRemoteRunner: true, secondIsRemoteRunner: true,
+			executionDuration: 2 * time.Second, pauseDuration: 2 * time.Second, cpuNanos: int64(20 * time.Second),
+			wantComputeNanos: int64(8 * time.Second),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+			flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+			env, conn, _ := setupEnv(t)
+			configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+			qm := newFakeQuotaManager()
+			qm.limits[workflowComputeQuotaKey] = quotaNanos
+			qm.limits[cpuQuotaKey] = quotaNanos
+			env.SetQuotaManager(qm)
+			client := repb.NewExecutionClient(conn)
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+			require.NoError(t, err)
+
+			for run := range 2 {
+				isRemoteRunner, selfHosted := tc.isRemoteRunner, tc.firstSelfHosted
+				if run == 1 {
+					isRemoteRunner = tc.secondIsRemoteRunner
+					selfHosted = tc.secondSelfHosted
+				}
+				invocationID := uuid.NewString()
+				clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+					ToolInvocationId: invocationID,
+				})
+				require.NoError(t, err)
+				props := &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "EstimatedComputeUnits", Value: "2"},
+					{Name: "workload-isolation-type", Value: "firecracker"},
+					{Name: "pool", Value: "test-pool"},
+				}}
+				for name, value := range tc.props {
+					platform.SetValue(props, name, value)
+				}
+				if selfHosted {
+					platform.SetValue(props, platform.UseSelfHostedExecutorsPropertyName, "true")
+				}
+				command := "run"
+				if isRemoteRunner {
+					command = "./" + platform.CIRunnerExecutableBaseName
+				}
+				arn := uploadActionWithCommand(clientCtx, t, env, "", repb.DigestFunction_SHA256,
+					&repb.Action{DoNotCache: true, Platform: props},
+					&repb.Command{Arguments: []string{command, invocationID}})
+				execStream, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+					ActionDigest: arn.GetDigest(), DigestFunction: arn.GetDigestFunction(), SkipCacheLookup: true,
+				})
+				require.NoError(t, err)
+				require.NoError(t, execStream.CloseSend())
+				op, err := execStream.Recv()
+				if run == 1 && tc.wantSecondRejected {
+					require.True(t, status.IsResourceExhaustedError(err), "expected the second execution to be rejected: %v", err)
+					require.Len(t, env.GetSchedulerService().(*schedulerServerMock).scheduleReqs, 1)
+					failed, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+					require.NoError(t, err)
+					require.Len(t, failed, 1, "quota errors must be recorded for the invocation UI")
+					assert.Equal(t, int64(repb.ExecutionStage_COMPLETED), failed[0].GetStage())
+					assert.Equal(t, int32(codes.ResourceExhausted), failed[0].GetStatusCode())
+					assert.Contains(t, failed[0].GetStatusMessage(), "quota exceeded")
+					assert.Equal(t, tc.wantComputeNanos, qm.Recorded(workflowComputeQuotaKey))
+					assert.Equal(t, tc.wantCPUNanos, qm.Recorded(cpuQuotaKey))
+					continue
+				}
+				require.NoError(t, err, "execution %d should be accepted", run+1)
+				taskID := op.GetName()
+				executorGroupID := sharedPoolGroupID
+				if selfHosted {
+					executorGroupID = selfHostedPoolGroupID
+				}
+				aux, err := anypb.New(&espb.ExecutionAuxiliaryMetadata{
+					IsolationType:      "firecracker",
+					SchedulingMetadata: &scpb.SchedulingMetadata{ExecutorGroupId: executorGroupID, Pool: "test-pool"},
+				})
+				require.NoError(t, err)
+				start := time.Unix(100, 0)
+				completed, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+					Result: &repb.ActionResult{ExecutionMetadata: &repb.ExecutedActionMetadata{
+						WorkerStartTimestamp: tspb.New(start), WorkerCompletedTimestamp: tspb.New(start.Add(tc.executionDuration)),
+						AuxiliaryMetadata: []*anypb.Any{aux}, UsageStats: &repb.UsageStats{CpuNanos: tc.cpuNanos},
+					}},
+				})
+				require.NoError(t, err)
+				executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+				publishStream, err := client.PublishOperation(executorCtx)
+				require.NoError(t, err)
+				require.NoError(t, publishStream.Send(completed))
+				pauseStats, err := anypb.New(&espb.PostCompletionStats{PauseDurationUsec: tc.pauseDuration.Microseconds()})
+				require.NoError(t, err)
+				paused, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+					Result: &repb.ActionResult{ExecutionMetadata: &repb.ExecutedActionMetadata{AuxiliaryMetadata: []*anypb.Any{pauseStats}}},
+				})
+				require.NoError(t, err)
+				require.NoError(t, publishStream.Send(paused))
+				_, err = publishStream.CloseAndRecv()
+				require.NoError(t, err)
+				for {
+					result, err := execStream.Recv()
+					if err == io.EOF {
+						break
+					}
+					require.NoError(t, err, "an accepted execution must finish even if it exceeds quota")
+					if operation.ExtractStage(result) == repb.ExecutionStage_COMPLETED {
+						assert.Zero(t, operation.ExtractExecuteResponse(result).GetStatus().GetCode())
+					}
+				}
+				if run == 0 {
+					assert.Equal(t, tc.wantComputeNanos, qm.Recorded(workflowComputeQuotaKey))
+					assert.Equal(t, tc.wantCPUNanos, qm.Recorded(cpuQuotaKey))
+					if tc.wantComputeNanos > 0 {
+						assert.Equal(t, 1, qm.RecordCount(workflowComputeQuotaKey), "execution and pause must be charged in one call")
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestDispatch_SnapshotSaveQuotaOverridesUserProperties(t *testing.T) {
 	for _, tc := range []struct {
