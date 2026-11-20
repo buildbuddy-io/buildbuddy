@@ -1813,7 +1813,7 @@ func (c *FirecrackerContainer) initErofsScratchDisk(ctx context.Context) error {
 	path := filepath.Join(c.getChroot(), scratchFSName)
 	// The overlay is mounted volatile, so a journal buys nothing. Don't
 	// reserve blocks for root, which nonroot tasks couldn't use.
-	if err := ext4.MakeSparseImage(ctx, path, genericScratchDiskSizeBytes, "-O", "^has_journal", "-m", "0"); err != nil {
+	if err := ext4.MakeEmptyImage(ctx, path, genericScratchDiskSizeBytes, "-O", "^has_journal", "-m", "0"); err != nil {
 		return err
 	}
 	cow, err := c.convertToCOW(ctx, path, filepath.Join(c.getChroot(), scratchDriveID), snaputil.ConvertToCOWConcurrency)
