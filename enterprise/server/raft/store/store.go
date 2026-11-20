@@ -2511,7 +2511,9 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		} else {
 			rd, err = j.store.validatedRangeAgainstMetaRange(ctx, task.rd)
 			if err != nil {
-				return zombieCleanupRemoveReplica, status.WrapErrorf(err, "failed to fetch up-to-date range descriptor from meta range")
+				// Drop the task: a retry would use the same, possibly stale,
+				// descriptor. The next scan makes a new task.
+				return zombieCleanupNoAction, status.WrapErrorf(err, "failed to fetch up-to-date range descriptor from meta range")
 			}
 
 			if j.store.isLeader(task.rangeID, task.replicaID) && !rangeDescriptorHasReplica(rd, task.replicaID) {
@@ -2549,7 +2551,9 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			// marked as removed.
 			rd, err = j.store.markZombieForRemoval(ctx, task.replicaID, rd)
 			if err != nil {
-				return zombieCleanupRemoveReplica, status.WrapErrorf(err, "failed to mark zombie c%dn%d for removal", task.rangeID, task.replicaID)
+				// Drop the task: the descriptor may have changed, and a
+				// retry would use the old one. The next scan makes a new task.
+				return zombieCleanupNoAction, status.WrapErrorf(err, "failed to mark zombie c%dn%d for removal", task.rangeID, task.replicaID)
 			}
 			removeDataReq.Range = rd
 		}
