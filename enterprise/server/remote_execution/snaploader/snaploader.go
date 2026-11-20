@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/diskimage"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -1604,10 +1605,15 @@ func getCacheNamespace(ctx context.Context, env environment.Env) (string, error)
 
 // containerImageSnapshotKey returns the key under which the chunked
 // containerfs for the given container image is cached.
-func containerImageSnapshotKey(instanceName, imageRef string) *fcpb.SnapshotKeySet {
+func containerImageSnapshotKey(instanceName, imageRef string, format diskimage.Format) *fcpb.SnapshotKeySet {
+	parts := []string{"__UnpackContainerImage", runtime.GOOS, runtime.GOARCH, imageRef}
+	// ext4 keys predate the format.
+	if format != diskimage.Ext4 {
+		parts = append(parts, string(format))
+	}
 	return &fcpb.SnapshotKeySet{BranchKey: &fcpb.SnapshotKey{
 		InstanceName:      instanceName,
-		ConfigurationHash: hashStrings("__UnpackContainerImage", runtime.GOOS, runtime.GOARCH, imageRef),
+		ConfigurationHash: hashStrings(parts...),
 	}}
 }
 
@@ -1655,11 +1661,11 @@ func GetRemoteContainerImageAccessOptions(ctx context.Context, task *repb.Execut
 
 // GetCachedContainerImage returns the cached snapshot for the given
 // container image.
-func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, remoteEnabled bool) (*Snapshot, error) {
+func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, format diskimage.Format, remoteEnabled bool) (*Snapshot, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	snap, err := l.GetSnapshot(ctx, containerImageSnapshotKey(instanceName, imageRef), &GetSnapshotOptions{
+	snap, err := l.GetSnapshot(ctx, containerImageSnapshotKey(instanceName, imageRef, format), &GetSnapshotOptions{
 		SupportsRemoteManifest: remoteEnabled,
 		SupportsRemoteChunks:   remoteEnabled,
 		// A chunked container image is immutable for a given image ref, so
@@ -1703,9 +1709,9 @@ func resetContainerImageOutputDir(outDir string) error {
 // UnpackContainerImage returns a ChunkedFile representing the given container
 // image. The chunk dir is stored as a child directory of the given outDir.
 //
-// If the image is not cached, this func will split up the given ext4 image
+// If the image is not cached, this func will split up the given disk image
 // file and create a new ChunkedFile from it, then add that to cache.
-func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path string, outDir string, chunkSize int64, imageOpts RemoteContainerImageAccessOptions) (*copy_on_write.COWStore, error) {
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, format diskimage.Format, imagePath string, outDir string, chunkSize int64, imageOpts RemoteContainerImageAccessOptions) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1716,7 +1722,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	}
 
 	// First check if all chunks for the image are available from the cache.
-	snap, err := GetCachedContainerImage(ctx, l, instanceName, imageRef, imageOpts.RemoteReadsEnabled)
+	snap, err := GetCachedContainerImage(ctx, l, instanceName, imageRef, format, imageOpts.RemoteReadsEnabled)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, status.FromContextError(ctx)
@@ -1740,10 +1746,10 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		}
 		log.CtxWarningf(ctx, "Failed to unpack cached container image %q; converting the pulled image instead: %s", imageRef, err)
 	}
-	// containerfs is not available in cache; convert the EXT4 image to a
+	// containerfs is not available in cache; convert the disk image to a
 	// ChunkedFile then add it to cache.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, imageOpts.RemoteReadsEnabled, snaputil.ConvertToCOWConcurrency)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imagePath, chunkSize, outDir, instanceName, imageOpts.RemoteReadsEnabled, snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
@@ -1757,7 +1763,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		// cached chunks and fetch missing immutable chunks from the remote cache.
 		WriteManifestLocally: true,
 	}
-	key := containerImageSnapshotKey(instanceName, imageRef)
+	key := containerImageSnapshotKey(instanceName, imageRef, format)
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		if ctx.Err() != nil {
 			if closeErr := cow.Close(); closeErr != nil {

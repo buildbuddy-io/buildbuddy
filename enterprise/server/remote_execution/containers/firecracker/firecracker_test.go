@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/diskimage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -242,7 +243,7 @@ func addTestImageToFileCache(ctx context.Context, t testing.TB, fc interfaces.Fi
 	// Filecache preloads hardlink the runfile, so both paths must be on the same
 	// device. Fail during setup with a clear error instead of relying on EXDEV.
 	require.Equal(t, imageInfo.Sys().(*syscall.Stat_t).Dev, cacheInfo.Sys().(*syscall.Stat_t).Dev, "runfile %q and filecache root %q must be on the same device", imagePath, rootDir)
-	require.NoError(t, ociconv.AddDiskImageToFileCache(ctx, fc, imageRef, imagePath))
+	require.NoError(t, ociconv.AddDiskImageToFileCache(ctx, fc, imageRef, diskimage.Ext4, imagePath))
 }
 
 func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEnv {
@@ -865,7 +866,7 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	testfs.WriteRandomString(t, workDir, "containerfs.ext4", 4*chunkSize)
 	ext4Path := filepath.Join(workDir, "containerfs.ext4")
 	cow, err := snaploader.UnpackContainerImage(
-		ctx, loader, instanceName, imageRef, ext4Path,
+		ctx, loader, instanceName, imageRef, diskimage.Ext4, ext4Path,
 		testfs.MakeDirAll(t, workDir, "chunks"), chunkSize,
 		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
@@ -5329,7 +5330,7 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 		assert.Empty(t, lastTask.GetExecutionId())
 		assert.Nil(t, lastTask.GetActionDigest())
 		// Images are cached under the task's instance, not the generic snapshot's.
-		_, err = snaploader.GetCachedContainerImage(ctx, loader, "generic-instance", image, false /*=remoteEnabled*/)
+		_, err = snaploader.GetCachedContainerImage(ctx, loader, "generic-instance", image, diskimage.Ext4, false /*=remoteEnabled*/)
 		assert.NoError(t, err)
 		return snap
 	}

@@ -243,6 +243,7 @@ use_repo(
     "com_github_dop251_goja",
     "com_github_dustinkirkland_golang_petname",
     "com_github_elastic_gosigar",
+    "com_github_erofs_go_erofs",
     "com_github_firecracker_microvm_firecracker_go_sdk",
     "com_github_fsnotify_fsnotify",
     "com_github_gabriel_vasile_mimetype",
