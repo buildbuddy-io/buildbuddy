@@ -37,8 +37,4 @@ message GCSLocation {
   // The last custom time applied to the object, in unix micros. Objects are
   // deleted by a bucket lifecycle rule once this is too old.
   int64 last_custom_time_usec = 3;
-
-  // If true, the object may be referred to by multiple cache records and is
-  // cleaned up by the bucket lifecycle rule rather than by its owner.
-  bool shared = 4;
 }
