@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -33,6 +34,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -982,4 +984,179 @@ func TestFetchDeduplication(t *testing.T) {
 			require.Containsf(t, p, blobDigest.String(), "upstream GET %d", i)
 		}
 	})
+}
+
+func TestServerSideAuth(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			flags.Set(t, "ociregistry.server_side_auth", enabled)
+			flags.Set(t, "http.client.allow_localhost", true)
+			te := testenv.GetTestEnv(t)
+			flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+			key, err := random.RandomString(16)
+			require.NoError(t, err)
+			flags.Set(t, "app.client_identity.key", key)
+			require.NoError(t, clientidentity.Register(te))
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, lis)
+			go runServer()
+			const credential = "Basic Y2xpZW50OnNlY3JldA=="
+			var tokenHits, forwarded atomic.Int32
+			tokens := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				tokenHits.Add(1)
+				if r.Header.Get("Authorization") != "" {
+					forwarded.Add(1)
+				}
+				fmt.Fprintf(w, `{"token":%q,"expires_in":3600}`, r.URL.Query().Get("scope"))
+			}))
+			defer tokens.Close()
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				auth := r.Header.Get("Authorization")
+				if auth == credential {
+					forwarded.Add(1)
+				}
+				repo, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/v2/"), "/")
+				if enabled && (r.URL.Path == "/v2/" || auth != "Bearer repository:"+repo+":pull") {
+					w.Header().Set("WWW-Authenticate", fmt.Sprintf("Bearer realm=%q,service=%q", strings.Replace(tokens.URL, "127.0.0.1", "localhost", 1), "test-registry"))
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				w.Header().Set("Docker-Content-Digest", "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a")
+				w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+				w.Header().Set("Content-Length", "2")
+				if r.Method == http.MethodGet {
+					io.WriteString(w, "{}")
+				}
+			}))
+			defer upstream.Close()
+			mirror, err := ociregistry.New(te)
+			require.NoError(t, err)
+			pull := func(repo, tag, method string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(method, "/v2/"+strings.TrimPrefix(upstream.URL, "http://")+"/"+repo+"/manifests/"+tag, nil)
+				req.Header.Set("Authorization", credential)
+				rsp := httptest.NewRecorder()
+				mirror.ServeHTTP(rsp, req)
+				return rsp
+			}
+			for _, repo := range []string{"one", "two"} {
+				var wg sync.WaitGroup
+				responses := make([]*httptest.ResponseRecorder, 12)
+				for i := range responses {
+					wg.Go(func() {
+						responses[i] = pull(repo, fmt.Sprint(i), http.MethodHead)
+					})
+				}
+				wg.Wait()
+				for _, rsp := range responses {
+					require.Equal(t, http.StatusOK, rsp.Code, rsp.Body.String())
+				}
+				for i := range 3 {
+					rsp := pull(repo, fmt.Sprint(100+i), http.MethodGet)
+					require.Equal(t, http.StatusOK, rsp.Code, rsp.Body.String())
+					require.Equal(t, "{}", rsp.Body.String())
+				}
+			}
+			if enabled {
+				require.Zero(t, forwarded.Load())
+				require.EqualValues(t, 2, tokenHits.Load())
+			} else {
+				require.Positive(t, forwarded.Load())
+				require.Zero(t, tokenHits.Load())
+			}
+		})
+	}
+}
+
+func TestServerSideAuthV2(t *testing.T) {
+	flags.Set(t, "ociregistry.server_side_auth", true)
+	mirror, err := ociregistry.New(testenv.GetTestEnv(t))
+	require.NoError(t, err)
+	for _, method := range []string{http.MethodHead, http.MethodGet} {
+		req := httptest.NewRequest(method, "/v2/", nil)
+		req.Header.Set("Authorization", "Bearer client-token")
+		rsp := httptest.NewRecorder()
+		mirror.ServeHTTP(rsp, req)
+		require.Equal(t, http.StatusOK, rsp.Code)
+		require.Empty(t, rsp.Header().Get("WWW-Authenticate"))
+		require.Equal(t, "{}", rsp.Body.String())
+	}
+}
+
+func TestServerSideAuthDeduplication(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	flags.Set(t, "http.client.allow_localhost", true)
+	for _, tc := range []struct{ name, method, path string }{
+		{"tag", http.MethodHead, "/manifests/latest"},
+		{"blob", http.MethodGet, "/blobs/sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+			key, err := random.RandomString(16)
+			require.NoError(t, err)
+			flags.Set(t, "app.client_identity.key", key)
+			require.NoError(t, clientidentity.Register(te))
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, lis)
+			go runServer()
+			firstReceived := make(chan struct{})
+			release := make(chan struct{})
+			var hits atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v2/" {
+					return
+				}
+				if hits.Add(1) == 1 {
+					close(firstReceived)
+					<-release
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			defer upstream.Close()
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			defer unblock()
+			mirror, err := ociregistry.New(te)
+			require.NoError(t, err)
+			url := "/v2/" + strings.TrimPrefix(upstream.URL, "http://") + "/image" + tc.path
+			pull := func(serverSideAuthEnabled bool) <-chan int {
+				result := make(chan int, 1)
+				ctx := expflag.ContextWithEvaluatedFlags(context.Background(), []*expb.EvaluatedFlag{{
+					Name:  "ociregistry.server_side_auth",
+					Value: &expb.EvaluatedFlag_BoolValue{BoolValue: serverSideAuthEnabled},
+				}})
+				req := httptest.NewRequest(tc.method, url, nil).WithContext(ctx)
+				go func() {
+					rsp := httptest.NewRecorder()
+					mirror.ServeHTTP(rsp, req)
+					result <- rsp.Code
+				}()
+				return result
+			}
+			off := pull(false)
+			select {
+			case <-firstReceived:
+			case <-time.After(10 * time.Second):
+				t.Fatal("flag-off request did not reach upstream")
+			}
+			on := pull(true)
+			select {
+			case code := <-on:
+				require.Equal(t, http.StatusNotFound, code)
+			case <-time.After(10 * time.Second):
+				t.Fatal("flag-on request shared the blocked flag-off upstream fetch")
+			}
+			require.Equal(t, int32(2), hits.Load())
+			unblock()
+			select {
+			case code := <-off:
+				require.Equal(t, http.StatusServiceUnavailable, code)
+			case <-time.After(10 * time.Second):
+				t.Fatal("flag-off request did not complete")
+			}
+		})
+	}
 }
