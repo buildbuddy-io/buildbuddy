@@ -998,6 +998,9 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 	if err != nil {
 		return nil, err
 	}
+	if err := d.authorizeWriteByAPIKeyCaller(ctx, u, groupID, "" /*=targetKeyID*/); err != nil {
+		return nil, err
+	}
 
 	if userID != u.GetUserID() {
 		// ORG_ADMIN is required to create keys for a user other than the
@@ -1245,6 +1248,24 @@ func (d *AuthDB) toListedAPIKeys(rows []*apiKeyGroupRow) ([]*tables.APIKey, erro
 	return keys, nil
 }
 
+// authorizeWriteByAPIKeyCaller prevents callers authenticated with an API key
+// that lacks ORG_ADMIN from creating or updating API keys other than the one
+// they are authenticated with.
+func (d *AuthDB) authorizeWriteByAPIKeyCaller(ctx context.Context, u interfaces.UserInfo, groupID, targetKeyID string) error {
+	callerKeyID := u.GetAPIKeyInfo().ID
+	if callerKeyID == "" || callerKeyID == targetKeyID {
+		return nil
+	}
+	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), groupID)
+	if err != nil {
+		return status.WrapError(err, "get capabilities")
+	}
+	if slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
+		return nil
+	}
+	return status.PermissionDeniedError("API keys without the ORG_ADMIN capability may only modify themselves")
+}
+
 func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiKeyID string, includeExpired bool) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID is required")
@@ -1270,6 +1291,9 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 		if err := perms.AuthorizeWrite(&user, acl); err != nil {
 			return nil, err
 		}
+	}
+	if err := d.authorizeWriteByAPIKeyCaller(ctx, user, key.GroupID, key.APIKeyID); err != nil {
+		return nil, err
 	}
 	// Only group admins can write to group-level API keys.
 	if key.UserID == "" {
