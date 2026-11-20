@@ -10,11 +10,14 @@ go_library(
         "//proto:cache_go_proto",
         "//proto:hit_tracker_go_proto",
         "//proto:resource_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/log",
         "//server/util/status",
+        "@org_golang_google_grpc//peer",
     ],
 )
 
@@ -39,9 +42,13 @@ go_test(
         "//server/usage/sku",
         "//server/util/bazel_request",
         "//server/util/proto",
+        "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_rs_zerolog//:zerolog",
+        "@com_github_rs_zerolog//log",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//peer",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
