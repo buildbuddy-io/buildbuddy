@@ -10,7 +10,7 @@ import "proto/context.proto";
 import "proto/remote_execution.proto";
 import "proto/resource.proto";
 
-// Next Tag: 17
+// Next Tag: 23
 message CacheStats {
   // Server-side Action-cache stats.
   int64 action_cache_hits = 1;
@@ -52,6 +52,26 @@ message CacheStats {
 
   // The sum of execution time of actions that missed the action cache.
   int64 total_uncached_action_exec_usec = 16;
+
+  // Sum of digest sizes for cache download requests made by remote executors.
+  int64 exec_download_size_bytes = 17;
+
+  // Sum of digest sizes for cache upload requests made by remote executors.
+  int64 exec_upload_size_bytes = 18;
+
+  // Sum of payload sizes (compressed, if applicable) for cache download
+  // requests made by remote executors.
+  int64 exec_download_transferred_size_bytes = 19;
+
+  // Sum of payload sizes (compressed, if applicable) for cache upload requests
+  // made by remote executors.
+  int64 exec_upload_transferred_size_bytes = 20;
+
+  // Portion of total_download_usec attributable to remote executors.
+  int64 exec_download_usec = 21;
+
+  // Portion of total_upload_usec attributable to remote executors.
+  int64 exec_upload_usec = 22;
 }
 
 // Request to retrieve detailed per-request cache stats.
