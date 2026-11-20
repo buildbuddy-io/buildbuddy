@@ -521,6 +521,14 @@ type CommandContainer interface {
 	// Returns the isolation type of this container.
 	IsolationType() string
 
+	// ExecutionWritesHostWorkspace returns whether command execution may
+	// actively write to the host workspace. It returns false for containers
+	// that run commands against a separate copy of the workspace, such as VMs.
+	//
+	// Containers that allow host workspace writes during execution are paused
+	// before outputs are uploaded.
+	ExecutionWritesHostWorkspace() bool
+
 	// Run the given command within the container and remove the container after
 	// it is done executing.
 	//
@@ -882,6 +890,10 @@ type TracedCommandContainer struct {
 
 func (t *TracedCommandContainer) IsolationType() string {
 	return t.Delegate.IsolationType()
+}
+
+func (t *TracedCommandContainer) ExecutionWritesHostWorkspace() bool {
+	return t.Delegate.ExecutionWritesHostWorkspace()
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {

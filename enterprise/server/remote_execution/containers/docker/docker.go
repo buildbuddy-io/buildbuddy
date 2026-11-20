@@ -201,6 +201,10 @@ func (c *dockerCommandContainer) IsolationType() string {
 	return "docker"
 }
 
+func (c *dockerCommandContainer) ExecutionWritesHostWorkspace() bool {
+	return true
+}
+
 func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),

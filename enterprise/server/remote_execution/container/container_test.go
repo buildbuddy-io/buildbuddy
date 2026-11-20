@@ -37,6 +37,7 @@ type FakeContainer struct {
 func (c *FakeContainer) IsolationType() string {
 	return "fake"
 }
+func (c *FakeContainer) ExecutionWritesHostWorkspace() bool { return true }
 func (c *FakeContainer) Run(context.Context, *repb.Command, string, oci.Credentials) *interfaces.CommandResult {
 	return nil
 }
