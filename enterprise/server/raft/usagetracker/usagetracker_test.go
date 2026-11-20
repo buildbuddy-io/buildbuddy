@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -20,11 +19,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-	pebblev1 "github.com/cockroachdb/pebble"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -196,7 +195,7 @@ const testPartition = "FOO"
 
 // newAtimeIndexTestPU's passes scan one record per chunk.
 func newAtimeIndexTestPU(t *testing.T) (*partitionUsage, pebble.IPebbleDB) {
-	db, err := pebble.Open(testfs.MakeTempDir(t), "test", &pebblev1.Options{})
+	db, err := pebble.Open(testfs.MakeTempDir(t), "test", &pebble.Options{})
 	require.NoError(t, err)
 	leaser := pebble.NewDBLeaser(db)
 	t.Cleanup(func() {
