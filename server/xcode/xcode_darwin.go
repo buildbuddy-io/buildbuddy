@@ -126,34 +126,34 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 // Locates all Xcode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
 func (x *xcodeLocator) locate() {
-	x.versions = versionMap(urlRefs(xcodeBundleID))
+	x.versions = versionMap(applicationURLs(xcodeBundleID))
 }
 
-func urlRefs(bundleID string) []C.CFURLRef {
+func applicationURLs(bundleID string) []string {
 	cfBundleID := stringToCFString(bundleID)
 	defer C.CFRelease(C.CFTypeRef(cfBundleID))
 
-	urlsPointer := C.LSCopyApplicationURLsForBundleIdentifier(cfBundleID, nil)
-
-	if urlsPointer == C.CFArrayRef(unsafe.Pointer(nil)) {
-		return []C.CFURLRef{}
+	urls := C.LSCopyApplicationURLsForBundleIdentifier(cfBundleID, nil)
+	if urls == 0 {
+		return nil
 	}
-	defer C.CFRelease(C.CFTypeRef(urlsPointer))
+	defer C.CFRelease(C.CFTypeRef(urls))
 
-	urlsArrayRef := C.CFArrayRef(urlsPointer)
-	n := C.CFArrayGetCount(urlsArrayRef)
-
-	refs := make([]C.CFURLRef, n)
-	C.CFArrayGetValues(urlsArrayRef, C.CFRange{0, n}, (*unsafe.Pointer)(unsafe.Pointer(&refs[0])))
-
-	return refs
+	// Copy each URL into Go memory while its owning array is still alive.
+	n := C.CFArrayGetCount(urls)
+	result := make([]string, 0, n)
+	for i := range n {
+		url := C.CFURLRef(uintptr(C.CFArrayGetValueAtIndex(urls, i)))
+		result = append(result, stringFromCFString(C.CFURLGetString(url)))
+	}
+	return result
 }
 
-func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
+func versionMap(urls []string) map[string]*xcodeVersion {
 	defaultDeveloperDir := xcodeSelectDeveloperDir()
 	versionMap := make(map[string]*xcodeVersion)
-	for _, urlRef := range urlRefs {
-		path := strings.TrimPrefix(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
+	for _, url := range urls {
+		path := strings.TrimPrefix(url, filePrefix)
 		xcodePlist, err := xcodePlistForPath(path + versionPlistPath)
 		if err != nil {
 			log.Warningf("Error reading plist for Xcode: %s", err.Error())
