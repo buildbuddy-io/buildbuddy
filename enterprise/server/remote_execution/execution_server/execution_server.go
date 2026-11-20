@@ -1768,7 +1768,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			// reducing the effectiveness of merging.
 			deletePendingExecutionOnce()
 			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
-			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
+			if err := s.cacheActionResult(ctx, taskID, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
 			if err := s.markTaskComplete(ctx, actionRN, response, auxMeta, action, cmd, properties, flushExecutionsOnEOF); err != nil {
@@ -1860,11 +1860,54 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	return cachetools.UploadActionResult(ctx, s.actionCacheClient, arn, ar)
 }
 
-func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ACResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
+func (s *ExecutionServer) cacheActionResult(ctx context.Context, taskID string, actionResourceName *digest.ACResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
 	if response.GetCachedResult() || action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
 		return nil
 	}
+	if ac, ok := s.env.GetActionCacheServer().(*action_cache_server.ActionCacheServer); ok &&
+		!strings.HasPrefix(actionResourceName.GetInstanceName(), interfaces.OCIImageInstanceNamePrefix) &&
+		s.mayPublishTrustedActionResult(ctx, taskID) {
+		// A cache failure must not turn a successful CAS-only execution into an
+		// execution failure. These callers previously never persisted a result.
+		if err := ac.StoreTrustedExecutionResult(ctx, actionResourceName, response.GetResult()); err != nil {
+			log.CtxWarningf(ctx, "Could not store trusted executor action result: %s", err)
+		}
+		return nil
+	}
 	return cachetools.UploadActionResult(ctx, s.actionCacheClient, actionResourceName, response.GetResult())
+}
+
+func (s *ExecutionServer) mayPublishTrustedActionResult(ctx context.Context, taskID string) bool {
+	proof := metadata.ValueFromIncomingContext(ctx, interfaces.TrustedExecutionPublicationTokenHeader)
+	if len(proof) != 1 || proof[0] == "" || s.env.GetUserDB() == nil {
+		return false
+	}
+	identityService := s.env.GetClientIdentityService()
+	if identityService == nil {
+		return false
+	}
+	identity, err := identityService.IdentityFromContext(ctx)
+	if err != nil || identity == nil || identity.Client != interfaces.ClientIdentityExecutor {
+		return false
+	}
+	u, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil || u.GetGroupID() == "" || !u.HasCapability(capability.Capability_CAS_WRITE) || u.HasCapability(capability.Capability_CACHE_WRITE) {
+		return false
+	}
+	trusted, err := s.env.GetSchedulerService().AuthorizeTrustedActionResult(ctx, taskID, proof[0])
+	if err != nil {
+		log.CtxWarningf(ctx, "Cannot verify trusted action result publication: %s", err)
+		return false
+	}
+	if !trusted {
+		return false
+	}
+	group, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		log.CtxWarningf(ctx, "Cannot load trusted action result setting: %s", err)
+		return false
+	}
+	return group.TrustExecutorActionResults
 }
 
 // markTaskComplete contains logic to be run when the task is complete but

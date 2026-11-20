@@ -390,37 +390,59 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return req.ActionResult, nil
 	}
 
-	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
+	if err := s.storeActionResult(ctx, rn, req.GetActionResult()); err != nil {
 		return nil, err
+	}
+	return req.GetActionResult(), nil
+}
+
+// StoreTrustedExecutionResult stores a result authorized by the local execution
+// server. It is not a gRPC method and must only be called for a verified task
+// completion. The caller's cache namespace and encryption policy still apply.
+func (s *ActionCacheServer) StoreTrustedExecutionResult(ctx context.Context, rn *digest.ACResourceName, result *repb.ActionResult) error {
+	if result == nil {
+		return status.InvalidArgumentError("ActionResult is required")
+	}
+	if err := rn.Validate(); err != nil {
+		return err
+	}
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return err
+	}
+	return s.storeActionResult(ctx, &rn.ResourceName, result.CloneVT())
+}
+
+func (s *ActionCacheServer) storeActionResult(ctx context.Context, rn *digest.ResourceName, result *repb.ActionResult) error {
+	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, rn.GetInstanceName()); err != nil {
+		return err
 	}
 
 	rm := bazel_request.GetRequestMetadata(ctx)
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, rm)
-	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
-	d := req.GetActionDigest()
-	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
-	uploadTracker := ht.TrackUpload(d)
+	ht.SetExecutedActionMetadata(result.GetExecutionMetadata())
+	uploadTracker := ht.TrackUpload(rn.GetDigest())
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
-	setWorkerMetadata(req.GetActionResult())
+	setWorkerMetadata(result)
 
-	if err := setOriginMetadata(req.GetActionResult(), rm); err != nil {
-		return nil, err
+	if err := setOriginMetadata(result, rm); err != nil {
+		return err
 	}
 
-	blob, err := proto.Marshal(req.ActionResult)
+	blob, err := proto.Marshal(result)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if err := s.cache.Set(ctx, acResource.ToProto(), blob); err != nil {
-		return nil, err
+	if err := s.cache.Set(ctx, rn.ToProto(), blob); err != nil {
+		return err
 	}
 	if err := uploadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
 		log.Debugf("UpdateActionResult: upload tracker error: %s", err)
 	}
-	return req.ActionResult, nil
+	return nil
 }
 
 // Inlines the contents of output files requested to be inlined as long as the

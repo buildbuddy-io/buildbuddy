@@ -7,10 +7,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
@@ -26,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -2786,6 +2789,169 @@ func TestExecute_APIKeyCapabilities(t *testing.T) {
 				require.True(t, status.IsFailedPreconditionError(err), "expected missing-action error, got %s", err)
 			} else {
 				require.True(t, status.IsPermissionDeniedError(err), "expected permission denied, got %s", err)
+			}
+		})
+	}
+}
+
+type trustSettingsUserDB struct {
+	interfaces.UserDB
+	group *tables.Group
+}
+
+func (db *trustSettingsUserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error) {
+	if groupID != db.group.GroupID {
+		return nil, status.NotFoundError("group not found")
+	}
+	return db.group, nil
+}
+
+type failingTrustedActionCache struct {
+	interfaces.Cache
+	wrote atomic.Bool
+}
+
+func (c *failingTrustedActionCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	c.wrote.Store(true)
+	return status.UnavailableError("test cache unavailable")
+}
+
+func TestExecute_TrustedActionResultPublication(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		admitted         bool
+		optedIn          bool
+		trustedWorker    bool
+		doNotCache       bool
+		platformOverride bool
+		cacheUnavailable bool
+		wantHit          bool
+	}{
+		{
+			name:          "eligible managed completion",
+			admitted:      true,
+			optedIn:       true,
+			trustedWorker: true,
+			wantHit:       true,
+		},
+		{
+			name:          "organization defaults off",
+			trustedWorker: true,
+		},
+		{
+			name:          "organization disables trust after admission",
+			admitted:      true,
+			trustedWorker: true,
+		},
+		{
+			name:     "completion without verified executor identity",
+			admitted: true,
+			optedIn:  true,
+		},
+		{
+			name:          "non-cacheable completion",
+			admitted:      true,
+			optedIn:       true,
+			trustedWorker: true,
+			doNotCache:    true,
+		},
+		{
+			name:             "out-of-digest platform override",
+			admitted:         true,
+			optedIn:          true,
+			trustedWorker:    true,
+			platformOverride: true,
+		},
+		{
+			name:             "cache failure leaves execution successful",
+			admitted:         true,
+			optedIn:          true,
+			trustedWorker:    true,
+			cacheUnavailable: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up separate caller and managed-worker identities using only local fixtures.
+			flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityExecutor)
+			flags.Set(t, "app.client_identity.key", "test-only-signing-key")
+			env, conn, _ := setupEnv(t)
+			require.NoError(t, clientidentity.Register(env))
+			failedCache := &failingTrustedActionCache{Cache: env.GetCache()}
+			if tc.cacheUnavailable {
+				env.SetCache(failedCache)
+			}
+			ac, err := action_cache_server.NewActionCacheServer(env)
+			require.NoError(t, err)
+			env.SetActionCacheServer(ac)
+
+			const key = "test-cas-only-key"
+			u := apiKeyUser(key, capability.Capability_CAS_WRITE)
+			u.TrustExecutorActionResults = tc.admitted
+			a := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			a.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+				if apiKey == key {
+					return u, nil
+				}
+				return nil, nil
+			}
+			env.SetUserDB(&trustSettingsUserDB{group: &tables.Group{
+				GroupID:                    u.GetGroupID(),
+				TrustExecutorActionResults: tc.optedIn,
+			}})
+			ctx := a.AuthContextFromAPIKey(t.Context(), key)
+			cas := uploadActionWithCommand(ctx, t, env, "test-instance", repb.DigestFunction_SHA256,
+				&repb.Action{DoNotCache: tc.doNotCache}, &repb.Command{Arguments: []string{"test"}})
+			arn := digest.NewACResourceName(cas.GetDigest(), cas.GetInstanceName(), cas.GetDigestFunction())
+			acClient := repb.NewActionCacheClient(conn)
+
+			// The same key cannot publish through the public API, even in this org.
+			require.NoError(t, cachetools.UploadActionResult(ctx, acClient, arn, &repb.ActionResult{StdoutRaw: []byte("direct result")}))
+			_, err = cachetools.GetActionResult(ctx, acClient, arn)
+			require.True(t, status.IsNotFoundError(err), "direct result should not be persisted: %v", err)
+
+			executeCtx := ctx
+			if tc.platformOverride {
+				executeCtx = metadata.AppendToOutgoingContext(executeCtx, "x-buildbuddy-platform.pool", "test-pool")
+			}
+			client := repb.NewExecutionClient(conn)
+			stream, err := client.Execute(executeCtx, &repb.ExecuteRequest{
+				ActionDigest:   cas.GetDigest(),
+				InstanceName:   cas.GetInstanceName(),
+				DigestFunction: cas.GetDigestFunction(),
+			})
+			require.NoError(t, err)
+			op, err := stream.Recv()
+			require.NoError(t, err)
+
+			publishCtx := metadata.AppendToOutgoingContext(ctx, interfaces.TrustedExecutionPublicationTokenHeader, "test-publication-token")
+			if tc.trustedWorker {
+				publishCtx, err = env.GetClientIdentityService().AddIdentityToContext(publishCtx)
+				require.NoError(t, err)
+			}
+			publisher, err := client.PublishOperation(publishCtx)
+			require.NoError(t, err)
+			result := &repb.ActionResult{StdoutRaw: []byte("executed result")}
+			completed, err := operation.Assemble(op.GetName(), operation.Metadata(repb.ExecutionStage_COMPLETED, cas.GetDigest()), &repb.ExecuteResponse{Result: result})
+			require.NoError(t, err)
+			require.NoError(t, publisher.Send(completed))
+			_, err = publisher.CloseAndRecv()
+			require.NoError(t, err)
+
+			// Confirm completion propagated before interpreting any cache miss.
+			for !op.GetDone() {
+				op, err = stream.Recv()
+				require.NoError(t, err)
+			}
+			require.Equal(t, result.GetStdoutRaw(), operation.ExtractExecuteResponse(op).GetResult().GetStdoutRaw())
+			if tc.cacheUnavailable {
+				require.True(t, failedCache.wrote.Load(), "expected the authorized write to reach the cache")
+			}
+			cached, err := cachetools.GetActionResult(ctx, acClient, arn)
+			if tc.wantHit {
+				require.NoError(t, err)
+				require.Equal(t, result.GetStdoutRaw(), cached.GetStdoutRaw())
+			} else {
+				require.True(t, status.IsNotFoundError(err), "execution result should not be persisted: %v", err)
 			}
 		})
 	}

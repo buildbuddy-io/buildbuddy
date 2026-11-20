@@ -75,6 +75,7 @@ go_test(
     deps = [
         ":execution_server",
         "//enterprise/server/backends/redis_execution_collector",
+        "//enterprise/server/clientidentity",
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/operation",
@@ -94,6 +95,7 @@ go_test(
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/remote_cache/action_cache_server",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/tables",
