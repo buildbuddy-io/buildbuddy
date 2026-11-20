@@ -111,6 +111,10 @@ const (
 	// that if a refresh fails, Redis does not expire the keys before the next
 	// refresh.
 	redisRefreshInterval = 15 * time.Minute
+
+	// How long to remember the latest registered attempt of an invocation
+	// after its channel is closed.
+	attemptRetentionPeriod = 1 * time.Minute
 )
 
 var errMissingAPIKey = errors.New("missing API key")
@@ -134,14 +138,24 @@ type PersistArtifacts struct {
 }
 
 type BuildEventHandler struct {
-	env              environment.Env
-	statsRecorder    *statsRecorder
-	webhookNotifier  *webhookNotifier
-	openChannels     *sync.WaitGroup
-	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
+	env             environment.Env
+	statsRecorder   *statsRecorder
+	webhookNotifier *webhookNotifier
+	openChannels    *sync.WaitGroup
 
 	mu           sync.Mutex
 	shuttingDown bool
+	// channels holds every open channel, for cancellation on shutdown.
+	channels map[*openChannel]struct{}
+	// latestByInvID holds the registered channel with the highest attempt for
+	// each invocation ID.
+	latestByInvID map[string]*openChannel
+}
+
+type openChannel struct {
+	iid     string
+	attempt uint64
+	cancel  context.CancelFunc
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
@@ -154,11 +168,12 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	webhookNotifier.Start()
 
 	h := &BuildEventHandler{
-		env:              env,
-		statsRecorder:    statsRecorder,
-		webhookNotifier:  webhookNotifier,
-		openChannels:     openChannels,
-		cancelFnsByInvID: sync.Map{},
+		env:             env,
+		statsRecorder:   statsRecorder,
+		webhookNotifier: webhookNotifier,
+		openChannels:    openChannels,
+		channels:        make(map[*openChannel]struct{}),
+		latestByInvID:   make(map[string]*openChannel),
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		h.Stop()
@@ -176,19 +191,45 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 
 	invocation := &inpb.Invocation{InvocationId: iid}
 	buildEventAccumulator := accumulator.NewBEValues(invocation)
-	val, ok := b.cancelFnsByInvID.Load(iid)
-	if ok {
-		cancelFn := val.(context.CancelFunc)
-		cancelFn()
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
-	b.cancelFnsByInvID.Store(iid, cancel)
+	oc := &openChannel{iid: iid, cancel: cancel}
+	b.channels[oc] = struct{}{}
+	onRegistered := func(attempt uint64) {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		oc.attempt = attempt
+		if b.shuttingDown {
+			oc.cancel()
+			return
+		}
+		if prev, ok := b.latestByInvID[iid]; ok {
+			if prev.attempt > attempt {
+				oc.cancel()
+				return
+			}
+			prev.cancel()
+		}
+		b.latestByInvID[iid] = oc
+	}
 
 	b.openChannels.Add(1)
 	onClose := func() {
+		b.mu.Lock()
+		delete(b.channels, oc)
+		b.mu.Unlock()
+		// Keep the attempt number around for a while so that an older
+		// attempt registering late still sees it and cancels itself. One
+		// registering after this can become the latest here, but the DB
+		// writes are qualified by attempt, so it can't overwrite the newer
+		// attempt's row.
+		b.env.GetClock().AfterFunc(attemptRetentionPeriod, func() {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			if b.latestByInvID[iid] == oc {
+				delete(b.latestByInvID, iid)
+			}
+		})
 		b.openChannels.Done()
-		b.cancelFnsByInvID.Delete(iid)
 	}
 
 	return &EventChannel{
@@ -210,6 +251,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		requestedTerminalColumns:    eventlog.DefaultTerminalLineLength,
 		logWriter:                   nil,
 		onClose:                     onClose,
+		onRegistered:                onRegistered,
 		stopRedisRefresher:          func() {},
 		attempt:                     1,
 		groupIDForMetrics:           getGroupIDForMetrics(ctx, b.env),
@@ -226,15 +268,16 @@ func getGroupIDForMetrics(ctx context.Context, env environment.Env) string {
 
 func (b *BuildEventHandler) Stop() {
 	b.mu.Lock()
+	if b.shuttingDown {
+		b.mu.Unlock()
+		return
+	}
 	b.shuttingDown = true
+	for oc := range b.channels {
+		log.Infof("Cancelling invocation %q because server received shutdown signal", oc.iid)
+		oc.cancel()
+	}
 	b.mu.Unlock()
-	b.cancelFnsByInvID.Range(func(key, val any) bool {
-		iid := key.(string)
-		cancelFn := val.(context.CancelFunc)
-		log.Infof("Cancelling invocation %q because server received shutdown signal", iid)
-		cancelFn()
-		return true
-	})
 	b.statsRecorder.Stop()
 	b.webhookNotifier.Stop()
 }
@@ -852,6 +895,7 @@ type EventChannel struct {
 	logWriter                        *eventlog.EventLogWriter
 	iid                              string
 	onClose                          func()
+	onRegistered                     func(attempt uint64)
 	registered                       bool
 	stopRedisRefresher               func()
 	attempt                          uint64
@@ -1100,7 +1144,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	// Bazel sends an Interrupted exit code in the finished event if the user cancelled the build.
 	// Use that signal to cancel any actions that are currently in the remote execution system.
 	if f, ok := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Finished); ok {
-		if f.Finished.GetExitCode().GetCode() == InterruptedExitCode && e.env.GetRemoteExecutionService() != nil {
+		if f.Finished.GetExitCode().GetCode() == InterruptedExitCode && e.registered && e.env.GetRemoteExecutionService() != nil {
 			if err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
 				log.CtxWarningf(e.ctx, "Could not cancel executions for invocation %q: %s", iid, err)
 			}
@@ -1189,12 +1233,14 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			return err
 		}
 		if !created {
-			// We failed to retry an existing invocation
-			log.CtxWarningf(e.ctx, "Voiding EventChannel for invocation %s: invocation already exists and is either completed or past its reconnect window, so may not be retried.", iid)
+			// The invocation is already complete or past its reconnect window.
+			// Void the channel and ACK the events so that Bazel stops retrying.
+			log.CtxWarningf(e.ctx, "Voiding EventChannel for invocation %s: invocation is already complete or past its reconnect window, so it may not be retried.", iid)
 			e.isVoid = true
 			return nil
 		}
 		e.registered = true
+		e.onRegistered(ti.Attempt)
 		e.lastDBUpdateTime = e.env.GetClock().Now()
 		e.attempt = ti.Attempt
 		e.ctx = log.EnrichContext(e.ctx, "invocation_attempt", fmt.Sprintf("%d", e.attempt))

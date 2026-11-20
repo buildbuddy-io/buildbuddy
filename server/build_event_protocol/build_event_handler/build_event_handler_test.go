@@ -2521,3 +2521,52 @@ func TestEventForOtherInvocationIsRejected(t *testing.T) {
 		})
 	}
 }
+
+type fakeRemoteExecutionService struct {
+	interfaces.RemoteExecutionService
+	cancelCount atomic.Int32
+}
+
+func (s *fakeRemoteExecutionService) Cancel(ctx context.Context, invocationID string) error {
+	s.cancelCount.Add(1)
+	return nil
+}
+
+func TestOnlyRegisteredAttemptCancelsOtherStreams(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
+	te.SetAuthenticator(auth)
+	res := &fakeRemoteExecutionService{}
+	te.SetRemoteExecutionService(res)
+	iid := uuid.New().String()
+	handler := build_event_handler.NewBuildEventHandler(te)
+	openAndStart := func(apiKey string) (interfaces.BuildEventChannel, error) {
+		channel, err := handler.OpenChannel(t.Context(), iid)
+		require.NoError(t, err)
+		t.Cleanup(channel.Close)
+		return channel, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"="+apiKey+"'"), iid, 1))
+	}
+
+	original, err := openAndStart("USER1")
+	require.NoError(t, err)
+
+	other, err := handler.OpenChannel(t.Context(), iid)
+	require.NoError(t, err)
+	defer other.Close()
+	interrupted := &anypb.Any{}
+	interrupted.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_Finished{Finished: &bspb.BuildFinished{
+			ExitCode: &bspb.BuildFinished_ExitCode{Code: build_event_handler.InterruptedExitCode},
+		}},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildFinished{}},
+	})
+	require.NoError(t, other.HandleEvent(streamRequest(interrupted, iid, 1)))
+	_, err = openAndStart("USER2")
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+	require.NoError(t, original.Context().Err())
+	require.Equal(t, int32(0), res.cancelCount.Load())
+
+	_, err = openAndStart("USER1")
+	require.NoError(t, err)
+	require.Error(t, original.Context().Err())
+}
