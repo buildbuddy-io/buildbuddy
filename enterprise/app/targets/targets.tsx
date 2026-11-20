@@ -154,9 +154,9 @@ function convertMetricUrlParam(param: string): MetricOption | undefined {
 function convertAggUrlParam(param: string): AggOption {
   const val = Number.parseInt(param);
   if (val) {
-    return AGG_OPTIONS.find((v) => v.agg == val) ?? AGG_OPTIONS[0];
+    return AGG_OPTIONS.find((v) => v.agg == val) ?? AGG_OPTIONS[5];
   }
-  return AGG_OPTIONS[0];
+  return AGG_OPTIONS[5];
 }
 
 function getFilterUrlParam(search: URLSearchParams): string {
@@ -164,8 +164,8 @@ function getFilterUrlParam(search: URLSearchParams): string {
 }
 
 export default class TrendsComponent extends React.Component<Props, State> {
-  selectedMetric: MetricOption = METRIC_OPTIONS[0];
-  selectedAgg: AggOption = AGG_OPTIONS[0];
+  selectedMetric: MetricOption = METRIC_OPTIONS[6];
+  selectedAgg: AggOption = AGG_OPTIONS[5];
 
   state: State = {
     loading: false,
@@ -189,7 +189,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   componentDidMount(): void {
     this.updateDocumentTitle();
     this.selectedMetric =
-      convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+      convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[6];
     this.selectedAgg = convertAggUrlParam(this.props.search.get(TARGET_SELECTED_AGG_URL_PARAM) || "");
     this.setState({ filterText: getFilterUrlParam(this.props.search) });
     this.fetchTargetTrends();
@@ -199,7 +199,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     this.updateDocumentTitle();
     if (this.props.search !== prevProps.search) {
       this.selectedMetric =
-        convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+        convertMetricUrlParam(this.props.search.get(TARGET_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[6];
       this.selectedAgg = convertAggUrlParam(this.props.search.get(TARGET_SELECTED_AGG_URL_PARAM) || "");
       // Only sync the input from the URL when the URL's filter actually
       // changed, so that an unrelated URL change (e.g. picking a new metric)
