@@ -11,6 +11,10 @@ PODMAN_VERSION = "v5.8.8"
 PODMAN_STATIC_SHA256_AMD64 = "424d9478fdd08b61aeec4cca2b695709ffb23bca6133d0fd1029a4d0b610434b"
 PODMAN_STATIC_SHA256_ARM64 = "bd46c0acf2db23e1e693b46b46987c45ab6f7a360dd5f917ba2cd316b670ec10"
 
+# gVisor release used in tests and the executor image. Update the gVisor
+# checksums below when changing it.
+GVISOR_VERSION = "20261116.0"
+
 # The bb CLI version used by //tools/lint for `bb mod deps`.
 BB_CLI_VERSION = "5.0.466"
 
@@ -382,6 +386,29 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = "eb08c7acaf159d7786719437415b0d3311c67a10ca7dee9366271bda3e902ca8",
         downloaded_file_path = "crun",
         executable = True,
+    )
+
+    # runsc looks for its sidecars in the gvisor-bin directory next to it.
+    # The others (netgofer, checkpointgofer, metric-server) aren't needed with
+    # --network=host and without checkpointing.
+    gvisor_build_file = "\n".join([
+        'package(default_visibility = ["//visibility:public"])',
+        'exports_files(["runsc"])',
+        'filegroup(name = "sidecars", srcs = ["gvisor-bin/gvisor_sentry", "gvisor-bin/gvisor-sentry-prewarmer", "gvisor-bin/gvisor-proc-umounter", "gvisor-bin/runsc-fd-parking"])',
+    ])
+    http_archive(
+        name = "com_github_gvisor_gvisor-linux-amd64",
+        build_file_content = gvisor_build_file,
+        sha256 = "4eb0475337f119ae7411c1d99d3acd727f1278a0286a244dee8dac91c6db5355",
+        type = "tar.zst",
+        urls = ["https://storage.googleapis.com/gvisor/releases/release/{version}/x86_64/gvisor.tar.zstd".format(version = GVISOR_VERSION)],
+    )
+    http_archive(
+        name = "com_github_gvisor_gvisor-linux-arm64",
+        build_file_content = gvisor_build_file,
+        sha256 = "399835d261b2b08fa82fef9c907f44e9563a5bfec8a692a1704085b041bdc06d",
+        type = "tar.zst",
+        urls = ["https://storage.googleapis.com/gvisor/releases/release/{version}/aarch64/gvisor.tar.zstd".format(version = GVISOR_VERSION)],
     )
 
     # busybox static builds (see tools/build_busybox.sh)
