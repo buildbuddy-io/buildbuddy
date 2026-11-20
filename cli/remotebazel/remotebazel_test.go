@@ -96,6 +96,8 @@ func TestParseRemoteCliFlags(t *testing.T) {
 		inputArgs         []string
 		expectedOutput    []string
 		expectedFlagValue map[string]string
+		expectedHeaders   []string
+		expectedEnv       []string
 		expectedError     bool
 	}
 
@@ -165,6 +167,22 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"remote_runner": "val",
 				"env":           "key=val,key2=val2",
 			},
+		},
+		{
+			name: "escaped commas and backslashes",
+			inputArgs: []string{
+				`--remote_run_header=x-buildbuddy-platform.secret-env-overrides=K1=V1\,K2=V2`,
+				"--remote_run_header=x-other-header=other",
+				`--env=GREETING=hello\,world,PATH=C:\\tools`,
+				"build",
+				"//...",
+			},
+			expectedOutput: []string{"build", "//..."},
+			expectedHeaders: []string{
+				"x-buildbuddy-platform.secret-env-overrides=K1=V1,K2=V2",
+				"x-other-header=other",
+			},
+			expectedEnv: []string{"GREETING=hello,world", `PATH=C:\tools`},
 		},
 		{
 			name: "no flags",
@@ -291,7 +309,12 @@ func TestParseRemoteCliFlags(t *testing.T) {
 			expectedError: true,
 		},
 	}
+	originalHeaders, originalEnv := *remoteHeaders, *envInput
+	t.Cleanup(func() {
+		*remoteHeaders, *envInput = originalHeaders, originalEnv
+	})
 	for _, tc := range testCases {
+		*remoteHeaders, *envInput = nil, nil
 		actualOutput, err := parseRemoteCliFlags(tc.inputArgs)
 		if tc.expectedError {
 			require.Error(t, err, tc.name)
@@ -303,6 +326,12 @@ func TestParseRemoteCliFlags(t *testing.T) {
 		for flag, expectedVal := range tc.expectedFlagValue {
 			actualVal := RemoteFlagset.Lookup(flag).Value
 			require.Equal(t, expectedVal, actualVal.String(), tc.name)
+		}
+		if tc.expectedHeaders != nil {
+			require.Equal(t, tc.expectedHeaders, *remoteHeaders, tc.name)
+		}
+		if tc.expectedEnv != nil {
+			require.Equal(t, tc.expectedEnv, *envInput, tc.name)
 		}
 	}
 }

@@ -434,11 +434,26 @@ bb remote \
   --script='bazel run :my_script --password=$PWD'
 ```
 
-To set multiple variables, pass a comma separated list:
-`--remote_run_header=x-buildbuddy-platform.secret-env-overrides=K1=V1,K2=V2`.
+To set multiple secrets, pass a single flag for the remote header, and escape
+the commas between each key-value pair. Single-quote the flag value so your shell preserves the
+backslashes:
 
-For values containing commas or special characters, use
-`secret-env-overrides-base64` with base64-encoded `KEY=VALUE` pairs.
+```bash
+bb remote \
+  --remote_run_header='x-buildbuddy-platform.secret-env-overrides=K1=V1\,K2=V2' \
+  build //...
+```
+
+If there's a comma in the secret's value, use `secret-env-overrides-base64` and
+base64-encode the entire `KEY=VALUE` pair.
+
+For example, to set `DB_PASSWORD` to `secret,with,commas`:
+
+```bash
+bb remote \
+  --remote_run_header="x-buildbuddy-platform.secret-env-overrides-base64=$(printf %s 'DB_PASSWORD=secret,with,commas' | base64 | tr -d '\n')" \
+  build //...
+```
 
 **Note**: You should not use `--env` or `--runner_exec_properties` to set secrets
 because:
