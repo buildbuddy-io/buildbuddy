@@ -172,9 +172,10 @@ func TestGuestAPIVersion(t *testing.T) {
 	//
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
-	// Compatible change: existing snapshots never set the new InitializeRequest fields.
+	// Compatible change: only VMs with an EROFS root pass -scratch_ext4 or
+	// set overlay_container_root.
 	const (
-		expectedHash    = "9abaf488911621c069234c8a496bd8fd8a6ff3b602c4222b687936352f9ea8d1"
+		expectedHash    = "e9a0f7d90a3f5473f4f339105d35833a334572e67595aaeae4260c95aa3739b4"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -5232,22 +5233,30 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 }
 
 func TestFirecrackerGenericSnapshot(t *testing.T) {
-	for _, kernel := range []struct {
+	for _, tc := range []struct {
 		name        string
 		experiments []string
+		erofsRoot   bool
 	}{
 		{name: "default kernel"},
 		{name: "6.18 kernel", experiments: []string{"upgrade-fc-guest-kernel"}},
+		{name: "default kernel with EROFS root", erofsRoot: true},
+		{name: "6.18 kernel with EROFS root", experiments: []string{"upgrade-fc-guest-kernel"}, erofsRoot: true},
 	} {
-		t.Run(kernel.name, func(t *testing.T) {
-			testFirecrackerGenericSnapshot(t, kernel.experiments)
+		t.Run(tc.name, func(t *testing.T) {
+			testFirecrackerGenericSnapshot(t, tc.experiments, tc.erofsRoot)
 		})
 	}
 }
 
-func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
+func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoot bool) {
 	ctx := context.Background()
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.firecracker_generic_erofs_root", erofsRoot)
+	format := diskimage.Ext4
+	if erofsRoot {
+		format = diskimage.Erofs
+	}
 	env := getTestEnv(ctx, t, envOpts{})
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(auth)
@@ -5292,6 +5301,8 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 			// If `unshare` is available in the image, then test creating a user namespace.
 			// This could fail if we don't properly mount the rootfs.
 			command += "; test -e /etc/lsb-release; unshare -Ur true"
+			// File ownership comes from the image.
+			command += `; test "$(stat -c %G /etc/shadow)" = shadow`
 		} else {
 			command += "; test ! -e /etc/lsb-release"
 		}
@@ -5299,6 +5310,12 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 		// Generic VMs always have a network interface.
 		command += `; test -n "$(awk '$2 == "00000000"' /proc/net/route)"`
 		command += `; test "$(cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.max)" = 1073741824`
+		if erofsRoot {
+			// Root writes go to an overlay over the read-only image.
+			command += `; test "$(awk '$2 == "/" {print $3}' /proc/mounts)" = overlay; touch /etc/written`
+			// Room for the largest disk estimate a generic VM can get.
+			command += fmt.Sprintf(`; test "$(df -kP / | awk 'NR == 2 {print $4}')" -ge %d`, tasksize.MaxEstimatedFreeDiskRecycleFalse/1024)
+		}
 		if user != "" {
 			command = "id -u; touch /tmp/user-marker; /bin/true"
 		}
@@ -5330,7 +5347,7 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 		assert.Empty(t, lastTask.GetExecutionId())
 		assert.Nil(t, lastTask.GetActionDigest())
 		// Images are cached under the task's instance, not the generic snapshot's.
-		_, err = snaploader.GetCachedContainerImage(ctx, loader, "generic-instance", image, diskimage.Ext4, false /*=remoteEnabled*/)
+		_, err = snaploader.GetCachedContainerImage(ctx, loader, "generic-instance", image, format, false /*=remoteEnabled*/)
 		assert.NoError(t, err)
 		return snap
 	}
@@ -5394,10 +5411,15 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string) {
 		runFromScratch(t, 3)
 	})
 	t.Run("evicted memory", func(t *testing.T) {
-		files := snapshots[0].GetChunkedFiles()
-		require.Len(t, files, 1)
-		require.NotEmpty(t, files[0].GetChunks())
-		require.True(t, env.GetFileCache().DeleteFile(genericSnapshotCtx, &repb.FileNode{Digest: files[0].GetChunks()[0].GetDigest()}))
+		var memory *fcpb.ChunkedFile
+		for _, f := range snapshots[0].GetChunkedFiles() {
+			if f.GetName() == snaputil.MemoryFileName {
+				memory = f
+			}
+		}
+		require.NotNil(t, memory)
+		require.NotEmpty(t, memory.GetChunks())
+		require.True(t, env.GetFileCache().DeleteFile(genericSnapshotCtx, &repb.FileNode{Digest: memory.GetChunks()[0].GetDigest()}))
 		runFromScratch(t, 1)
 	})
 }

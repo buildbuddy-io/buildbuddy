@@ -63,6 +63,11 @@ func (f *FS) SetFile(file BlockDevice) {
 	f.store = file
 }
 
+// File returns the BlockDevice that the FS serves.
+func (f *FS) File() BlockDevice {
+	return f.store
+}
+
 // Mount mounts the FS to the given directory path.
 // It exposes a single file "store" which points to the backing store.
 func (f *FS) Mount(ctx context.Context, path string) error {

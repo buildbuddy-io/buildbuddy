@@ -165,6 +165,10 @@ message InitializeRequest {
 
   // If set, commands run after this request are limited to this much memory.
   int64 memory_limit_bytes = 6;
+
+  // Mount the container root read-only under an overlay whose writes go to
+  // the scratch disk, which goinit mounts at /scratch.
+  bool overlay_container_root = 7;
 }
 
 message InitializeResponse {

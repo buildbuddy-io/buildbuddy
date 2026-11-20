@@ -134,8 +134,10 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 }
 
 // MakeEmptyImage creates a new empty ext4 disk image of the specified size
-// and writes it to outputFile.
-func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) error {
+// and writes it to outputFile. The image is sparse: its inode tables and
+// journal aren't zeroed, since a new file already reads as zeros. Mount it
+// with noinit_itable so that the kernel doesn't zero the inode tables either.
+func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64, extraArgs ...string) error {
 	if err := checkImageOutputPath(outputFile); err != nil {
 		return err
 	}
@@ -152,9 +154,10 @@ func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) err
 		"-r", "1",
 		"-b", fmt.Sprintf("%d", blockSize),
 		"-t", "ext4",
-		outputFile,
-		fmt.Sprintf("%dK", sizeBytes/iecKilobyte),
+		"-E", "lazy_itable_init=1,lazy_journal_init=1",
 	}
+	args = append(args, extraArgs...)
+	args = append(args, outputFile, fmt.Sprintf("%dK", sizeBytes/iecKilobyte))
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)

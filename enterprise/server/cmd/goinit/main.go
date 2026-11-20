@@ -37,6 +37,7 @@ const (
 
 var (
 	deferRootfsMount = flag.Bool("defer_rootfs_mount", false, "Mount the rootfs after restoring a generic snapshot.")
+	scratchExt4      = flag.Bool("scratch_ext4", false, "Mount the ext4 scratch disk that holds writes to an EROFS rootfs at /scratch, and only write back dirty pages under memory pressure. Requires defer_rootfs_mount.")
 	path             = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort       = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
 	enableRootfs     = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
@@ -260,6 +261,10 @@ func main() {
 	if *deferRootfsMount {
 		die(mkdirp("/mnt", 0755))
 		die(mount("tmpfs", "/mnt", "tmpfs", syscall.MS_NOSUID, "mode=0755"))
+		if *scratchExt4 {
+			die(mkdirp("/mnt/scratch", 0755))
+			die(mount(vmexec.ScratchDevice, "/mnt/scratch", "ext4", syscall.MS_NOATIME, "noinit_itable"))
+		}
 	} else if *enableRootfs {
 		die(mkdirp("/mnt", 0755))
 		die(mount(rootDevice, "/mnt", "ext4", syscall.MS_NOATIME, ""))
@@ -304,6 +309,13 @@ func main() {
 
 	die(mkdirp("/proc", 0555))
 	die(mount("proc", "/proc", "proc", commonMountFlags, ""))
+	if *scratchExt4 {
+		// Keep short-lived root filesystem writes in memory instead of the
+		// scratch disk's COW chunks.
+		die(os.WriteFile("/proc/sys/vm/dirty_writeback_centisecs", []byte("0"), 0))
+		die(os.WriteFile("/proc/sys/vm/dirty_background_ratio", []byte("50"), 0))
+		die(os.WriteFile("/proc/sys/vm/dirty_ratio", []byte("80"), 0))
+	}
 	die(mount("binfmt_misc", "/proc/sys/fs/binfmt_misc", "binfmt_misc", commonMountFlags|syscall.MS_RELATIME, ""))
 
 	die(mkdirp("/sys", 0555))
