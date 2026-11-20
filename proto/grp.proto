@@ -193,8 +193,9 @@ message GetGroupResponse {
 message GetGroupUsersRequest {
   context.RequestContext request_context = 1;
 
-  // The ID of the group to get the users from.
-  string group_id = 2;
+  // Deprecated: ignored. Users are always read from the selected group in
+  // request_context.
+  string group_id = 2 [deprecated = true];
 
   // Statuses of members to retrieve (required).
   repeated GroupMembershipStatus group_membership_status = 3;

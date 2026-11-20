@@ -688,15 +688,17 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 	return membershipStatus, nil
 }
 
-func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interfaces.GetGroupUsersOpts) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
-	if groupID == "" {
-		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
-	}
+func (d *UserDB) GetGroupUsers(ctx context.Context, opts *interfaces.GetGroupUsersOpts) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
 	if len(opts.Statuses) == 0 {
 		return nil, status.InvalidArgumentError("A valid status or statuses are required")
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
 		return nil, err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return nil, status.PermissionDeniedError("no group selected")
 	}
 
 	members := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
@@ -768,7 +770,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interf
 
 	qString, qArgs := q.Build()
 	rq := d.h.NewQuery(ctx, "userdb_get_group_users").Raw(qString, qArgs...)
-	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
+	err = rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		groupUser := &grpb.GetGroupUsersResponse_GroupUser{}
 		user := &tables.User{}
 		var groupRole uint32
