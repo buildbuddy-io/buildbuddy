@@ -27,11 +27,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 )
 
 func init() {
@@ -1220,5 +1222,45 @@ func TestRedactedRepoURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, redactedRepoURL(tc.url))
 		})
+	}
+}
+
+// Serves scripted artifact listing pages, keyed by page token.
+type pagedTargetsClient struct {
+	bbspb.BuildBuddyServiceClient
+
+	pages    map[string]*trpb.TargetGroup
+	requests []*trpb.GetTargetRequest
+}
+
+func (c *pagedTargetsClient) GetTarget(ctx context.Context, req *trpb.GetTargetRequest, opts ...grpc.CallOption) (*trpb.GetTargetResponse, error) {
+	c.requests = append(c.requests, req)
+	if len(c.requests) > len(c.pages) {
+		return nil, fmt.Errorf("unexpected GetTarget call %d", len(c.requests))
+	}
+	return &trpb.GetTargetResponse{TargetGroups: []*trpb.TargetGroup{c.pages[req.GetPageToken()]}}, nil
+}
+
+func TestLookupBazelInvocationOutputs_FetchesEveryPage(t *testing.T) {
+	client := &pagedTargetsClient{pages: map[string]*trpb.TargetGroup{
+		"":  {Targets: []*trpb.Target{{Files: []*bespb.File{{Name: "a"}}}}, NextPageToken: "1"},
+		"1": {Targets: []*trpb.Target{{Files: []*bespb.File{{Name: "b"}}}}, NextPageToken: "2"},
+		// An invocation still being finalized returns an empty page whose
+		// token points back at the same offset.
+		"2": {NextPageToken: "2"},
+	}}
+
+	outputs, err := lookupBazelInvocationOutputs(context.Background(), client, "iid")
+	require.NoError(t, err)
+
+	require.Len(t, outputs, 2)
+	assert.Equal(t, "a", outputs[0].GetName())
+	assert.Equal(t, "b", outputs[1].GetName())
+	require.Len(t, client.requests, 3)
+	for _, req := range client.requests {
+		require.Equal(t, cmnpb.Status_STATUS_UNSPECIFIED, req.GetStatus())
+		// Explicitly check for nil because GetStatus() also returns zero when the status is unset.
+		// An unset status returns every group's metadata instead of the artifact listing.
+		require.NotNil(t, req.Status)
 	}
 }
