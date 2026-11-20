@@ -436,7 +436,10 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 	envOverrides := []string{
 		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
 		ci_runner_env.RepoUserEnvVarName + "=" + username,
-		ci_runner_env.RepoTokenEnvVarName + "=" + accessToken,
+	}
+	// Leave tokens injected via env-secrets intact when no token was resolved.
+	if accessToken != "" {
+		envOverrides = append(envOverrides, ci_runner_env.RepoTokenEnvVarName+"="+accessToken)
 	}
 	return envOverrides, nil
 }
