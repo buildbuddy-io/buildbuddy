@@ -88,8 +88,6 @@ var (
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 
-	measureWorkspaceDiskUsage = flag.Bool("executor.workspace.measure_disk_usage", false, "If set, measure the disk space used by the task's buildroot (workspace) after each task finishes and report it in the task's usage stats. Note: this requires walking the entire workspace tree, which may add CPU/IO overhead for tasks with large workspaces.")
-
 	// workspacePoolIsolationTypes are the isolation types whose containers stop
 	// all of the task's processes when the runner removes them.
 	workspacePoolIsolationTypes = []platform.ContainerType{platform.DockerContainerType, platform.PodmanContainerType, platform.OCIContainerType, platform.FirecrackerContainerType}
@@ -572,7 +570,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 // result has been returned to the client and before the workspace is cleaned
 // up), so it doesn't add latency to task completion.
 func (r *taskRunner) measureWorkspaceDiskUsage(ctx context.Context) {
-	if !*measureWorkspaceDiskUsage {
+	if !execution_experiments.MeasureWorkspaceDiskUsage.Get(ctx) {
 		return
 	}
 
