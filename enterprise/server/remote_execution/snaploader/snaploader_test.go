@@ -181,6 +181,37 @@ func gitTask(branch, base, defaultBranch string, props ...*repb.Platform_Propert
 	}
 }
 
+func TestSnapshotKeySet_FallbackKeys(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	ctx := context.Background()
+	loader, err := snaploader.New(setupEnv(t))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name, base, defaultBranch string
+		wantFallbackRefs          []string
+	}{
+		{name: "no git refs", wantFallbackRefs: nil},
+		{name: "default branch only", defaultBranch: "main", wantFallbackRefs: []string{"main", snaputil.UniversalSnapshotRef}},
+		{name: "base branch only", base: "pr-base", wantFallbackRefs: []string{"pr-base", snaputil.UniversalSnapshotRef}},
+		{name: "base and default branches", base: "pr-base", defaultBranch: "main", wantFallbackRefs: []string{"pr-base", "main", snaputil.UniversalSnapshotRef}},
+		{name: "duplicate fallback branches", base: "main", defaultBranch: "main", wantFallbackRefs: []string{"main", snaputil.UniversalSnapshotRef}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := gitTask("", tc.base, tc.defaultBranch)
+			keys, err := loader.SnapshotKeySet(ctx, task, "config-hash", "")
+			require.NoError(t, err)
+			require.Empty(t, keys.GetBranchKey().GetRef())
+			require.Empty(t, keys.GetWriteKey().GetRef())
+			var fallbackRefs []string
+			for _, key := range keys.GetFallbackKeys() {
+				fallbackRefs = append(fallbackRefs, key.GetRef())
+			}
+			require.Equal(t, tc.wantFallbackRefs, fallbackRefs)
+		})
+	}
+}
+
 func TestIsLikelyDefaultSnapshot(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 	ctx := context.Background()
@@ -285,6 +316,14 @@ func TestUnpackFallbackKey(t *testing.T) {
 	// Now try unpacking with the complete PR key set, including fallbacks. This
 	// should succeed.
 	mustUnpack(t, ctx, loader, forkKeys, forkWorkDir, opts)
+
+	// A detached remote run should also be able to read the default branch's
+	// snapshot, while keeping its writes separate from the default branch.
+	detachedKeys, err := loader.SnapshotKeySet(ctx, gitTask("", "", "main"), "config-hash", "")
+	require.NoError(t, err)
+	require.Empty(t, detachedKeys.GetWriteKey().GetRef())
+	detachedWorkDir := testfs.MakeDirAll(t, workDir, "VM-detached")
+	mustUnpack(t, ctx, loader, detachedKeys, detachedWorkDir, opts)
 }
 
 func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
