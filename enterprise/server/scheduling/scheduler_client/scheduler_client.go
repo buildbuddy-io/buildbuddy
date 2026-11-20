@@ -132,6 +132,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		ExecutorId:                executorID,
 		ExecutorHostId:            executorHostID,
 		SupportedIsolationTypes:   supportedTypes,
+		SupportsVfs:               executorProps.SupportsVFS,
 		CurrentQueueLength:        0,
 		XcodeVersions:             xcodeLocator.Versions(),
 		XcodeSimulatorRuntimes:    *xcodeSimulatorRuntimes,
