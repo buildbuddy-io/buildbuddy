@@ -546,12 +546,26 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
-	resp := repb.GetTreeResponse{}
+	resp := &repb.GetTreeResponse{}
 	respSizeBytes := 0
 	for dirsToGet := []*repb.Digest{req.RootDigest}; len(dirsToGet) > 0; {
+		// BatchReadBlobs limits the sum of the requested blob sizes, even for
+		// local reads. Split wide levels before making the request.
+		batchSizeBytes := int64(0)
+		batchCount := 0
+		for _, d := range dirsToGet {
+			size := d.GetSizeBytes()
+			if size < 0 || size > rpcutil.GRPCMaxSizeBytes-batchSizeBytes {
+				break
+			}
+			batchSizeBytes += size
+			batchCount++
+		}
+		// Let BatchReadBlobs return its usual error for an invalid singleton.
+		batchCount = max(batchCount, 1)
 		brbreq := repb.BatchReadBlobsRequest{
 			InstanceName:   req.InstanceName,
-			Digests:        dirsToGet,
+			Digests:        dirsToGet[:batchCount],
 			DigestFunction: req.DigestFunction,
 		}
 		brbresps, err := s.BatchReadBlobs(ctx, &brbreq)
@@ -559,7 +573,7 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 			return err
 		}
 
-		dirsToGet = []*repb.Digest{}
+		dirsToGet = dirsToGet[batchCount:]
 		for _, brbresp := range brbresps.Responses {
 			blobStatus := brbresp.GetStatus()
 			if code := codes.Code(blobStatus.GetCode()); code != codes.OK {
@@ -573,14 +587,14 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 				return err
 			}
 
-			// Flush to the stream if adding the dir will make resp bigger than
-			// the maximum gRPC frame size.
-			dirSizeBytes := proto.Size(dir)
-			if int64(respSizeBytes+dirSizeBytes) > rpcutil.GRPCMaxSizeBytes {
-				if err := stream.Send(&resp); err != nil {
+			// Include the tag and length prefix for this directory. A single
+			// directory cannot be split across responses.
+			dirSizeBytes := proto.Size(&repb.GetTreeResponse{Directories: []*repb.Directory{dir}})
+			if len(resp.Directories) > 0 && int64(respSizeBytes+dirSizeBytes) > rpcutil.GRPCMaxSizeBytes {
+				if err := stream.Send(resp); err != nil {
 					return err
 				}
-				resp = repb.GetTreeResponse{}
+				resp = &repb.GetTreeResponse{}
 				respSizeBytes = 0
 			}
 
@@ -591,7 +605,7 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 			}
 		}
 	}
-	return stream.Send(&resp)
+	return stream.Send(resp)
 }
 
 func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {

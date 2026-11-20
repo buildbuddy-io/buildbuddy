@@ -55,6 +55,8 @@ go_test(
         "//server/util/authutil",
         "//server/util/cdc",
         "//server/util/findmissing",
+        "//server/util/proto",
+        "//server/util/rpcutil",
         "//server/util/testing/flags",
         "//server/util/uuid",
         "@com_github_jonboulle_clockwork//:clockwork",

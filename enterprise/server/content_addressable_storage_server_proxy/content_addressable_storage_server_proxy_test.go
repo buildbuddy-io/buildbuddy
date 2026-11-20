@@ -26,6 +26,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
@@ -806,6 +808,71 @@ func TestGetTreeMissingDirectory(t *testing.T) {
 	emptyDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	require.Empty(t, cas.ReadTree(ctx, t, casProxy, "", emptyDigest))
+}
+
+func TestGetTreeWideLevel(t *testing.T) {
+	flags.Set(t, "cache_proxy.enable_get_tree_caching", true)
+	ctx := testContext()
+	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	bsClient := bspb.NewByteStreamClient(conn)
+	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
+	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	// Build a tree with small individual directories whose combined size is
+	// too large for one BatchReadBlobs call. The files share the same content.
+	fileDigest, err := cachetools.UploadBlob(ctx, bsClient, "", repb.DigestFunction_SHA256, strings.NewReader("file contents"))
+	require.NoError(t, err)
+	root := &repb.Directory{}
+	var expected []digest.Key
+	var levelSizeBytes int64
+	const filesPerDirectory = 6000
+	for i := range 8 {
+		child := &repb.Directory{Files: make([]*repb.FileNode, 0, filesPerDirectory)}
+		for j := range filesPerDirectory {
+			child.Files = append(child.Files, &repb.FileNode{
+				Name:   fmt.Sprintf("file-%02d-%04d.txt", i, j),
+				Digest: fileDigest,
+			})
+		}
+		childDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, child)
+		require.NoError(t, err)
+		require.Less(t, childDigest.GetSizeBytes(), rpcutil.GRPCMaxSizeBytes)
+		levelSizeBytes += childDigest.GetSizeBytes()
+		root.Directories = append(root.Directories, &repb.DirectoryNode{
+			Name:   fmt.Sprintf("directory-%02d", i),
+			Digest: childDigest,
+		})
+		expected = append(expected, digest.NewKey(childDigest))
+	}
+	require.Greater(t, levelSizeBytes, rpcutil.GRPCMaxSizeBytes)
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, root)
+	require.NoError(t, err)
+	expected = append(expected, digest.NewKey(rootDigest))
+	unaryRequests.Store(0)
+	streamRequests.Store(0)
+
+	stream, err := casProxy.GetTree(ctx, &repb.GetTreeRequest{
+		RootDigest:     rootDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+	var received []digest.Key
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		require.LessOrEqual(t, int64(proto.Size(rsp)), rpcutil.GRPCMaxSizeBytes)
+		for _, dir := range rsp.GetDirectories() {
+			d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			received = append(received, digest.NewKey(d))
+		}
+	}
+	require.ElementsMatch(t, expected, received)
+	require.Greater(t, unaryRequests.Load(), int32(2))
+	require.Zero(t, streamRequests.Load())
 }
 
 func BenchmarkFindMissingBlobs(b *testing.B) {
