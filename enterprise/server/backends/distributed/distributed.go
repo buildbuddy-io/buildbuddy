@@ -2028,9 +2028,14 @@ func (c *Cache) shareGCSReferences(ctx context.Context) bool {
 func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.ReferenceCache, r *rspb.ResourceName, ref *refpb.Reference) (interfaces.CommittedWriteCloser, error) {
 	shared := false
 	if c.shareGCSReferences(ctx) {
-		if ref.GetMetadata().GetStorageMetadata().GetGcsMetadata() != nil {
+		if ref.GetMetadata().GetStorageMetadata().GetGcsMetadata() != nil || ref.GetGcs() != nil {
 			ref = ref.CloneVT()
-			ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().Shared = true
+			if gcs := ref.GetMetadata().GetStorageMetadata().GetGcsMetadata(); gcs != nil {
+				gcs.Shared = true
+			}
+			if gcs := ref.GetGcs(); gcs != nil {
+				gcs.Shared = true
+			}
 			shared = true
 		}
 	}

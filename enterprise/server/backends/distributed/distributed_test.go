@@ -4054,6 +4054,15 @@ func (c *referenceMemoryCache) makeReference(r *rspb.ResourceName, name string, 
 			},
 			StoredSizeBytes: sizeBytes,
 		},
+		Resource: &rspb.ResourceName{
+			Digest:         r.GetDigest(),
+			InstanceName:   r.GetInstanceName(),
+			Compressor:     repb.Compressor_IDENTITY,
+			CacheType:      r.GetCacheType(),
+			DigestFunction: r.GetDigestFunction(),
+		},
+		StoredSizeBytes: sizeBytes,
+		Gcs:             &refpb.GCSLocation{BlobName: name},
 	}
 }
 
@@ -4075,6 +4084,7 @@ func (c *referenceMemoryCache) ReadReference(ctx context.Context, r *rspb.Resour
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().Shared = c.shareReferences
+	ref.GetGcs().Shared = c.shareReferences
 	return ref, nil
 }
 
@@ -4135,6 +4145,9 @@ func (c *referenceMemoryCache) Dereference(ctx context.Context, ref *refpb.Refer
 }
 
 func (c *referenceMemoryCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
+	if ref.GetGcs().GetShared() != ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetShared() {
+		return status.InternalError("reference has mismatched shared flags")
+	}
 	data, ok := c.store.get(ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
 	if !ok {
 		return status.NotFoundError("blob not found")

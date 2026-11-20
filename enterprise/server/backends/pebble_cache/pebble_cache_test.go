@@ -3279,6 +3279,31 @@ func TestGCSBlobStorage(t *testing.T) {
 	}
 }
 
+// requireReferenceFieldsMatchMetadata checks that ref's fields describe the
+// same blob as its legacy metadata field.
+func requireReferenceFieldsMatchMetadata(t *testing.T, ref *refpb.Reference, bucket string) {
+	md := ref.GetMetadata()
+	fr := md.GetFileRecord()
+	require.True(t, proto.Equal(fr.GetDigest(), ref.GetResource().GetDigest()))
+	require.Equal(t, fr.GetIsolation().GetRemoteInstanceName(), ref.GetResource().GetInstanceName())
+	require.Equal(t, fr.GetCompressor(), ref.GetResource().GetCompressor())
+	require.Equal(t, fr.GetIsolation().GetCacheType(), ref.GetResource().GetCacheType())
+	require.Equal(t, fr.GetDigestFunction(), ref.GetResource().GetDigestFunction())
+	require.Equal(t, md.GetStoredSizeBytes(), ref.GetStoredSizeBytes())
+	if em := md.GetEncryptionMetadata(); em != nil {
+		require.Equal(t, em.GetEncryptionKeyId(), ref.GetEncryption().GetKeyId())
+		require.Equal(t, em.GetVersion(), ref.GetEncryption().GetVersion())
+	} else {
+		require.Nil(t, ref.GetEncryption())
+	}
+	gcs := md.GetStorageMetadata().GetGcsMetadata()
+	require.NotNil(t, ref.GetGcs())
+	require.Equal(t, bucket, ref.GetGcs().GetBucket())
+	require.Equal(t, gcs.GetBlobName(), ref.GetGcs().GetBlobName())
+	require.Equal(t, gcs.GetLastCustomTimeUsec(), ref.GetGcs().GetLastCustomTimeUsec())
+	require.Equal(t, gcs.GetShared(), ref.GetGcs().GetShared())
+}
+
 func TestReadReference(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
@@ -3300,6 +3325,7 @@ func TestReadReference(t *testing.T) {
 		MaxInlineFileSizeBytes: 10,
 		MinGCSFileSizeBytes:    &minGCSFileSize,
 		GCSTTLDays:             &gcsTTLDays,
+		GCSBucket:              "test-bucket",
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	require.NoError(t, err)
@@ -3314,6 +3340,7 @@ func TestReadReference(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
 	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
+	requireReferenceFieldsMatchMetadata(t, ref, "test-bucket")
 
 	// The reference should carry everything needed to read unencrypted bytes
 	// back out of GCS without going through this cache.
@@ -3374,6 +3401,7 @@ func TestCreateReference(t *testing.T) {
 		MaxInlineFileSizeBytes: 10,
 		MinGCSFileSizeBytes:    &minGCSFileSize,
 		GCSTTLDays:             &gcsTTLDays,
+		GCSBucket:              "test-bucket",
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	require.NoError(t, err)
@@ -3392,6 +3420,7 @@ func TestCreateReference(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
 	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
+	requireReferenceFieldsMatchMetadata(t, ref, "test-bucket")
 
 	// The blob is only staged, not written to the cache.
 	_, err = pc.Get(ctx, gcsRN)
@@ -4369,6 +4398,8 @@ func TestDereference(t *testing.T) {
 		// The reference must carry the encryption metadata needed to
 		// decrypt, and dereferencing must return the decrypted bytes.
 		require.NotNil(t, ref.GetMetadata().GetEncryptionMetadata())
+		require.NotEmpty(t, ref.GetEncryption().GetKeyId())
+		requireReferenceFieldsMatchMetadata(t, ref, "")
 
 		rc, err := pc.Dereference(ctx, ref, rn, 0, 0)
 		require.NoError(t, err)
