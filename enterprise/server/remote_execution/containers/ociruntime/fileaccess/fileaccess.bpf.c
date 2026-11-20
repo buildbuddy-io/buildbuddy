@@ -1,0 +1,191 @@
+//go:build ignore
+
+// Records regular files opened for reading by processes in tracked cgroups.
+//
+// Built without kernel or libbpf headers: the kernel types below are minimal
+// CO-RE definitions whose field offsets are relocated at load time using the
+// running kernel's BTF.
+
+typedef unsigned char __u8;
+typedef unsigned int __u32;
+typedef unsigned long long __u64;
+
+#define SEC(name) __attribute__((section(name), used))
+#define __uint(name, val) int (*name)[val]
+#define __type(name, val) typeof(val) *name
+
+// Values from include/uapi/linux/bpf.h.
+#define BPF_MAP_TYPE_HASH 1
+#define BPF_MAP_TYPE_PERCPU_ARRAY 6
+#define BPF_MAP_TYPE_RINGBUF 27
+#define BPF_NOEXIST 1
+#define EEXIST 17
+#define BPF_F_NO_PREALLOC 1
+
+static void *(*bpf_map_lookup_elem)(void *map, const void *key) = (void *)1;
+static long (*bpf_map_update_elem)(void *map, const void *key, const void *value, __u64 flags) = (void *)2;
+static long (*bpf_map_delete_elem)(void *map, const void *key) = (void *)3;
+static __u64 (*bpf_get_current_ancestor_cgroup_id)(int level) = (void *)123;
+static long (*bpf_ringbuf_output)(void *ringbuf, void *data, __u64 size, __u64 flags) = (void *)130;
+static long (*bpf_d_path)(void *path, char *buf, __u32 sz) = (void *)147;
+
+#define FMODE_READ 0x1
+#define S_IFMT 0170000
+#define S_IFREG 0100000
+#define PATH_MAX 4096
+#define MAX_CGROUP_DEPTH 32
+
+struct super_block {
+  __u32 s_dev;
+} __attribute__((preserve_access_index));
+
+struct inode {
+  unsigned short i_mode;
+  unsigned long i_ino;
+  struct super_block *i_sb;
+} __attribute__((preserve_access_index));
+
+struct path {
+  void *mnt;
+  void *dentry;
+} __attribute__((preserve_access_index));
+
+struct file {
+  struct path f_path;
+  struct inode *f_inode;
+  unsigned int f_mode;
+} __attribute__((preserve_access_index));
+
+// Identifies one path opened within one tracked cgroup. The dentry
+// distinguishes hardlinks that share an inode.
+struct key {
+  __u64 cgroup_id;
+  __u64 dentry;
+  __u64 ino;
+};
+
+struct event {
+  struct key key;
+  __u32 path_len;  // Includes the trailing NUL.
+  char path[PATH_MAX];
+};
+
+// Cgroup IDs whose processes (including those in descendant cgroups) are
+// recorded, mapped to the number of opens that could not be reported.
+// Managed from userspace.
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 4096);
+  __type(key, __u64);
+  __type(value, __u64);
+} tracked SEC(".maps");
+
+// Keys already reported, so that each path is sent to userspace once per
+// recording. Userspace deletes a recording's keys when it stops.
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 1 << 21);
+  __uint(map_flags, BPF_F_NO_PREALLOC);
+  __type(key, struct key);
+  __type(value, __u8);
+} seen SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, __u32);
+  __type(value, struct event);
+} scratch SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_RINGBUF);
+  __uint(max_entries, 16 << 20);
+} events SEC(".maps");
+
+// Kernel functions (kfuncs, Linux 6.10 and later), resolved by name when the
+// program is loaded.
+extern void bpf_preempt_disable(void) __attribute__((section(".ksyms")));
+extern void bpf_preempt_enable(void) __attribute__((section(".ksyms")));
+
+// report sends the opened file's path to userspace, unless the tracked
+// cgroup already reported it.
+static __attribute__((always_inline)) void report(struct file *file, __u64 cgroup_id, __u64 *dropped) {
+  __u32 zero = 0;
+  struct event *e = bpf_map_lookup_elem(&scratch, &zero);
+  if (!e) {
+    __sync_fetch_and_add(dropped, 1);
+    return;
+  }
+  e->key.cgroup_id = cgroup_id;
+  e->key.dentry = (__u64)file->f_path.dentry;
+  e->key.ino = file->f_inode->i_ino;
+
+  __u8 one = 1;
+  long err = bpf_map_update_elem(&seen, &e->key, &one, BPF_NOEXIST);
+  if (err == -EEXIST) {
+    return;  // Already reported.
+  }
+  if (err != 0) {
+    __sync_fetch_and_add(dropped, 1);  // Map full.
+    return;
+  }
+  long n = bpf_d_path(&file->f_path, e->path, sizeof(e->path));
+  if (n <= 0 || n > PATH_MAX) {
+    bpf_map_delete_elem(&seen, &e->key);
+    __sync_fetch_and_add(dropped, 1);
+    return;
+  }
+  e->path_len = n;
+  __u64 size = __builtin_offsetof(struct event, path) + (__u64)n;
+  if (size > sizeof(*e)) {
+    return;
+  }
+  if (bpf_ringbuf_output(&events, e, size, 0) != 0) {
+    // Ring buffer full: forget the key so a later open can report it.
+    bpf_map_delete_elem(&seen, &e->key);
+    __sync_fetch_and_add(dropped, 1);
+  }
+}
+
+// This is a BPF LSM program rather than fentry/security_file_open because the
+// kernel skips an fentry program on a CPU where another run of it is in
+// progress, which happens when a task is preempted inside the program, and
+// those opens would be lost without a trace. LSM programs have no such check,
+// so two tasks can be inside the program on one CPU; preemption is off while
+// the per-CPU scratch buffer is in use. Returning 0 allows the open.
+SEC("lsm/file_open")
+int file_open(__u64 *ctx) {
+  struct file *file = (struct file *)ctx[0];
+  if (!(file->f_mode & FMODE_READ)) {
+    return 0;
+  }
+  if ((file->f_inode->i_mode & S_IFMT) != S_IFREG) {
+    return 0;
+  }
+
+  __u64 cgroup_id = 0;
+  __u64 *dropped = 0;
+  for (int level = 1; level < MAX_CGROUP_DEPTH; level++) {
+    __u64 id = bpf_get_current_ancestor_cgroup_id(level);
+    if (id == 0) {
+      break;
+    }
+    dropped = bpf_map_lookup_elem(&tracked, &id);
+    if (dropped) {
+      cgroup_id = id;
+      break;
+    }
+  }
+  if (!dropped) {
+    return 0;
+  }
+
+  bpf_preempt_disable();
+  report(file, cgroup_id, dropped);
+  bpf_preempt_enable();
+  return 0;
+}
+
+// "Dual MIT/GPL" is GPL-compatible, which LSM programs and bpf_d_path
+// require.
+char LICENSE[] SEC("license") = "Dual MIT/GPL";
