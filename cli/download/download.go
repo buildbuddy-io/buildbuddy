@@ -350,6 +350,9 @@ func HandleDownload(args []string) (int, error) {
 		if err != nil {
 			return -1, fmt.Errorf("get tree: %w", err)
 		}
+		if err := os.MkdirAll(*outputDirectory, 0755); err != nil {
+			return -1, fmt.Errorf("create output directory %q: %w", *outputDirectory, err)
+		}
 		env := real_environment.NewBatchEnv()
 		// TODO: remove env dependency from DownloadTree
 		env.SetContentAddressableStorageClient(casClient)

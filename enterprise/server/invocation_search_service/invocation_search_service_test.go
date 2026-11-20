@@ -306,3 +306,30 @@ func TestOLAPQuery(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{getUUIDString(3)}, getInvocationIDSlice(rsp))
 }
+
+func TestUnknownGenericFilterType(t *testing.T) {
+	// With OLAP search enabled, generic filters are inspected (to decide
+	// whether to query ClickHouse) before they are validated.
+	flags.Set(t, "app.olap_invocation_search_enabled", true)
+	bgCtx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := setUpDB(bgCtx, env, t)
+
+	testCtx, err := ta.WithAuthenticatedUser(bgCtx, "US1")
+	require.NoError(t, err)
+
+	service := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
+
+	_, err = service.QueryInvocations(testCtx, &inpb.SearchInvocationRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
+		Query: &inpb.InvocationQuery{
+			GenericFilters: []*sfpb.GenericFilter{{
+				Type:    sfpb.FilterType(9999),
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{"foo"}},
+			}},
+		},
+	})
+	require.Error(t, err)
+	assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+}

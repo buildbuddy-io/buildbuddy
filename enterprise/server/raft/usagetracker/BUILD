@@ -13,7 +13,7 @@ go_library(
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/sender",
-        "//enterprise/server/util/pebble",
+        "//enterprise/server/util/pebblev2",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//proto:storage_go_proto",

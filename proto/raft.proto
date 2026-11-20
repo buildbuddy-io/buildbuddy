@@ -733,7 +733,14 @@ message DeleteRequest {
   // to succeed. If it does not a FailedPrecondition will be returned.
   int64 match_atime = 2;
 }
-message DeleteResponse {}
+message DeleteResponse {
+  // True if there was no record to delete. The delete still succeeds.
+  //
+  // Not response-idempotent: re-applying a delete that removed the record
+  // reports missing. This is best-effort, and should not be relied on for
+  // correctness.
+  bool missing = 1;
+}
 
 // State-idempotent (values only move forward), response-idempotent
 // (empty response). Safe on splittable keys.

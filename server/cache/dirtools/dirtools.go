@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
@@ -1562,6 +1563,7 @@ type DownloadTreeOpts struct {
 	// evicting cached contents does not remove the corresponding VFS entry.
 	KnownInputs map[fspath.Key]*repb.FileNode
 	// RootDir specifies the destination directory for the downloaded tree.
+	// The directory must already exist.
 	// If not specified, tree digests will be downloaded directly into the filecache.
 	RootDir string
 	// TrackTransfers specifies whether to record the full set of files downloaded
@@ -1578,20 +1580,48 @@ type inputTreeRequest interface {
 	Do() error
 }
 
-type mkdirAllRequest struct {
+type mkdirRequest struct {
 	path string
 	perm os.FileMode
+	// created is set by Do if it created the directory, which means that the
+	// directory is empty.
+	created bool
 }
 
-func (mar *mkdirAllRequest) Do() error {
-	// Directories are created in tree traversal order, so parents should always
-	// exist. os.Mkdir should work and be faster than os.MkdirAll so try it
-	// first.
-	err := os.Mkdir(mar.path, mar.perm)
+func (mr *mkdirRequest) Do() error {
+	// Directories are created in tree traversal order, so the parent directory
+	// should always exist.
+	err := os.Mkdir(mr.path, mr.perm)
 	if err == nil {
+		mr.created = true
+		return nil
+	}
+	if !os.IsExist(err) {
 		return err
 	}
-	return os.MkdirAll(mar.path, mar.perm)
+	info, err := os.Lstat(mr.path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return nil
+	}
+	// For regular files existing at the directory path, return an error and
+	// let the caller handle it, since the caller may need to update its
+	// KnownInputs.
+	if info.Mode().IsRegular() {
+		return &os.PathError{Op: "mkdir", Path: mr.path, Err: syscall.ENOTDIR}
+	}
+	// Replace any other entry type (such as a symlink left over from a
+	// previous action) with a new directory.
+	if err := os.Remove(mr.path); err != nil {
+		return err
+	}
+	if err := os.Mkdir(mr.path, mr.perm); err != nil {
+		return err
+	}
+	mr.created = true
+	return nil
 }
 
 type symlinkRequest struct {
@@ -1715,14 +1745,19 @@ func (w *inputTreeWrangler) scheduleRequest(ctx context.Context, req inputTreeRe
 	return req.Do()
 }
 
-func (w *inputTreeWrangler) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+// Mkdir makes sure that there is a directory at path, and returns whether
+// it created the directory. Mkdir replaces any existing entry at path (such
+// as a symlink left over from a previous action), unless the entry is a
+// regular file. For a regular file, Mkdir returns an error and lets the
+// caller handle it, since the caller may need to update its KnownInputs.
+func (w *inputTreeWrangler) Mkdir(ctx context.Context, path string, perm os.FileMode) (created bool, err error) {
 	start := time.Now()
-	err := w.scheduleRequest(ctx, &mkdirAllRequest{path: path, perm: perm})
-	if err != nil {
-		return err
+	req := &mkdirRequest{path: path, perm: perm}
+	if err := w.scheduleRequest(ctx, req); err != nil {
+		return false, err
 	}
 	w.mkdirAllLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
-	return nil
+	return req.created, nil
 }
 
 func (w *inputTreeWrangler) Symlink(ctx context.Context, oldname string, newname string) error {
@@ -1839,14 +1874,19 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	dirPerms := fs.FileMode(0777)
 	f.filesToFetch = make(map[fetchKey][]*FilePointer, 0)
 	nextBitsetIndex := uint32(0)
-	var fetchDirFn func(dir *repb.Directory, parentDir string) error
-	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
+	// fetchDirFn sets up the entries of dir in parentDir. parentCreated is
+	// true if Start just created parentDir, which means that parentDir is
+	// still empty. In that case, every file in dir has to be fetched,
+	// including known inputs, and there are no existing entries to remove
+	// first.
+	var fetchDirFn func(dir *repb.Directory, parentDir string, parentCreated bool) error
+	fetchDirFn = func(dir *repb.Directory, parentDir string, parentCreated bool) error {
 		// NOTE: the traversal order here is load-bearing. We assign bitmap
 		// indexes in a deterministic way - files first, then directories
 		// recursively. Note that files and directories are required by the spec
 		// to be sorted lexicographically.
 		for _, fileNode := range dir.GetFiles() {
-			func(node *repb.FileNode, location string) {
+			err := func(node *repb.FileNode, location string) error {
 				d := node.GetDigest()
 				fullPath := filepath.Join(location, node.Name)
 				relPath := trimPathPrefix(fullPath, f.opts.RootDir)
@@ -1872,8 +1912,25 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 				// entry. An unchanged known input therefore does not guarantee
 				// that the contents are available. Let prefetch check the file
 				// cache to decide whether another download is needed.
-				if ok && nodesEqual(node, knownNode) && !onlyDownloadToFileCache {
-					return
+				//
+				// Another edge case: if parentCreated is true, a previous task
+				// deleted the directory or replaced it with a symlink, so known
+				// inputs in it are gone.
+				if ok && nodesEqual(node, knownNode) && !onlyDownloadToFileCache && !parentCreated {
+					return nil
+				}
+				// The fetcher replaces existing files only at known input paths,
+				// so first remove the entry at the path, such as a file or
+				// symlink that a previous task left behind. For a directory
+				// that isn't empty, return an error and let the caller handle
+				// it, since the caller may need to update its KnownInputs.
+				//
+				// TODO: nonempty directories should instead be removed, and all
+				// of the caller's KnownInputs should be updated.
+				if !onlyDownloadToFileCache && !parentCreated {
+					if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+						return err
+					}
 				}
 				dk := newFetchKey(d, node.IsExecutable)
 				f.filesToFetch[dk] = append(f.filesToFetch[dk], &FilePointer{
@@ -1883,12 +1940,19 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 					BitsetIndex:  bitsetIndex,
 				})
 				trackTransfersFn(relPath, node)
+				return nil
 			}(fileNode, parentDir)
+			if err != nil {
+				return err
+			}
 		}
 		for _, child := range dir.GetDirectories() {
 			newRoot := filepath.Join(parentDir, child.GetName())
+			childCreated := false
 			if !onlyDownloadToFileCache {
-				if err := treeWrangler.MkdirAll(ctx, newRoot, dirPerms); err != nil {
+				var err error
+				childCreated, err = treeWrangler.Mkdir(ctx, newRoot, dirPerms)
+				if err != nil {
 					return err
 				}
 			}
@@ -1902,7 +1966,7 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 				}
 				return digest.MissingDigestError(child.GetDigest())
 			}
-			if err := fetchDirFn(childDir, newRoot); err != nil {
+			if err := fetchDirFn(childDir, newRoot, childCreated); err != nil {
 				return err
 			}
 		}
@@ -1917,7 +1981,7 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 		return nil
 	}
 	// Create the directory structure and track files to download.
-	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], f.opts.RootDir); err != nil {
+	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], f.opts.RootDir, false /*=parentCreated*/); err != nil {
 		return nil, err
 	}
 

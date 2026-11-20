@@ -2405,3 +2405,46 @@ func TestTruncateStringSlice(t *testing.T) {
 		})
 	}
 }
+
+func TestReconnectFromDifferentOwnerDoesNotChangeInvocation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		options string
+	}{
+		{"different group", "--remote_header='" + authutil.APIKeyHeader + "=USER2'"},
+		{"anonymous", "--remote_upload_local_results"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
+			auth.NullAuthenticator = nullauth.NewNullAuthenticator(true /*anonymousUsageEnabled*/)
+			te.SetAuthenticator(auth)
+			iid := uuid.New().String()
+			handler := build_event_handler.NewBuildEventHandler(te)
+
+			channel, err := handler.OpenChannel(t.Context(), iid)
+			require.NoError(t, err)
+			defer channel.Close()
+			err = channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'"), iid, 1))
+			require.NoError(t, err)
+			before := &tables.Invocation{}
+			err = te.GetDBHandle().NewQuery(t.Context(), "test_get_invocation").Raw(`SELECT * FROM "Invocations" WHERE invocation_id = ?`, iid).Take(before)
+			require.NoError(t, err)
+
+			second, err := handler.OpenChannel(t.Context(), iid)
+			require.NoError(t, err)
+			defer second.Close()
+			err = second.HandleEvent(streamRequest(startedEvent(tc.options), iid, 1))
+			require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+			_ = second.FinalizeInvocation(iid)
+
+			after := &tables.Invocation{}
+			err = te.GetDBHandle().NewQuery(t.Context(), "test_get_invocation").Raw(`SELECT * FROM "Invocations" WHERE invocation_id = ?`, iid).Take(after)
+			require.NoError(t, err)
+			assert.Equal(t, "GROUP1", after.GroupID)
+			assert.Equal(t, "USER1", after.UserID)
+			assert.Equal(t, before.Perms, after.Perms)
+			assert.Equal(t, before.UpdatedAtUsec, after.UpdatedAtUsec)
+		})
+	}
+}
