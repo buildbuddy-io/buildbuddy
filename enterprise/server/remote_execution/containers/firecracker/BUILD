@@ -156,6 +156,7 @@ go_test(
     srcs = ["firecracker_test.go"],
     args = [
         "--executor.enable_remote_snapshot_sharing=true",
+        "--executor.firecracker_disable_ext4_journal=true",
         # Uncomment to test the 6.18 kernel.
         # TODO: turn this on by default once the 6.18 kernel is used everywhere
         # "--executor.firecracker_enable_linux_6_18=true",

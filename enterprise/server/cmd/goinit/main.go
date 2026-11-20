@@ -40,6 +40,7 @@ var (
 	path             = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort       = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
 	enableRootfs     = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
+	disableJournal   = flag.Bool("disable_ext4_journal", false, "If true, mount the rootfs and scratchfs disks without an ext4 journal.")
 	enableVFS        = flag.Bool("enable_vfs", false, "Whether to run the VFS client.")
 	debugMode        = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	enableLogging    = flag.Bool("enable_logging", false, "If true, output logs to the console. By default, only kernel logs are output to the console.")
@@ -262,7 +263,7 @@ func main() {
 		die(mount("tmpfs", "/mnt", "tmpfs", syscall.MS_NOSUID, "mode=0755"))
 	} else if *enableRootfs {
 		die(mkdirp("/mnt", 0755))
-		die(mount(rootDevice, "/mnt", "ext4", syscall.MS_NOATIME, ""))
+		die(mount(rootDevice, "/mnt", "ext4", syscall.MS_NOATIME, vmexec.Ext4MountData(*disableJournal)))
 		die(vmexec.ResizeExt4FS(rootDevice, "/mnt"))
 	} else {
 		// If rootfs is not enabled then set up an overlayfs with a readonly
@@ -270,7 +271,7 @@ func main() {
 		die(mkdirp("/container", 0755))
 		die(mount(containerDevice, "/container", "ext4", syscall.MS_RDONLY, ""))
 		die(mkdirp("/scratch", 0755))
-		die(mount(scratchDevice, "/scratch", "ext4", syscall.MS_RELATIME, ""))
+		die(mount(scratchDevice, "/scratch", "ext4", syscall.MS_RELATIME, vmexec.Ext4MountData(*disableJournal)))
 		die(mkdirp("/scratch/bbvmroot", 0755))
 		die(mkdirp("/scratch/bbvmwork", 0755))
 		die(mkdirp("/mnt", 0755))
