@@ -72,33 +72,34 @@ var (
 	partitionsFlag             = flag.Slice("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappingsFlag      = flag.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
-	backgroundRepairFrequency = flag.Duration("cache.pebble.background_repair_frequency", 1*24*time.Hour, "How frequently to run period background repair tasks.")
-	backgroundRepairQPSLimit  = flag.Int("cache.pebble.background_repair_qps_limit", 100, "QPS limit for background repair modifications.")
-	scanForMissingFiles       = flag.Bool("cache.pebble.scan_for_missing_files", false, "If set, scan all keys and check if external files are missing on disk. Deletes keys with missing files.")
-	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
-	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
-	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
-	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", -1, "Don't update atime if it was updated more recently than this. 0 updates atime on every access. If negative, use half of the smallest min_eviction_age across partitions, which keeps entries read at least once per min_eviction_age from being evicted, or 10m if that age is 0.")
-	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	numAtimeUpdateWorkers     = flag.Int("cache.pebble.num_atime_update_workers", DefaultNumAtimeUpdateWorkers, "How many threads to use to update atimes")
-	sampleBufferSize          = flag.Int("cache.pebble.sample_buffer_size", DefaultSampleBufferSize, "Buffer up to this many samples for eviction sampling")
-	deleteBufferSize          = flag.Int("cache.pebble.delete_buffer_size", DefaultDeleteBufferSize, "Buffer up to this many samples for eviction eviction")
-	numDeleteWorkers          = flag.Int("cache.pebble.num_delete_workers", DefaultNumDeleteWorkers, "Number of deletes in parallel")
-	samplesPerBatch           = flag.Int("cache.pebble.samples_per_batch", DefaultSamplesPerBatch, "How many keys we read forward every time we get a random key.")
-	samplerIterRefreshPeriod  = flag.Duration("cache.pebble.sampler_iter_refresh_peroid", DefaultSamplerIterRefreshPeriod, "How often we refresh iterator in sampler")
-	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long. May be overridden per-partition via the partition's min_eviction_age.")
-	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
-	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
-	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
-	deletesPerEviction        = flag.Int("cache.pebble.deletes_per_eviction", 10, "Maximum number keys to delete in one eviction attempt before resampling.")
-	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
-	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 2500, "Maximum number of entries to evict per second (per partition).")
-	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
-	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
-	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
-	groupSizeSampleRate       = flag.Float64("cache.pebble.group_size_sample_rate", .01, "Compute estimated size per-group in partitions by sampling at this rate.")
-	groupSizeSampleDecayRate  = flag.Float64("cache.pebble.group_size_sample_decay_rate", .95, "Constant factor used to decay away partition size estimates.")
-	maxOpenFiles              = flag.Int("cache.pebble.max_open_files", 32768, "Maximum number of open SST files in Pebble. Must be lower than the open fd limit for the process. The buildbuddy_remote_cache_pebble_cache_pebble_level_num_files metric can be used to observe the number of SST files in pebble at different levels.")
+	backgroundRepairFrequency     = flag.Duration("cache.pebble.background_repair_frequency", 1*24*time.Hour, "How frequently to run period background repair tasks.")
+	backgroundRepairQPSLimit      = flag.Int("cache.pebble.background_repair_qps_limit", 100, "QPS limit for background repair modifications.")
+	scanForMissingFiles           = flag.Bool("cache.pebble.scan_for_missing_files", false, "If set, scan all keys and check if external files are missing on disk. Deletes keys with missing files.")
+	scanForOrphanedFiles          = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
+	orphanDeleteDryRun            = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
+	dirDeletionDelay              = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
+	atimeUpdateThresholdFlag      = flag.Duration("cache.pebble.atime_update_threshold", -1, "Don't update atime if it was updated more recently than this. 0 updates atime on every access. If negative, use half of the smallest min_eviction_age across partitions, which keeps entries read at least once per min_eviction_age from being evicted, or 10m if that age is 0.")
+	atimeBufferSizeFlag           = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	numAtimeUpdateWorkers         = flag.Int("cache.pebble.num_atime_update_workers", DefaultNumAtimeUpdateWorkers, "How many threads to use to update atimes")
+	sampleBufferSize              = flag.Int("cache.pebble.sample_buffer_size", DefaultSampleBufferSize, "Buffer up to this many samples for eviction sampling")
+	deleteBufferSize              = flag.Int("cache.pebble.delete_buffer_size", DefaultDeleteBufferSize, "Buffer up to this many samples for eviction eviction")
+	numDeleteWorkers              = flag.Int("cache.pebble.num_delete_workers", DefaultNumDeleteWorkers, "Number of deletes in parallel")
+	samplesPerBatch               = flag.Int("cache.pebble.samples_per_batch", DefaultSamplesPerBatch, "How many keys we read forward every time we get a random key.")
+	samplerIterRefreshPeriod      = flag.Duration("cache.pebble.sampler_iter_refresh_peroid", DefaultSamplerIterRefreshPeriod, "How often we refresh iterator in sampler")
+	minEvictionAgeFlag            = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long. May be overridden per-partition via the partition's min_eviction_age.")
+	forceCompaction               = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
+	forceCalculateMetadata        = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
+	samplesPerEviction            = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
+	deletesPerEviction            = flag.Int("cache.pebble.deletes_per_eviction", 10, "Maximum number keys to delete in one eviction attempt before resampling.")
+	samplePoolSize                = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
+	evictionRateLimit             = flag.Int("cache.pebble.eviction_rate_limit", 2500, "Maximum number of entries to evict per second (per partition).")
+	includeMetadataSize           = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
+	enableTableBloomFilter        = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
+	enableAutoRatchet             = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to the version set by cache.pebble.auto_ratchet_format_major_version.")
+	autoRatchetFormatMajorVersion = flag.Uint64("cache.pebble.auto_ratchet_format_major_version", uint64(pebble.FormatVirtualSSTables), "The pebble format major version to upgrade to when auto ratchet is enabled. The default, 16 (FormatVirtualSSTables), is the newest format pebble v1 supports. Upgrades cannot be undone, and versions above 16 require pebble v2.")
+	groupSizeSampleRate           = flag.Float64("cache.pebble.group_size_sample_rate", .01, "Compute estimated size per-group in partitions by sampling at this rate.")
+	groupSizeSampleDecayRate      = flag.Float64("cache.pebble.group_size_sample_decay_rate", .95, "Constant factor used to decay away partition size estimates.")
+	maxOpenFiles                  = flag.Int("cache.pebble.max_open_files", 32768, "Maximum number of open SST files in Pebble. Must be lower than the open fd limit for the process. The buildbuddy_remote_cache_pebble_cache_pebble_level_num_files metric can be used to observe the number of SST files in pebble at different levels.")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
@@ -450,6 +451,10 @@ func validateOpts(opts *Options) error {
 	if opts.MaxSizeBytes == 0 {
 		return status.FailedPreconditionError("Pebble cache size must be greater than 0")
 	}
+	ratchetFormat := pebble.FormatMajorVersion(*autoRatchetFormatMajorVersion)
+	if opts.EnableAutoRatchet && (ratchetFormat < pebble.FormatMostCompatible || ratchetFormat > pebble.FormatNewest) {
+		return status.InvalidArgumentErrorf("misconfigured: auto_ratchet_format_major_version %d is outside the supported range [%s, %s]", *autoRatchetFormatMajorVersion, pebble.FormatMostCompatible, pebble.FormatNewest)
+	}
 
 	for _, p := range opts.Partitions {
 		if *p.EvictionThreshold <= 0 || *p.EvictionThreshold > 1 {
@@ -640,7 +645,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 		}
 	}
 	if pcOpts.EnableAutoRatchet {
-		opts.FormatMajorVersion = pebble.FormatNewest
+		opts.FormatMajorVersion = pebble.FormatMajorVersion(*autoRatchetFormatMajorVersion)
 	}
 
 	// The threshold of L0 read-amplification at which compaction concurrency
