@@ -86,11 +86,12 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return err
 	}
 
+	w := &grpcStreamWriter{stream: stream}
 	// Also check FailedPrecondition: cachetools.GetBlob wraps NotFound cache
 	// misses as FailedPrecondition via MissingDigestError.
-	if err := fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream}); err == nil {
+	if err := fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, w); err == nil {
 		return nil // local cache hit
-	} else if !status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err) {
+	} else if w.bytesSent > 0 || (!status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err)) {
 		return err
 	}
 
@@ -145,8 +146,28 @@ func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofp
 		log.CtxInfof(ctx, "FetchBlob singleflight waiter for %s, streaming from local BS", hash.Hex)
 	}
 
-	// Stream the blob from local BSS to the caller.
-	return fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})
+	w := &grpcStreamWriter{stream: stream}
+	if err := fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, w); err == nil {
+		return nil
+	} else if w.bytesSent > 0 || ctx.Err() != nil {
+		return err
+	}
+	remoteStream, err := s.remote.FetchBlob(ctx, req)
+	if err != nil {
+		return err
+	}
+	for {
+		resp, err := remoteStream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
 }
 
 // fetchBlobFromUpstreamToLocalBS fetches a blob from the upstream OCIFetcher
@@ -167,7 +188,13 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 	for {
 		resp, err := remoteStream.Recv()
 		if err == io.EOF {
-			return cacheWriter.Commit()
+			if err := cacheWriter.Commit(); err != nil {
+				return err
+			}
+			if cacheWriter.GetCommittedSize() == -1 {
+				log.CtxInfof(ctx, "Local BS upload reported AlreadyExists while committing blob %s", hash.Hex)
+			}
+			return nil
 		}
 		if err != nil {
 			return err
@@ -176,7 +203,7 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 		_, writeErr := cacheWriter.Write(resp.GetData())
 		if writeErr != nil {
 			if status.IsAlreadyExistsError(writeErr) {
-				// Blob was cached by another writer; we're done.
+				log.CtxInfof(ctx, "Local BS Write returned AlreadyExists for blob %s", hash.Hex)
 				return nil
 			}
 			return writeErr
@@ -207,12 +234,14 @@ func newLocalBSWriter(ctx context.Context, bsClient bspb.ByteStreamClient, hash 
 }
 
 type grpcStreamWriter struct {
-	stream ofpb.OCIFetcher_FetchBlobServer
+	stream    ofpb.OCIFetcher_FetchBlobServer
+	bytesSent int64
 }
 
 func (w *grpcStreamWriter) Write(p []byte) (int, error) {
 	if err := w.stream.Send(&ofpb.FetchBlobResponse{Data: p}); err != nil {
 		return 0, err
 	}
+	w.bytesSent += int64(len(p))
 	return len(p), nil
 }

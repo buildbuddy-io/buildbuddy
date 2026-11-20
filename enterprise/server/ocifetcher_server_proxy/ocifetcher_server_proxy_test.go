@@ -1,12 +1,14 @@
 package ocifetcher_server_proxy
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -17,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -989,4 +992,184 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 			}, counter.Snapshot()))
 		})
 	}
+}
+
+type unreadableBSClient struct {
+	bspb.ByteStreamClient
+	entered chan struct{}
+}
+
+func (c *unreadableBSClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	if c.entered != nil {
+		select {
+		case c.entered <- struct{}{}:
+		default:
+		}
+	}
+	return nil, status.NotFoundError("blob unavailable")
+}
+
+func (c *unreadableBSClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	return &alreadyExistsWriteClient{}, nil
+}
+
+type alreadyExistsWriteClient struct {
+	grpc.ClientStream
+}
+
+func (c *alreadyExistsWriteClient) Send(*bspb.WriteRequest) error {
+	return io.EOF
+}
+
+func (c *alreadyExistsWriteClient) CloseAndRecv() (*bspb.WriteResponse, error) {
+	return nil, status.AlreadyExistsError("blob exists")
+}
+
+func TestFetchBlob_UnreadableLocalCache(t *testing.T) {
+	testFetchBlobUnreadableLocalCache(t, 1)
+}
+
+func TestFetchBlob_UnreadableLocalCacheConcurrent(t *testing.T) {
+	testFetchBlobUnreadableLocalCache(t, 10)
+}
+
+func testFetchBlobUnreadableLocalCache(t *testing.T, numClients int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	layer := layers[0]
+	hash, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+	_, bsClient, acClient := setupCacheEnv(t)
+	remote := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	env := testenv.GetTestEnv(t)
+	entered := make(chan struct{}, numClients)
+	upstream := &gatedOCIFetcherClient{OCIFetcherClient: remote, entered: entered, callers: numClients}
+	env.SetOCIFetcherClient(upstream)
+	env.SetLocalByteStreamClient(&unreadableBSClient{entered: entered})
+	proxy, err := New(env)
+	require.NoError(t, err)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	ofpb.RegisterOCIFetcherServer(grpcServer, proxy)
+	go runFunc()
+	t.Cleanup(grpcServer.GracefulStop)
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := ofpb.NewOCIFetcherClient(conn)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	results := make([][]byte, numClients)
+	errs := make([]error, numClients)
+	for i := range numClients {
+		wg.Go(func() {
+			<-start
+			stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: imageName + "@" + hash.String()})
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			for {
+				resp, err := stream.Recv()
+				if err == io.EOF {
+					return
+				}
+				if err != nil {
+					errs[i] = err
+					return
+				}
+				results[i] = append(results[i], resp.GetData()...)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	if numClients > 1 {
+		require.Less(t, upstream.calls.Load(), int32(2*numClients), "expected at least one singleflight waiter")
+	}
+	for i := range numClients {
+		require.NoError(t, errs[i], "client %d", i)
+		require.Equal(t, expectedData, results[i], "client %d", i)
+	}
+}
+
+type gatedOCIFetcherClient struct {
+	ofpb.OCIFetcherClient
+	entered <-chan struct{}
+	callers int
+	calls   atomic.Int32
+}
+
+func (c *gatedOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	if c.calls.Add(1) == 1 {
+		for range c.callers {
+			select {
+			case <-c.entered:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+	return c.OCIFetcherClient.FetchBlob(ctx, req, opts...)
+}
+
+type partialReadBSClient struct {
+	unreadableBSClient
+	reads int
+	data  []byte
+}
+
+func (c *partialReadBSClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	c.reads++
+	if c.reads == 1 {
+		return nil, status.NotFoundError("blob unavailable")
+	}
+	return &partialReadClient{data: compression.CompressZstd(nil, c.data)}, nil
+}
+
+type partialReadClient struct {
+	grpc.ClientStream
+	data []byte
+}
+
+func (c *partialReadClient) Recv() (*bspb.ReadResponse, error) {
+	if c.data != nil {
+		data := c.data
+		c.data = nil
+		return &bspb.ReadResponse{Data: data}, nil
+	}
+	return nil, status.NotFoundError("local read interrupted")
+}
+
+type collectingBlobServer struct {
+	grpc.ServerStream
+	ctx  context.Context
+	data []byte
+}
+
+func (s *collectingBlobServer) Context() context.Context { return s.ctx }
+func (s *collectingBlobServer) Send(resp *ofpb.FetchBlobResponse) error {
+	s.data = append(s.data, resp.GetData()...)
+	return nil
+}
+
+func TestFetchBlob_PartialLocalRead(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	remote := &countingOCIFetcherClient{inner: &recordingOCIFetcherClient{}}
+	prefix := bytes.Repeat([]byte("partial"), 10000)
+	local := &partialReadBSClient{data: prefix}
+	env.SetOCIFetcherClient(remote)
+	env.SetLocalByteStreamClient(local)
+	proxy, err := New(env)
+	require.NoError(t, err)
+	stream := &collectingBlobServer{ctx: context.Background()}
+	err = proxy.FetchBlob(&ofpb.FetchBlobRequest{Ref: "example.com/image@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, stream)
+	require.Error(t, err)
+	require.Equal(t, prefix, stream.data)
+	require.Equal(t, int32(1), remote.fetchBlobCount.Load())
 }
