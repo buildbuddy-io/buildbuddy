@@ -24,6 +24,39 @@ func TestXcodeLocator(t *testing.T) {
 	}
 }
 
+func TestXcodeSDKs(t *testing.T) {
+	developerDir := "/Applications/Xcode.app/Contents/Developer"
+	sdkPaths := []string{
+		"Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS.sdk",
+		"Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+		"Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk",
+		"Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.sdk",
+		"Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk",
+		"Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.2.sdk",
+	}
+	xcrunPaths := map[string]string{
+		"MacOSX":          developerDir + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk",
+		"iPhoneSimulator": developerDir + "/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.2.sdk",
+	}
+	showSDKPath := func(dir, sdk string) (string, error) {
+		require.Equal(t, developerDir, dir)
+		if path, ok := xcrunPaths[sdk]; ok {
+			return path, nil
+		}
+		return "", fmt.Errorf("xcrun cannot find SDK %s", sdk)
+	}
+
+	require.Equal(t, map[string]string{
+		// xcrun failed, so the plain path stays.
+		"AppleTVOS":           developerDir + "/Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS.sdk",
+		"MacOSX":              developerDir + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk",
+		"MacOSX15.2":          developerDir + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk",
+		"MacOSX15":            developerDir + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.sdk",
+		"iPhoneSimulator":     developerDir + "/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.2.sdk",
+		"iPhoneSimulator18.2": developerDir + "/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.2.sdk",
+	}, xcodeSDKs(developerDir, sdkPaths, showSDKPath))
+}
+
 func TestVersions(t *testing.T) {
 	xl := xcodeLocator{}
 	require.Empty(t, xl.Versions())
