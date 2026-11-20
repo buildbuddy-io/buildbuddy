@@ -433,6 +433,18 @@ func TestCASHitTracker_AcceptsHitsWhileSplitOverflowIsPending(t *testing.T) {
 	require.Eventually(t, hitTrackerService.casDownloadExpectation(group1Key, 1), 10*time.Second, 100*time.Millisecond, "Expected 1 update for group 1")
 }
 
+func TestCASHitTracker_SendsTrustedJWTWithoutCachedAuthHeaders(t *testing.T) {
+	authenticator, hitTrackerFactory, hitTrackerService := setup(t)
+	ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
+	hitTracker := hitTrackerFactory.NewCASHitTracker(ctx, &repb.RequestMetadata{})
+	hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+
+	require.Eventually(t, func() bool {
+		return hitTrackerService.casDownloads[group1Key].Load()+hitTrackerService.casDownloads[anonKey].Load() == 1
+	}, 10*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(1), hitTrackerService.casDownloads[group1Key].Load())
+}
+
 // TestBatchAndSendAreSerialized exists for the race detector, which CI runs.
 // The batcher appends to a cacheHits while senders pop and read it, and both
 // must happen under HitTrackerFactory.mu. There is no per-cacheHits lock, so

@@ -3,6 +3,7 @@ package hit_tracker_client
 import (
 	"context"
 	"flag"
+	"maps"
 	"sync"
 	"time"
 
@@ -229,10 +230,22 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 		return
 	}
 
+	authHeaders := authutil.GetAuthHeaders(ctx)
+	// GetAuthHeaders only finds the JWT if the caller cached it with
+	// ContextWithCachedAuthHeaders, since it is not in outgoing metadata.
+	if _, ok := authHeaders[authutil.ContextTokenStringKey]; !ok {
+		if jwt := h.authenticator.TrustedJWTFromAuthContext(ctx); jwt != "" {
+			authHeaders = maps.Clone(authHeaders)
+			if authHeaders == nil {
+				authHeaders = map[string][]string{}
+			}
+			authHeaders[authutil.ContextTokenStringKey] = []string{jwt}
+		}
+	}
 	enqueuedHit := enqueuedCacheHit{
 		collection:  usageutil.CollectionFromRPCContext(ctx),
 		hit:         hit,
-		authHeaders: authutil.GetAuthHeaders(ctx),
+		authHeaders: authHeaders,
 	}
 
 	select {
