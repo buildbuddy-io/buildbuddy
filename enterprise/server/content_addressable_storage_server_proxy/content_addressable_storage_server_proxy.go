@@ -556,16 +556,41 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 
 	resp := &repb.GetTreeResponse{}
 	respSizeBytes := 0
+	var digestCounts [2]map[digest.Key]int
 	for ready := []*repb.Digest{req.RootDigest}; len(ready) > 0; {
 		firstEnd := getTreeBatchSize(ready)
 		secondEnd := firstEnd + getTreeBatchSize(ready[firstEnd:])
-		batches, err := s.readTreeBatches(ctx, req, ready[:firstEnd], ready[firstEnd:secondEnd])
+		readyBatches := [2][]*repb.Digest{ready[:firstEnd], ready[firstEnd:secondEnd]}
+		var hasDuplicates [2]bool
+		for i, batch := range readyBatches {
+			if len(batch) < 2 {
+				continue
+			}
+			if digestCounts[i] == nil {
+				digestCounts[i] = make(map[digest.Key]int)
+			}
+			counts := digestCounts[i]
+			clear(counts)
+			// Keep separate counts for each batch so every directory
+			// reference is represented even when both reads overlap.
+			unique := batch[:0]
+			for _, d := range batch {
+				key := digest.NewKey(d)
+				if counts[key] == 0 {
+					unique = append(unique, d)
+				}
+				counts[key]++
+			}
+			hasDuplicates[i] = len(unique) < len(batch)
+			readyBatches[i] = unique
+		}
+		batches, err := s.readTreeBatches(ctx, req, readyBatches)
 		if err != nil {
 			return err
 		}
 
 		ready = ready[secondEnd:]
-		for _, batch := range batches {
+		for i, batch := range batches {
 			for _, brbresp := range batch.GetResponses() {
 				blobStatus := brbresp.GetStatus()
 				if code := codes.Code(blobStatus.GetCode()); code != codes.OK {
@@ -582,18 +607,24 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 				// Include the tag and length prefix for this directory. A single
 				// directory cannot be split across responses.
 				dirSizeBytes := proto.Size(&repb.GetTreeResponse{Directories: []*repb.Directory{dir}})
-				if len(resp.Directories) > 0 && int64(respSizeBytes+dirSizeBytes) > rpcutil.GRPCMaxSizeBytes {
-					if err := stream.Send(resp); err != nil {
-						return err
-					}
-					resp = &repb.GetTreeResponse{}
-					respSizeBytes = 0
+				count := 1
+				if hasDuplicates[i] {
+					count = digestCounts[i][digest.NewKey(brbresp.GetDigest())]
 				}
+				for range count {
+					if len(resp.Directories) > 0 && int64(respSizeBytes+dirSizeBytes) > rpcutil.GRPCMaxSizeBytes {
+						if err := stream.Send(resp); err != nil {
+							return err
+						}
+						resp = &repb.GetTreeResponse{}
+						respSizeBytes = 0
+					}
 
-				resp.Directories = append(resp.Directories, dir)
-				respSizeBytes += dirSizeBytes
-				for _, subDir := range dir.Directories {
-					ready = append(ready, subDir.Digest)
+					resp.Directories = append(resp.Directories, dir)
+					respSizeBytes += dirSizeBytes
+					for _, subDir := range dir.Directories {
+						ready = append(ready, subDir.Digest)
+					}
 				}
 			}
 		}
@@ -616,7 +647,7 @@ func getTreeBatchSize(ready []*repb.Digest) int {
 	return len(ready)
 }
 
-func (s *CASServerProxy) readTreeBatches(ctx context.Context, req *repb.GetTreeRequest, first, second []*repb.Digest) ([2]*repb.BatchReadBlobsResponse, error) {
+func (s *CASServerProxy) readTreeBatches(ctx context.Context, req *repb.GetTreeRequest, batches [2][]*repb.Digest) ([2]*repb.BatchReadBlobsResponse, error) {
 	read := func(ctx context.Context, digests []*repb.Digest) (*repb.BatchReadBlobsResponse, error) {
 		return s.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
 			InstanceName:   req.InstanceName,
@@ -625,8 +656,8 @@ func (s *CASServerProxy) readTreeBatches(ctx context.Context, req *repb.GetTreeR
 		})
 	}
 	var responses [2]*repb.BatchReadBlobsResponse
-	if len(second) == 0 {
-		resp, err := read(ctx, first)
+	if len(batches[1]) == 0 {
+		resp, err := read(ctx, batches[0])
 		responses[0] = resp
 		return responses, err
 	}
@@ -634,7 +665,7 @@ func (s *CASServerProxy) readTreeBatches(ctx context.Context, req *repb.GetTreeR
 	// Overlap only two ready batches, and let the caller consume their
 	// responses in traversal order before reading another pair.
 	eg, readCtx := errgroup.WithContext(ctx)
-	for i, batch := range [2][]*repb.Digest{first, second} {
+	for i, batch := range batches {
 		eg.Go(func() error {
 			resp, err := read(readCtx, batch)
 			responses[i] = resp

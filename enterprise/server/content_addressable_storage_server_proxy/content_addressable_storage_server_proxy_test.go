@@ -634,7 +634,8 @@ func testGetTree(t *testing.T, withCaching bool) {
 		require.Equal(t, int32(1), streamRequests.Load())
 	}
 
-	// Write two subtrees to the proxy and a root node to the remote.
+	// Write two subtrees to the proxy and a root node to the remote. Reference
+	// one subtree twice to check that both copies appear in the response.
 	firstTreeRoot, firstTreeFiles := makeTree(ctx, bsProxy, t)
 	secondTreeRoot, secondTreeFiles := makeTree(ctx, bsProxy, t)
 	root := &repb.Directory{
@@ -644,13 +645,18 @@ func testGetTree(t *testing.T, withCaching bool) {
 				Digest: firstTreeRoot,
 			},
 			&repb.DirectoryNode{
+				Name:   "first-copy",
+				Digest: firstTreeRoot,
+			},
+			&repb.DirectoryNode{
 				Name:   "second",
 				Digest: secondTreeRoot,
 			},
 		},
 	}
 	rootDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, root)
-	files = []string{"first", "second"}
+	files = []string{"first", "first-copy", "second"}
+	files = append(files, firstTreeFiles...)
 	files = append(files, firstTreeFiles...)
 	files = append(files, secondTreeFiles...)
 	require.NoError(t, err)
@@ -866,9 +872,11 @@ func TestGetTreeWideLevel(t *testing.T) {
 	// Don't let the first child batch finish until the second is in flight.
 	// A serial read never unblocks it and the request deadline fails the test.
 	var readCount atomic.Int32
+	var requestedDigests atomic.Int32
 	secondChildBatch := make(chan struct{})
 	waitForOverlap := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if method == repb.ContentAddressableStorage_BatchReadBlobs_FullMethodName {
+			requestedDigests.Add(int32(len(req.(*repb.BatchReadBlobsRequest).GetDigests())))
 			switch readCount.Add(1) {
 			case 2: // first child batch
 				select {
@@ -895,7 +903,8 @@ func TestGetTreeWideLevel(t *testing.T) {
 	var expected []digest.Key
 	var levelSizeBytes int64
 	const filesPerDirectory = 6000
-	for i := range 8 {
+	const directoryCount = 8
+	for i := range directoryCount {
 		child := &repb.Directory{Files: make([]*repb.FileNode, 0, filesPerDirectory)}
 		for j := range filesPerDirectory {
 			child.Files = append(child.Files, &repb.FileNode{
@@ -912,6 +921,15 @@ func TestGetTreeWideLevel(t *testing.T) {
 			Digest: childDigest,
 		})
 		expected = append(expected, digest.NewKey(childDigest))
+		// Put a repeated digest in each of the two size-bounded batches.
+		if i == 0 || i == directoryCount-1 {
+			root.Directories = append(root.Directories, &repb.DirectoryNode{
+				Name:   fmt.Sprintf("directory-%02d-copy", i),
+				Digest: childDigest,
+			})
+			levelSizeBytes += childDigest.GetSizeBytes()
+			expected = append(expected, digest.NewKey(childDigest))
+		}
 	}
 	require.Greater(t, levelSizeBytes, rpcutil.GRPCMaxSizeBytes)
 	rootDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, root)
@@ -943,6 +961,7 @@ func TestGetTreeWideLevel(t *testing.T) {
 	}
 	require.ElementsMatch(t, expected, received)
 	require.Equal(t, int32(3), unaryRequests.Load())
+	require.Equal(t, int32(directoryCount+1), requestedDigests.Load())
 	require.Zero(t, streamRequests.Load())
 }
 
