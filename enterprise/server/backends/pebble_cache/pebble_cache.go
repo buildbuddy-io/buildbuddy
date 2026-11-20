@@ -315,6 +315,7 @@ type PebbleCache struct {
 	minGCSFileSizeBytes     int64
 	gcsTTLDays              int64
 	gcsAtimeUpdateThreshold time.Duration
+	gcsBucket               string
 	gcsBlobstore            filestore.PebbleGCSStorage
 
 	metrics struct {
@@ -777,6 +778,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
 		gcsAtimeUpdateThreshold:     *opts.GCSAtimeUpdateThreshold,
+		gcsBucket:                   opts.GCSBucket,
 		gcsBlobstore:                gcsBlobstore,
 		fileStorer:                  fileStorer,
 	}
@@ -2306,12 +2308,43 @@ func (p *PebbleCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (
 	// peer that resolves this reference.
 	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
 
-	return &refpb.Reference{Metadata: md}, nil
+	return p.newReference(md), nil
+}
+
+func (p *PebbleCache) newReference(md *sgpb.FileMetadata) *refpb.Reference {
+	fr := md.GetFileRecord()
+	ref := &refpb.Reference{
+		Metadata: md,
+		Resource: &rspb.ResourceName{
+			Digest:         fr.GetDigest().CloneVT(),
+			InstanceName:   fr.GetIsolation().GetRemoteInstanceName(),
+			Compressor:     fr.GetCompressor(),
+			CacheType:      fr.GetIsolation().GetCacheType(),
+			DigestFunction: fr.GetDigestFunction(),
+		},
+		StoredSizeBytes: md.GetStoredSizeBytes(),
+	}
+	if em := md.GetEncryptionMetadata(); em != nil {
+		ref.Encryption = &refpb.EncryptionInfo{
+			KeyId:   em.GetEncryptionKeyId(),
+			Version: em.GetVersion(),
+		}
+	}
+	if gcs := md.GetStorageMetadata().GetGcsMetadata(); gcs != nil {
+		ref.Gcs = &refpb.GCSLocation{
+			Bucket:             p.gcsBucket,
+			BlobName:           gcs.GetBlobName(),
+			LastCustomTimeUsec: gcs.GetLastCustomTimeUsec(),
+			Shared:             gcs.GetShared(),
+		}
+	}
+	return ref
 }
 
 type referenceWriter struct {
-	wc interfaces.CommittedWriteCloser
-	md *sgpb.FileMetadata
+	referencer func(md *sgpb.FileMetadata) *refpb.Reference
+	wc         interfaces.CommittedWriteCloser
+	md         *sgpb.FileMetadata
 }
 
 func (w *referenceWriter) Write(p []byte) (int, error) {
@@ -2326,7 +2359,7 @@ func (w *referenceWriter) Commit() (*refpb.Reference, error) {
 	if err := w.wc.Commit(); err != nil {
 		return nil, err
 	}
-	return &refpb.Reference{Metadata: w.md}, nil
+	return w.referencer(w.md), nil
 }
 
 func (p *PebbleCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
@@ -2357,7 +2390,7 @@ func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName)
 
 	// Commit only captures the blob's metadata instead of registering it in
 	// this cache.
-	rw := &referenceWriter{}
+	rw := &referenceWriter{referencer: p.newReference}
 	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, encryption, nil, func(md *sgpb.FileMetadata) error {
 		rw.md = md
 		return nil
