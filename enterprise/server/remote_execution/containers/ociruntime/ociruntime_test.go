@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"maps"
 	"math/rand/v2"
 	"os"
@@ -39,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -88,7 +88,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func setupNetworking(t *testing.T) {
+func setupNetworking(t testing.TB) {
 	err := networking.Configure(context.Background())
 	require.NoError(t, err)
 	testnetworking.Setup(t)
@@ -98,14 +98,14 @@ func setupNetworking(t *testing.T) {
 
 // Runs a test image registry and pushes an image from runfiles to it.
 // It returns a ref that can be used to pull the image.
-func serveImageFromRunfiles(t *testing.T, name, rlocationpath string) string {
+func serveImageFromRunfiles(t testing.TB, name, rlocationpath string) string {
 	registry := testregistry.Run(t, testregistry.Opts{})
 	image := testregistry.ImageFromRlocationpath(t, rlocationpath)
 	registry.Push(t, image, name, nil)
 	return registry.ImageAddress(name)
 }
 
-func busyboxImage(t *testing.T) string {
+func busyboxImage(t testing.TB) string {
 	return serveImageFromRunfiles(t, "busybox", busyboxImageRlocationpath)
 }
 
@@ -3733,6 +3733,80 @@ func TestTaskCPUControllerDisabled(t *testing.T) {
 			after, err := os.ReadFile(filepath.Join(parentPath, "cgroup.subtree_control"))
 			require.NoError(t, err)
 			require.Equal(t, string(before), string(after))
+		})
+	}
+}
+
+// BenchmarkPauseUnpause measures Pause and Unpause with different kinds of
+// processes left running in the container.
+func BenchmarkPauseUnpause(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+
+	setupNetworking(b)
+	image := busyboxImage(b)
+	ctx := b.Context()
+	env := testenv.GetTestEnv(b)
+	installLeaserInEnv(b, env)
+	installFileCacheInEnv(b, env)
+	flags.Set(b, "executor.oci.runtime_root", testfs.MakeTempDir(b))
+	buildRoot := testfs.MakeTempDir(b)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(b))
+	require.NoError(b, err)
+
+	for _, tc := range []struct {
+		name string
+		// script starts the background processes that are running in the
+		// container each time it is paused, in addition to the init process.
+		script string
+	}{
+		{name: "idle", script: ""},
+		{name: "writing_files", script: `for i in $(seq 4); do (while :; do dd if=/dev/zero of=out$i bs=1M count=16 2>/dev/null; done) & done`},
+		{name: "500_processes", script: `for i in $(seq 500); do sleep 1000000 & done`},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			wd := testfs.MakeDirAll(b, buildRoot, uuid.New())
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{ContainerImage: image, DockerNetwork: "off"}})
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, c.Remove(context.WithoutCancel(ctx))) })
+			require.NoError(b, c.PullImage(ctx, oci.Credentials{}))
+			require.NoError(b, c.Create(ctx, wd))
+			if tc.script != "" {
+				res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-c", tc.script}}, &interfaces.Stdio{})
+				require.NoError(b, res.Error)
+				require.Equal(b, 0, res.ExitCode, "stderr: %s", res.Stderr)
+			}
+
+			var pauseDurations, unpauseDurations []time.Duration
+			for b.Loop() {
+				start := time.Now()
+				err := c.Pause(ctx)
+				pauseDurations = append(pauseDurations, time.Since(start))
+				require.NoError(b, err)
+
+				start = time.Now()
+				err = c.Unpause(ctx)
+				unpauseDurations = append(unpauseDurations, time.Since(start))
+				require.NoError(b, err)
+
+				// Give the processes time to get back to what they were doing
+				// before pausing them again.
+				time.Sleep(2 * time.Millisecond)
+			}
+
+			b.ReportMetric(0, "ns/op")
+			for _, m := range []struct {
+				name      string
+				durations []time.Duration
+			}{
+				{name: "pause", durations: pauseDurations},
+				{name: "unpause", durations: unpauseDurations},
+			} {
+				slices.Sort(m.durations)
+				n := len(m.durations)
+				b.ReportMetric(float64(m.durations[n/2].Nanoseconds())/1e3, m.name+"-p50-us")
+				b.ReportMetric(float64(m.durations[n*99/100].Nanoseconds())/1e3, m.name+"-p99-us")
+			}
 		})
 	}
 }

@@ -59,7 +59,7 @@ type Registry struct {
 	creds  *BasicAuthCreds
 }
 
-func Run(t *testing.T, opts Opts) *Registry {
+func Run(t testing.TB, opts Opts) *Registry {
 	handler := registry.New()
 	if opts.Creds != nil {
 		creds := map[string]string{opts.Creds.Username: opts.Creds.Password}
@@ -126,7 +126,7 @@ func remoteOpts(creds *BasicAuthCreds) []remote.Option {
 	}
 }
 
-func (r *Registry) Push(t *testing.T, image ctr.Image, imageName string, creds *BasicAuthCreds) string {
+func (r *Registry) Push(t testing.TB, image ctr.Image, imageName string, creds *BasicAuthCreds) string {
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
@@ -244,7 +244,7 @@ func (r *Registry) Shutdown() error {
 // ImageFromRlocationpath returns an Image from an rlocationpath.
 // The rlocationpath should be set via x_defs in the BUILD file, and the
 // rlocationpath target should be an OCI image target (e.g. oci.pull)
-func ImageFromRlocationpath(t *testing.T, rlocationpath string) ctr.Image {
+func ImageFromRlocationpath(t testing.TB, rlocationpath string) ctr.Image {
 	indexPath, err := runfiles.Rlocation(rlocationpath)
 	require.NoError(t, err)
 	idx, err := layout.ImageIndexFromPath(indexPath)
