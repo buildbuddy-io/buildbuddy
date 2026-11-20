@@ -99,6 +99,29 @@
   user-select: none;
 }
 
+.organization-executor-result-setting {
+  position: relative;
+}
+
+.organization-executor-result-help summary {
+  cursor: pointer;
+  list-style: none;
+  vertical-align: middle;
+}
+
+.organization-executor-result-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.organization-executor-result-help .help-tooltip-content {
+  box-sizing: border-box;
+  position: absolute;
+  inset-inline-start: 0;
+  top: calc(100% + 4px);
+  width: 100%;
+  z-index: 1;
+}
+
 .base-button.organization-form-submit-button,
 .organization-join-page .yes-no-button,
 .organization-join-page .already-joined .button {

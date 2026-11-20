@@ -1,4 +1,4 @@
-import { Link } from "lucide-react";
+import { HelpCircle, Link } from "lucide-react";
 import React from "react";
 import authService from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
@@ -39,6 +39,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
       codeSearchEnabled: group.codeSearchEnabled,
       developerOrgCreationEnabled: group.developerOrgCreationEnabled,
       useGroupOwnedExecutors: group.useGroupOwnedExecutors,
+      trustExecutorActionResults: group.trustExecutorActionResults,
       suggestionPreference: group.suggestionPreference,
       restrictCleanWorkflowRunsToAdmins: group.restrictCleanWorkflowRunsToAdmins,
     });
@@ -49,7 +50,11 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
     return new grp.UpdateGroupRequest(values);
   }
   async submitRequest() {
-    await rpcService.service.updateGroup(this.state.request);
+    const request = this.newRequest(this.state.request);
+    if (request.trustExecutorActionResults === this.state.initialRequest.trustExecutorActionResults) {
+      delete request.trustExecutorActionResults;
+    }
+    await rpcService.service.updateGroup(request);
     await authService.refreshUser();
   }
 
@@ -86,6 +91,31 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
             </div>
           )}
           {this.renderFields()}
+          {capabilities.config.remoteExecutionEnabled && (
+            <div className="form-row organization-executor-result-setting">
+              <input
+                id="trustExecutorActionResults"
+                name="trustExecutorActionResults"
+                type="checkbox"
+                checked={this.state.request.trustExecutorActionResults ?? false}
+                onFocus={this.onFocus.bind(this)}
+                onChange={this.onChange.bind(this)}
+              />
+              <label htmlFor="trustExecutorActionResults" className="input-label">
+                Trust executor action results
+              </label>
+              <details className="organization-executor-result-help">
+                <summary className="help-tooltip" aria-label="About trusting executor action results">
+                  <HelpCircle className="help-tooltip-icon" aria-hidden="true" />
+                </summary>
+                <div className="help-tooltip-content">
+                  Successful, cacheable actions run on BuildBuddy-managed executors can be reused by other builds in
+                  this organization, even when the caller uses a CAS-only API key. Direct action-cache uploads still
+                  require write permission.
+                </div>
+              </details>
+            </div>
+          )}
           <FilledButton
             disabled={!this.state.dirty || this.state.submitting}
             type="submit"
