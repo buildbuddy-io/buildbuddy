@@ -3,6 +3,7 @@ package hit_tracker_service
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -17,8 +18,7 @@ import (
 )
 
 type HitTrackerService struct {
-	authenticator     interfaces.Authenticator
-	usageTracker      interfaces.UsageTracker
+	env               environment.Env
 	hitTrackerFactory interfaces.HitTrackerFactory
 }
 
@@ -27,8 +27,7 @@ func Register(env *real_environment.RealEnv) error {
 		return status.InvalidArgumentError("HitTrackerService requires a HitTrackerFactory")
 	}
 	env.SetHitTrackerServiceServer(&HitTrackerService{
-		authenticator:     env.GetAuthenticator(),
-		usageTracker:      env.GetUsageTracker(),
+		env:               env,
 		hitTrackerFactory: env.GetHitTrackerFactory(),
 	})
 	return nil
@@ -38,13 +37,16 @@ func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (
 	// When usage tracking would reject the caller, Record fails before
 	// recording anything, so skip it and log once instead of once per hit.
 	skipRecord := false
-	if _, err := h.authenticator.AuthenticatedUser(ctx); err != nil && h.usageTracker != nil && !(authutil.IsAnonymousUserError(err) && h.authenticator.AnonymousUsageEnabled(ctx)) {
-		skipRecord = true
-		peerAddr := "unknown"
-		if p, ok := peer.FromContext(ctx); ok {
-			peerAddr = p.Addr.String()
+	if h.env.GetUsageTracker() != nil {
+		authenticator := h.env.GetAuthenticator()
+		if _, err := authenticator.AuthenticatedUser(ctx); err != nil && !(authutil.IsAnonymousUserError(err) && authenticator.AnonymousUsageEnabled(ctx)) {
+			skipRecord = true
+			peerAddr := "unknown"
+			if p, ok := peer.FromContext(ctx); ok && p != nil && p.Addr != nil {
+				peerAddr = p.Addr.String()
+			}
+			log.CtxWarningf(ctx, "Not recording %d cache hits from server %q at %s: %s", len(req.GetHits()), req.GetServer(), peerAddr, err)
 		}
-		log.CtxWarningf(ctx, "Not recording %d cache hits from server %q at %s: %s", len(req.GetHits()), req.GetServer(), peerAddr, err)
 	}
 	for _, hit := range req.GetHits() {
 		var hitTracker interfaces.HitTracker

@@ -3,6 +3,7 @@ package hit_tracker_service_test
 import (
 	"bytes"
 	"context"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -365,9 +367,9 @@ func TestHitTrackerService_LogsOnceForUnauthenticatedRequest(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	env.SetAuthenticator(authenticator)
-	env.SetUsageTracker(unauthenticatedUsageTracker{})
 	hit_tracker.Register(env)
 	require.NoError(t, hit_tracker_service.Register(env))
+	env.SetUsageTracker(unauthenticatedUsageTracker{})
 
 	var logs bytes.Buffer
 	previousLogger := zlog.Logger
@@ -381,11 +383,14 @@ func TestHitTrackerService_LogsOnceForUnauthenticatedRequest(t *testing.T) {
 		CacheRequestType: capb.RequestType_READ,
 	}
 	ctx := authenticator.AuthContextFromAPIKey(context.Background(), "unknown-key")
+	ctx = peer.NewContext(ctx, &peer.Peer{Addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1234}})
 	_, err := env.GetHitTrackerServiceServer().Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit, hit, hit}, Server: "servicio"})
 	require.NoError(t, err)
 	lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
 	require.Len(t, lines, 1, logs.String())
 	require.Contains(t, lines[0], "3 cache hits")
+	require.Contains(t, lines[0], "servicio")
+	require.Contains(t, lines[0], "127.0.0.1:1234")
 }
 
 // Note: Can't use bazel_request.WithRequestMetadata here since it sets the

@@ -10,6 +10,7 @@ go_library(
         "//proto:cache_go_proto",
         "//proto:hit_tracker_go_proto",
         "//proto:resource_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/alert",
@@ -47,6 +48,7 @@ go_test(
         "@com_github_rs_zerolog//log",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//peer",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
