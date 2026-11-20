@@ -2,11 +2,13 @@ package target_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
@@ -21,6 +23,8 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
@@ -320,4 +324,54 @@ func makeInvocationID(char byte) (hex, ascii string) {
 	// Insert dashes for human-readable ASCII representation
 	ascii = hex[:8] + "-" + hex[8:12] + "-" + hex[12:16] + "-" + hex[16:20] + "-" + hex[20:]
 	return
+}
+
+func addTarget(idx *event_index.Index, label string, fileCount int) {
+	set := &bespb.NamedSetOfFiles{}
+	for i := range fileCount {
+		set.Files = append(set.Files, &bespb.File{
+			Name: fmt.Sprint(i),
+			File: &bespb.File_Uri{Uri: fmt.Sprintf("bytestream://cache/%s/%d", label, i)},
+		})
+	}
+	idx.AllTargetLabels = append(idx.AllTargetLabels, label)
+	idx.NamedSetOfFilesByID[label] = set
+	idx.TargetCompleteEventByLabel[label] = &bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+			Success: true,
+			OutputGroup: []*bespb.OutputGroup{{
+				FileSets: []*bespb.BuildEventId_NamedSetOfFilesId{{Id: label}},
+			}},
+		}},
+	}
+}
+
+func TestGetTarget_FileLimitKeepsPageToken(t *testing.T) {
+	// The first target alone exceeds the files soft limit, so the first page
+	// stops after it even though the group is smaller than a page.
+	idx := event_index.New()
+	addTarget(idx, "//pkg:a", 101)
+	addTarget(idx, "//pkg:b", 1)
+	inv := &inpb.Invocation{InvocationId: "iid", InvocationStatus: ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS}
+
+	listing := func(pageToken string) *trpb.TargetGroup {
+		rsp, err := target.GetTarget(context.Background(), nil, inv, idx, &trpb.GetTargetRequest{
+			InvocationId: "iid",
+			Status:       common.Status_STATUS_UNSPECIFIED.Enum(),
+			PageToken:    pageToken,
+		})
+		require.NoError(t, err)
+		require.Len(t, rsp.GetTargetGroups(), 1)
+		return rsp.GetTargetGroups()[0]
+	}
+
+	first := listing("")
+	require.Len(t, first.GetTargets(), 1)
+	require.Equal(t, "//pkg:a", first.GetTargets()[0].GetMetadata().GetLabel())
+	require.NotEmpty(t, first.GetNextPageToken(), "the targets after a page cut short by the file limit must stay reachable")
+
+	second := listing(first.GetNextPageToken())
+	require.Len(t, second.GetTargets(), 1)
+	require.Equal(t, "//pkg:b", second.GetTargets()[0].GetMetadata().GetLabel())
+	require.Empty(t, second.GetNextPageToken())
 }

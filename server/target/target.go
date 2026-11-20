@@ -294,8 +294,10 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 		// that the UI does every 3s. The client has to somehow deal with this
 		// overlap, which adds some complexity. So for now, we just return an
 		// empty page token whenever there is less than a single page of data
-		// available.
-		if g.TotalCount < page.Limit {
+		// available. Only a first page can overlap, and one cut short by
+		// targetFilesSoftLimit keeps its token, since the targets after it have
+		// not been returned yet.
+		if page.Offset == 0 && g.TotalCount < page.Limit && nextOffset >= g.TotalCount {
 			g.NextPageToken = ""
 		}
 	}

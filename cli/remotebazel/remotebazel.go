@@ -55,6 +55,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	bbflag "github.com/buildbuddy-io/buildbuddy/server/util/flag"
 )
 
@@ -858,29 +859,33 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 }
 
 func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]*bespb.File, error) {
-	childInRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID}})
-	if err != nil {
-		return nil, status.WrapErrorf(err, "get invocation %q", invocationID)
-	}
-
-	if len(childInRsp.GetInvocation()) < 1 {
-		return nil, fmt.Errorf("invocation %s not found", invocationID)
-	}
-	inv := childInRsp.GetInvocation()[0]
-
 	var outputs []*bespb.File
-	for _, g := range inv.TargetGroups {
-		// The `GetTarget` API only fetches file data for the general
-		// STATUS_UNSPECIFIED status. For other statuses, it only returns metadata.
-		if g.Status != cmnpb.Status_STATUS_UNSPECIFIED {
-			continue
+	pageToken := ""
+	for {
+		rsp, err := bbClient.GetTarget(ctx, &trpb.GetTargetRequest{
+			InvocationId: invocationID,
+			// STATUS_UNSPECIFIED selects the artifact listing, the only group
+			// with files. An unset status returns every group's metadata instead.
+			Status:    cmnpb.Status_STATUS_UNSPECIFIED.Enum(),
+			PageToken: pageToken,
+		})
+		if err != nil {
+			return nil, status.WrapErrorf(err, "get targets for invocation %q", invocationID)
 		}
-		for _, t := range g.Targets {
-			outputs = append(outputs, t.Files...)
+		if len(rsp.GetTargetGroups()) != 1 {
+			return nil, fmt.Errorf("expected one target group for invocation %q, got %d", invocationID, len(rsp.GetTargetGroups()))
 		}
+		g := rsp.GetTargetGroups()[0]
+		for _, t := range g.GetTargets() {
+			outputs = append(outputs, t.GetFiles()...)
+		}
+		// An invocation still being finalized can return an empty page with a
+		// token pointing back at the same offset.
+		if g.GetNextPageToken() == "" || len(g.GetTargets()) == 0 {
+			return outputs, nil
+		}
+		pageToken = g.GetNextPageToken()
 	}
-
-	return outputs, nil
 }
 
 func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
