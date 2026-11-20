@@ -343,7 +343,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 	return groupID, nil
 }
 
-func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, error) {
+func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group, options ...func(*interfaces.UpdateGroupOpts)) (string, error) {
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
@@ -389,6 +389,11 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 		return "", err
 	}
 
+	var opts interfaces.UpdateGroupOpts
+	for _, apply := range options {
+		apply(&opts)
+	}
+
 	err = d.h.NewQuery(ctx, "userdb_update_group").Raw(`
 		UPDATE "Groups" SET
 			name = ?,
@@ -403,6 +408,7 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 			cache_encryption_enabled = ?,
 			suggestion_preference = ?,
 			restrict_clean_workflow_runs_to_admins = ?,
+			trust_executor_action_results = COALESCE(?, trust_executor_action_results),
 			enforce_ip_rules = ?,
 			is_parent = ?,
 			saml_idp_metadata_url = ?
@@ -419,6 +425,7 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 		g.CacheEncryptionEnabled,
 		g.SuggestionPreference,
 		g.RestrictCleanWorkflowRunsToAdmins,
+		opts.TrustExecutorActionResults,
 		g.EnforceIPRules,
 		g.IsParent,
 		g.SamlIdpMetadataUrl,

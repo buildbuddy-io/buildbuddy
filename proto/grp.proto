@@ -131,6 +131,10 @@ message Group {
 
   // The status of the group.
   GroupStatus status = 21;
+
+  // Whether results from trusted remote executors can populate the action cache
+  // when the caller does not have action cache write access.
+  bool trust_executor_action_results = 22;
 }
 
 message JoinGroupRequest {
@@ -363,6 +367,10 @@ message UpdateGroupRequest {
 
   // Whether to enable codesearch.
   bool code_search_enabled = 13;
+
+  // Whether to cache action results from trusted remote executors. If omitted,
+  // leave the current setting unchanged.
+  optional bool trust_executor_action_results = 14;
 }
 
 message UpdateGroupResponse {

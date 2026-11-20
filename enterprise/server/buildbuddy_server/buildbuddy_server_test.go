@@ -25,6 +25,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
@@ -379,6 +380,77 @@ func TestCreateGroup_Allowed(t *testing.T) {
 				expectedGroups++
 			}
 			require.Len(t, user.Groups, expectedGroups)
+		})
+	}
+}
+
+func TestUpdateGroup_TrustExecutorActionResults(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	ctx := t.Context()
+	const domain = "executor-results.test"
+	admin := enterprise_testauth.CreateRandomUser(t, te, domain)
+	adminCtx := authUserCtx(ctx, te, t, admin.UserID)
+	group := getGroup(t, adminCtx, te).Group
+	requestContext := &ctxpb.RequestContext{GroupId: group.GroupID}
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	// Enable domain auto-join to give the second user membership but not admin rights.
+	update := &grpb.UpdateGroupRequest{
+		RequestContext:              requestContext,
+		Name:                        "Executor result settings",
+		UrlIdentifier:               "executor-results",
+		AutoPopulateFromOwnedDomain: true,
+	}
+	_, err = server.UpdateGroup(adminCtx, update)
+	require.NoError(t, err)
+	user := enterprise_testauth.CreateRandomUser(t, te, domain)
+	userCtx := authUserCtx(ctx, te, t, user.UserID)
+	require.Equal(t, group.GroupID, getGroup(t, userCtx, te).Group.GroupID)
+	update.TrustExecutorActionResults = new(true)
+	_, err = server.UpdateGroup(userCtx, update)
+	require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+
+	readback := &uspb.GetUserRequest{RequestContext: requestContext}
+	resp, err := server.GetUser(adminCtx, readback)
+	require.NoError(t, err)
+	require.Len(t, resp.GetUserGroup(), 1)
+	require.Equal(t, group.GroupID, resp.GetUserGroup()[0].GetId())
+	require.False(t, resp.GetUserGroup()[0].GetTrustExecutorActionResults())
+
+	for _, tc := range []struct {
+		name  string
+		trust *bool
+		want  bool
+	}{
+		{
+			name:  "enable",
+			trust: new(true),
+			want:  true,
+		},
+		{
+			name: "omit from an unrelated update",
+			want: true,
+		},
+		{
+			name:  "disable",
+			trust: new(false),
+			want:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			update.Name = tc.name
+			update.TrustExecutorActionResults = tc.trust
+			_, err := server.UpdateGroup(adminCtx, update)
+			require.NoError(t, err)
+			resp, err := server.GetUser(adminCtx, readback)
+			require.NoError(t, err)
+			require.Len(t, resp.GetUserGroup(), 1)
+			require.Equal(t, tc.name, resp.GetUserGroup()[0].GetName())
+			require.Equal(t, tc.want, resp.GetUserGroup()[0].GetTrustExecutorActionResults())
 		})
 	}
 }

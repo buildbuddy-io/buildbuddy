@@ -621,6 +621,11 @@ type GetUserOpts struct {
 	DirectMembershipsOnly bool
 }
 
+type UpdateGroupOpts struct {
+	// Leave nil to preserve the setting in the database.
+	TrustExecutorActionResults *bool
+}
+
 type UserDB interface {
 	// User API
 	InsertUser(ctx context.Context, u *tables.User) error
@@ -655,7 +660,7 @@ type UserDB interface {
 	// CreateGroup creates a new group, adds the authenticated user to it,
 	// and creates an initial API key for the group.
 	CreateGroup(ctx context.Context, g *tables.Group) (string, error)
-	UpdateGroup(ctx context.Context, g *tables.Group) (string, error)
+	UpdateGroup(ctx context.Context, g *tables.Group, options ...func(*UpdateGroupOpts)) (string, error)
 	UpdateGroupStatus(ctx context.Context, groupID string, status grpb.Group_GroupStatus) error
 	// UpdateGroupSamlIdpMetadataUrl updates the group's SAML IdP metadata URL.
 	// An empty URL disables SSO for the group. Restricted to server admins.
