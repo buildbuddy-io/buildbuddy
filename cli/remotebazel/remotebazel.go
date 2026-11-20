@@ -3,10 +3,12 @@ package remotebazel
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"os/exec"
@@ -14,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -36,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
@@ -92,6 +96,7 @@ var (
 	remoteHeaders           = bbflag.New(RemoteFlagset, "remote_run_header", []string{}, "Remote headers to be applied to the execution request for the remote run. Can be used to set platform properties containing secrets (Ex. --remote_run_header=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE). Can be specified more than once.")
 	runRemotely             = RemoteFlagset.Bool("run_remotely", true, "For `run` commands, whether the target should be run remotely. If false, the target will be built remotely, and then fetched and run locally.")
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
+	forwardLocalCredentials = RemoteFlagset.Bool("forward_local_credentials", false, "Whether to look up git credentials for the repo's host in the local netrc file ($NETRC or ~/.netrc) and send them to the remote runner to fetch the repo. Cannot be combined with --use_system_git_credentials.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	gitFetchURL             = RemoteFlagset.String("git_fetch_url", "", "The URL the remote runner should fetch the git repo from. Defaults to the fetch URL of the git remote. Useful for non-interactive runs if there are multiple fetch URLs configured.")
@@ -1110,6 +1115,47 @@ func sensitiveEnvValues(envVars map[string]string) []string {
 	return redact.CollectSensitiveEnvValues(environ)
 }
 
+// localRepoCredentials returns the git username and access token for repoURL's
+// host from the local netrc file. It returns empty credentials if the repo
+// credentials are already set with --env, or if the netrc file has no entry for
+// the host.
+func localRepoCredentials(repoURL string, envVars map[string]string) (user, token string, err error) {
+	if envVars["REPO_TOKEN"] != "" {
+		log.Debugf("REPO_TOKEN is set with --env; not reading credentials from netrc")
+		return "", "", nil
+	}
+	u, err := git.NormalizeRepoURL(repoURL)
+	if err != nil {
+		return "", "", status.InvalidArgumentErrorf("parse repo URL %q: %s", redactedRepoURL(repoURL), err)
+	}
+	host := u.Hostname()
+	creds, err := lookupNetrc(host)
+	if err != nil {
+		return "", "", status.UnavailableErrorf("read netrc: %s", err)
+	}
+	if creds == nil || creds.password == "" {
+		log.Warnf("--forward_local_credentials is set, but no netrc credentials were found for %q", host)
+		return "", "", nil
+	}
+	log.Debugf("Forwarding netrc credentials for %q to the remote runner", host)
+	return creds.login, creds.password, nil
+}
+
+// secretEnvOverridesHeader returns a remote header that sets the given env vars
+// on the remote runner as secrets, so that their values are redacted from logs.
+// Values are base64-encoded so they may contain commas. Empty values are
+// skipped.
+func secretEnvOverridesHeader(envVars map[string]string) string {
+	var encoded []string
+	for _, name := range slices.Sorted(maps.Keys(envVars)) {
+		if envVars[name] == "" {
+			continue
+		}
+		encoded = append(encoded, base64.StdEncoding.EncodeToString([]byte(name+"="+envVars[name])))
+	}
+	return platform.OverrideHeaderPrefix + platform.SecretEnvOverridesBase64PropertyName + "=" + strings.Join(encoded, ",")
+}
+
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
 	env := real_environment.NewBatchEnv()
 
@@ -1157,6 +1203,23 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars["USE_SYSTEM_GIT_CREDENTIALS"] = "1"
 	}
 
+	headers := slices.Clone(*remoteHeaders)
+	if *forwardLocalCredentials {
+		if *useSystemGitCredentials {
+			return 1, status.InvalidArgumentError("--forward_local_credentials cannot be combined with --use_system_git_credentials")
+		}
+		repoUser, repoToken, err := localRepoCredentials(repoConfig.URL, envVars)
+		if err != nil {
+			return 1, err
+		}
+		if repoToken != "" {
+			headers = append(headers, secretEnvOverridesHeader(map[string]string{
+				"REPO_USER":  repoUser,
+				"REPO_TOKEN": repoToken,
+			}))
+		}
+	}
+
 	platform, err := rexec.MakePlatform(*execPropsFlag...)
 	if err != nil {
 		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
@@ -1200,7 +1263,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		ContainerImage: *containerImage,
 		Env:            envVars,
 		ExecProperties: platform.Properties,
-		RemoteHeaders:  *remoteHeaders,
+		RemoteHeaders:  headers,
 		RunRemotely:    *runRemotely,
 		// In order to detect and notify on retry, this client will implement
 		// retry behavior itself. Direct the server to not retry.
