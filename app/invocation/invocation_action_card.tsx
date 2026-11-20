@@ -120,6 +120,7 @@ interface State {
   executionDownloads: cache.ExecutionDownload[];
   executionDownloadsLoading: boolean;
   executionDownloadsNextPageToken: string;
+  executionDownloadsNotFound: boolean;
 
   isExecutionLogLoading: boolean;
   allowLoadingLargeExecutionLog: boolean;
@@ -149,6 +150,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     executionDownloads: [],
     executionDownloadsLoading: false,
     executionDownloadsNextPageToken: "",
+    executionDownloadsNotFound: false,
     isExecutionLogLoading: false,
     allowLoadingLargeExecutionLog: false,
   };
@@ -542,12 +544,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
         executionDownloads: [],
         executionDownloadsLoading: false,
         executionDownloadsNextPageToken: "",
+        executionDownloadsNotFound: false,
       });
       return;
     }
 
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
-    this.setState({ executionDownloadsLoading: true });
+    this.setState({ executionDownloadsLoading: true, executionDownloadsNotFound: false });
     if (!pageToken) {
       this.setState({ executionDownloads: [] });
     }
@@ -567,6 +570,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       })
       .catch((e) => {
         const error = BuildBuddyError.parse(e);
+        const notFound = error.code === "NotFound";
+        this.setState({ executionDownloadsNextPageToken: "", executionDownloadsNotFound: notFound });
+        if (notFound) return;
+
         // If we're fetching a subsequent page, surface the error loudly (since
         // the user is actively trying to fetch); otherwise silently log it.
         if (pageToken) {
@@ -574,9 +581,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
         } else {
           console.error(e);
         }
-        // Clear the page token so we don't keep trying to fetch pages after we
-        // hit an error.
-        this.setState({ executionDownloadsNextPageToken: "" });
       })
       .finally(() => {
         // Mark the RPC done, and then check whether we need to fetch the next
@@ -972,7 +976,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
         cache misses, {format.count(ioStats.localCacheHits ?? 0)} cache hits)
       </div>
     );
-    if (!fetchSummary && !this.state.executionDownloadsLoading && !this.state.executionDownloads.length) {
+    if (
+      !fetchSummary &&
+      !this.state.executionDownloadsLoading &&
+      !this.state.executionDownloads.length &&
+      !this.state.executionDownloadsNotFound
+    ) {
       return null;
     }
     return (
@@ -1042,6 +1051,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
               </div>
             </>
           ) : null}
+          {this.state.executionDownloadsNotFound && (
+            <div className="action-downloads-empty">
+              Fetched input details not found. They may have expired from the cache.
+            </div>
+          )}
         </div>
       </>
     );
@@ -1878,6 +1892,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
               <div>
                 <div className="action-line">
                   <div className="action-title">Result details</div>
+                  {!this.state.actionResult?.executionMetadata && this.state.executionDownloadsNotFound && (
+                    <div className="action-section">{this.renderExecutionDownloads()}</div>
+                  )}
                   {this.state.actionResult ? (
                     <div>
                       <div className="action-section">
