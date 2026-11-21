@@ -40,6 +40,13 @@ common --execution_log_compact_file=%workspace%/bazel_compact_exec_log.binpb.zst
 # When using --remote_downloader, fallback to local downloads if it fails
 common --experimental_remote_downloader_local_fallback
 
+# Limit the environment inherited by repository rules and module extensions.
+common --experimental_strict_repo_env
+# rules_docker looks for the Docker client configuration when pulling base images.
+common --repo_env=HOME
+common:linux --repo_env=PATH=/usr/bin:/bin
+common:macos --repo_env=PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin
+
 # Disable https://github.com/aspect-build/tools_telemetry.
 common --repo_env=DO_NOT_TRACK=1
 
