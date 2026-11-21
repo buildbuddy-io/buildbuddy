@@ -73,6 +73,16 @@
   flex-shrink: 0;
 }
 
+.tap.flakes .tap-header-left-section {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tap.flakes .tap-header-left-section > * {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
 .tap .target-controls {
   display: flex;
   gap: 16px;
@@ -100,10 +110,22 @@
   justify-content: space-between;
 }
 
+.tap.flakes .tap-header > .controls {
+  /* Keep right-anchored popups clear of the sidebar when the controls wrap. */
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .tap-title {
   font-size: 32px;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+.tap .flakes-target-label {
+  margin-top: 16px;
+  font-size: 20px;
+  overflow-wrap: anywhere;
 }
 
 .tap .tabs {
