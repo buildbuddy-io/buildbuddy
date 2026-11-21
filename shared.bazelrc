@@ -42,6 +42,8 @@ common --experimental_remote_downloader_local_fallback
 
 # Limit the environment inherited by repository rules and module extensions.
 common --experimental_strict_repo_env
+# rules_docker looks for the Docker client configuration when pulling base images.
+common --repo_env=HOME
 common:linux --repo_env=PATH=/usr/bin:/bin
 common:macos --repo_env=PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin
 
