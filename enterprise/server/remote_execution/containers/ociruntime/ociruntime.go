@@ -517,11 +517,13 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cdiRegistry:    p.cdiRegistry,
 		seccompProfile: seccompProfile,
 
-		blockDevice:        args.BlockDevice,
-		cgroupParent:       args.CgroupParent,
-		cgroupSettings:     &scpb.CgroupSettings{},
-		imageRef:           args.Props.ContainerImage,
-		networkEnabled:     networkMode != "off",
+		blockDevice:    args.BlockDevice,
+		cgroupParent:   args.CgroupParent,
+		cgroupSettings: &scpb.CgroupSettings{},
+		imageRef:       args.Props.ContainerImage,
+		// GetEffectiveDockerNetwork maps network=off to "none", but
+		// dockerNetwork and executor.oci.default_network_mode can supply "off".
+		networkEnabled:     networkMode != "off" && networkMode != "none",
 		userspaceNetwork:   execution_experiments.UserspaceNetworking.Get(ctx),
 		enableIPv6:         args.Props.NetworkEnableIPv6,
 		isPersistentWorker: args.Props.PersistentWorkerKey != "",
