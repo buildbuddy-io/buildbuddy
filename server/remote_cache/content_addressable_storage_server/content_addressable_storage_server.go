@@ -707,7 +707,9 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 	return nil
 }
 
-func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.Context, treeCacheRN *digest.ResourceName) ([]*capb.DirectoryWithDigest, int, error) {
+// readTreeCacheContents reads a TreeCache blob and its split children, and
+// returns all of their directories and the number of bytes read.
+func (s *ContentAddressableStorageServer) readTreeCacheContents(ctx context.Context, treeCacheRN *digest.ResourceName) ([]*capb.DirectoryWithDigest, int, error) {
 	if buf, err := s.cache.Get(ctx, treeCacheRN.ToProto()); err == nil {
 		treeCache := &capb.TreeCache{}
 		if err := proto.Unmarshal(buf, treeCache); err == nil {
@@ -719,7 +721,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.
 				for _, childTreeCache := range treeCache.GetTreeCacheChildren() {
 					childRN := digest.ResourceNameFromProto(childTreeCache)
 					eg.Go(func() error {
-						extraKids, extraBytes, err := s.lookupCachedTreeNodeInCAS(egCtx, childRN)
+						extraKids, extraBytes, err := s.readTreeCacheContents(egCtx, childRN)
 						if err != nil {
 							if status.IsNotFoundError(err) {
 								metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
@@ -769,9 +771,9 @@ func worthSendingAsDigest(dirCount int) bool {
 	return dirCount >= *getTreeSubtreeMinDirCount
 }
 
-// checkCachedTreeNode verifies that the blobs of a cached tree exist without
-// reading them: pointers and blobs are evicted independently.
-func (s *ContentAddressableStorageServer) checkCachedTreeNode(ctx context.Context, treeCacheRN *digest.ResourceName, meta *capb.TreeCachePointerMetadata) error {
+// checkTreeCacheBlobsExist checks that a TreeCache blob and its split children
+// exist without reading them: pointers and blobs are evicted independently.
+func (s *ContentAddressableStorageServer) checkTreeCacheBlobsExist(ctx context.Context, treeCacheRN *digest.ResourceName, meta *capb.TreeCachePointerMetadata) error {
 	if !*enableTreeCacheSplitting && len(meta.GetTreeCacheChildren()) > 0 {
 		return status.NotFoundErrorf("tree-cache-not-found")
 	}
@@ -811,13 +813,23 @@ func (s *ContentAddressableStorageServer) readTreeCachePointer(ctx context.Conte
 	return treeCacheRN, meta, nil
 }
 
-// readCachedTreeNode returns the cached tree that a tree cache pointer refers
-// to, and the number of bytes read. digestAllowed is whether the tree may be
-// sent as a digest; skipAllowed is whether its contents may then go unread.
-func (s *ContentAddressableStorageServer) readCachedTreeNode(ctx context.Context, treeCachePointer *digest.ResourceName, digestAllowed, skipAllowed bool) (*treeCacheHit, int, error) {
+// lookupCachedTreeNode returns the cached tree that a tree cache pointer refers
+// to, or a NotFoundError. The hit is sent to the client as a digest only if
+// digestAllowed, and its contents are left unread only if it is sent as a
+// digest and skipAllowed.
+func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, digestAllowed, skipAllowed bool) (*treeCacheHit, error) {
+	levelLabel := fmt.Sprintf("%d", min(level, 12))
+	miss := func() (*treeCacheHit, error) {
+		metrics.TreeCacheLookupCount.With(prometheus.Labels{
+			metrics.TreeCacheLookupStatus: "miss",
+			metrics.TreeCacheLookupLevel:  levelLabel,
+		}).Inc()
+		return nil, status.NotFoundErrorf("tree-cache-not-found")
+	}
+
 	treeCacheRN, meta, err := s.readTreeCachePointer(ctx, treeCachePointer)
 	if err != nil {
-		return nil, 0, err
+		return miss()
 	}
 	hit := &treeCacheHit{rn: treeCacheRN}
 	bytesRead := 0
@@ -826,41 +838,23 @@ func (s *ContentAddressableStorageServer) readCachedTreeNode(ctx context.Context
 	// older servers do. Older pointers have no dir count.
 	readFirst := meta == nil || !skipAllowed
 	if readFirst {
-		hit.dirs, bytesRead, err = s.lookupCachedTreeNodeInCAS(ctx, treeCacheRN)
-		if err != nil {
-			return nil, 0, err
+		if hit.dirs, bytesRead, err = s.readTreeCacheContents(ctx, treeCacheRN); err != nil {
+			return miss()
 		}
 		dirCount = len(hit.dirs)
 	}
 	hit.sendAsDigest = digestAllowed && worthSendingAsDigest(dirCount)
 	if !readFirst {
 		if hit.sendAsDigest {
-			err = s.checkCachedTreeNode(ctx, treeCacheRN, meta)
+			err = s.checkTreeCacheBlobsExist(ctx, treeCacheRN, meta)
 		} else {
-			hit.dirs, bytesRead, err = s.lookupCachedTreeNodeInCAS(ctx, treeCacheRN)
+			hit.dirs, bytesRead, err = s.readTreeCacheContents(ctx, treeCacheRN)
 		}
 		if err != nil {
-			return nil, 0, err
+			return miss()
 		}
 	}
-	return hit, bytesRead, nil
-}
 
-// Given a resource name for the AC pointer to a cached tree, this returns the
-// cached tree and a direct pointer to its location in the CAS.  If the tree
-// isn't found, a NotFoundError is returned instead. See readCachedTreeNode for
-// digestAllowed and skipAllowed.
-func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, digestAllowed, skipAllowed bool) (*treeCacheHit, error) {
-	levelLabel := fmt.Sprintf("%d", min(level, 12))
-
-	hit, bytesRead, err := s.readCachedTreeNode(ctx, treeCachePointer, digestAllowed, skipAllowed)
-	if err != nil {
-		metrics.TreeCacheLookupCount.With(prometheus.Labels{
-			metrics.TreeCacheLookupStatus: "miss",
-			metrics.TreeCacheLookupLevel:  levelLabel,
-		}).Inc()
-		return nil, status.NotFoundErrorf("tree-cache-not-found")
-	}
 	metrics.TreeCacheLookupCount.With(prometheus.Labels{
 		metrics.TreeCacheLookupStatus: "hit",
 		metrics.TreeCacheLookupLevel:  levelLabel,
