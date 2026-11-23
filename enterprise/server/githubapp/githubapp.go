@@ -1118,6 +1118,15 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 }
 
 func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
+	templateURL := ""
+	if req.Template != "" {
+		var err error
+		templateURL, err = normalizeTemplateURL(req.Template)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -1160,7 +1169,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	// If we have a template, copy the template contents to the new repo
 	if req.Template != "" {
 		tmpDirName := fmt.Sprintf("template-repo-%d-%s-*", req.InstallationId, req.Name)
-		err = cloneTemplate(tu.Email, tmpDirName, token, req.Template, repoURL+".git", req.TemplateDirectory, req.DestinationDirectory, req.TemplateVariables, !req.SkipRepo)
+		err = cloneTemplate(tu.Email, tmpDirName, token, templateURL, repoURL+".git", req.TemplateDirectory, req.DestinationDirectory, req.TemplateVariables, !req.SkipRepo)
 		if err != nil {
 			return nil, err
 		}
@@ -1181,6 +1190,14 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	return &rppb.CreateRepoResponse{
 		RepoUrl: repoURL,
 	}, nil
+}
+
+func normalizeTemplateURL(templateURL string) (string, error) {
+	repoURL, err := gitutil.ParseGitHubRepoURL(templateURL)
+	if err != nil || repoURL.Scheme != "https" || repoURL.Host == "" {
+		return "", status.InvalidArgumentError("template must be a GitHub repository URL")
+	}
+	return repoURL.String(), nil
 }
 
 // TODO(siggisim): consider moving template cloning to a remote action if it causes us troubles doing this on apps.
