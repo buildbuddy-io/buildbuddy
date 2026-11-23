@@ -130,7 +130,11 @@ message ReadResponse {
   // If set, this response carries no data and is the only response on the
   // stream: the client should read the resource from the referenced location.
   // Servers only send references to storage that the client advertised it can
-  // read in the request's `cache_capabilities`.
+  // read in the request's `cache_capabilities`, and only for reads of the
+  // whole resource (`read_offset` and `read_limit` both 0). The stored bytes
+  // are encoded with `reference.resource.compressor`, which may differ from
+  // the compressor in the requested resource name, so the client must
+  // transcode them as needed.
   reference.Reference reference = 11;
 }
 

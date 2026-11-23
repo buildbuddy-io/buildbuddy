@@ -57,6 +57,7 @@ go_test(
         "//enterprise/server/experiments",
         "//enterprise/server/util/proxy_util",
         "//proto:bytestream_go_proto",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
