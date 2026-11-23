@@ -231,7 +231,7 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	_, err = r.Run(ctx, &rnpb.RunRequest{
 		GitRepo:       &gitpb.GitRepo{RepoUrl: "sample"},
 		RepoState:     &gitpb.RepoState{Branch: "test"},
-		RemoteHeaders: []string{"x-buildbuddy-platform.env-overrides=PWD=supersecret,USERNAME=bb"},
+		RemoteHeaders: []string{"x-buildbuddy-platform=env-overrides=PWD=supersecret,USERNAME=bb"},
 		Steps:         []*rnpb.Step{{Run: "test-val"}},
 	})
 	require.NoError(t, err)
@@ -240,7 +240,7 @@ func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	require.Equal(t, 1, len(execClient.executeRequests))
 	execReq := execClient.executeRequests[0]
-	envOverridesMetadata := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	envOverridesMetadata := execReq.Metadata.Get(platform.DeprecatedOverrideHeaderPrefix + platform.EnvOverridesPropertyName)
 	require.Greater(t, len(envOverridesMetadata), 0)
 	// If a platform property is specified multiple times, the latest value is applied.
 	// Check that value to simulate what would actually be applied.
@@ -487,7 +487,7 @@ func TestRun_GitCredentialsFromEnv(t *testing.T) {
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	require.Equal(t, 1, len(execClient.executeRequests))
 	execReq := execClient.executeRequests[0]
-	overrides := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	overrides := execReq.Metadata.Get(platform.DeprecatedOverrideHeaderPrefix + platform.EnvOverridesPropertyName)
 	require.Greater(t, len(overrides), 0)
 	require.Contains(t, overrides[len(overrides)-1], "REPO_USER=user,REPO_TOKEN=token")
 	for _, ev := range getExecution(t, ctx, te, execReq.Payload).Command.GetEnvironmentVariables() {
