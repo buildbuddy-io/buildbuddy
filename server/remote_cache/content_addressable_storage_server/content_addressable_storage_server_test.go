@@ -709,7 +709,6 @@ func NestForTest(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClie
 
 func TestGetTreeCachingWithSplitting(t *testing.T) {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
-	flags.Set(t, "cache.tree_cache_splitting", true)
 	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
 
 	instanceName := ""

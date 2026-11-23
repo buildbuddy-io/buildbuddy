@@ -57,7 +57,6 @@ var (
 	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", .01, "Write to the tree cache with this probability")
-	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", true, "If true, try to split up TreeCache entries to save space.")
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
 	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
 	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 10, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
@@ -698,11 +697,6 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.
 	if buf, err := s.cache.Get(ctx, treeCacheRN.ToProto()); err == nil {
 		treeCache := &capb.TreeCache{}
 		if err := proto.Unmarshal(buf, treeCache); err == nil {
-			if !*enableTreeCacheSplitting && len(treeCache.GetTreeCacheChildren()) > 0 {
-				// Don't return split trees if splitting is disabled.
-				return nil, 0, status.NotFoundErrorf("tree-cache-not-found")
-			}
-
 			// If we split out any directories, we need to also fetch all of those.
 			bytesRead := len(buf)
 			if len(treeCache.GetTreeCacheChildren()) > 0 {
@@ -1100,7 +1094,7 @@ func isEligibleForSplitting(dir *capb.DirectoryWithDigest, name string, fch File
 	if digest.IsEmptyHash(rn.GetDigest(), rn.GetDigestFunction()) {
 		return false
 	}
-	return *enableTreeCacheSplitting && name == "node_modules" && fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()) > int64(*treeCacheSplittingMinSize)
+	return name == "node_modules" && fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()) > int64(*treeCacheSplittingMinSize)
 }
 
 func makeTreeCacheFromSubtree(root *capb.DirectoryWithDigest, allDigests map[string]*capb.DirectoryWithDigest) (*capb.TreeCache, error) {
@@ -1141,9 +1135,6 @@ func makeTreeCacheFromSubtree(root *capb.DirectoryWithDigest, allDigests map[str
 }
 
 func splitTree(rootDir *capb.DirectoryWithDigest, cache *capb.TreeCache) (*capb.TreeCache, []*capb.TreeCache, error) {
-	if !*enableTreeCacheSplitting {
-		return cache, nil, nil
-	}
 	allDigests := make(map[string]*capb.DirectoryWithDigest, len(cache.GetChildren()))
 	counter := directory_size.NewDirectorySizeCounter(rootDir.GetResourceName().GetDigestFunction())
 	for _, child := range cache.GetChildren() {
