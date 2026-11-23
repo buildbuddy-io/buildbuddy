@@ -4050,7 +4050,7 @@ func (c *referenceMemoryCache) makeReference(r *rspb.ResourceName, name string, 
 				Compressor:     repb.Compressor_IDENTITY,
 			},
 			StorageMetadata: &sgpb.StorageMetadata{
-				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{BlobName: name},
+				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{BlobName: name, LastCustomTimeUsec: time.Now().UnixMicro()},
 			},
 			StoredSizeBytes: sizeBytes,
 		},
@@ -4062,7 +4062,7 @@ func (c *referenceMemoryCache) makeReference(r *rspb.ResourceName, name string, 
 			DigestFunction: r.GetDigestFunction(),
 		},
 		StoredSizeBytes: sizeBytes,
-		Gcs:             &refpb.GCSLocation{BlobName: name},
+		Gcs:             &refpb.GCSLocation{BlobName: name, LastCustomTimeUsec: time.Now().UnixMicro()},
 	}
 }
 
@@ -4075,6 +4075,9 @@ func (c *referenceMemoryCache) Writer(ctx context.Context, r *rspb.ResourceName)
 }
 
 func (c *referenceMemoryCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+	if !c.IsReferenceable(ctx, r) {
+		return nil, status.NotFoundError("not stored as a reference")
+	}
 	name := testBlobName(r)
 	data, ok := c.store.get(name)
 	if !ok {
@@ -4147,6 +4150,9 @@ func (c *referenceMemoryCache) Dereference(ctx context.Context, ref *refpb.Refer
 func (c *referenceMemoryCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
 	if ref.GetGcs().GetShared() != ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetShared() {
 		return status.InternalError("reference has mismatched shared flags")
+	}
+	if ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetLastCustomTimeUsec() == 0 {
+		return status.NotFoundError("backing object may have expired")
 	}
 	data, ok := c.store.get(ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
 	if !ok {
@@ -5019,4 +5025,111 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 	caches[nonReplica].mu.Lock()
 	require.Zero(t, caches[nonReplica].lookups[rn.GetDigest().GetHash()])
 	caches[nonReplica].mu.Unlock()
+}
+
+func TestWriteReference(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+	setReferenceExperiments(t, map[string]bool{
+		"distributed_cache.read_gcs_references":  true,
+		"distributed_cache.share_gcs_references": false,
+	})
+	store := &sharedBlobStore{blobs: map[string][]byte{}}
+	var peers []string
+	for range 3 {
+		peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+	}
+	var dcs []*Cache
+	var locals []*referenceMemoryCache
+	for _, peer := range peers {
+		local := &referenceMemoryCache{Cache: newMemoryCache(t, 1_000_000), store: store, minReferenceableSizeBytes: 50}
+		dcs = append(dcs, startNewDCache(t, env, Options{
+			ReplicationFactor:  3,
+			Nodes:              slices.Clone(peers),
+			DisableLocalLookup: true,
+			ListenAddr:         peer,
+		}, local))
+		locals = append(locals, local)
+	}
+	for _, peer := range peers {
+		waitForReady(t, peer)
+	}
+	totals := func() (refWrites, refWritesCloned int) {
+		for _, l := range locals {
+			byteCommits, r, rc := l.counts()
+			require.Equal(t, 0, byteCommits)
+			refWrites += r
+			refWritesCloned += rc
+		}
+		return
+	}
+	var refCache interfaces.ReferenceCache = dcs[0]
+
+	// A client staged the blob itself and only describes it with the scoped
+	// reference fields. One peer takes the blob over and the others clone it.
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	store.put(testBlobName(rn), buf)
+	ref := &refpb.Reference{
+		Resource:        rn,
+		StoredSizeBytes: int64(len(buf)),
+		Gcs:             &refpb.GCSLocation{BlobName: testBlobName(rn)},
+	}
+	err = refCache.WriteReference(ctx, ref, rn, false /*=mustClone*/)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+	ref.Gcs.LastCustomTimeUsec = time.Now().UnixMicro()
+	require.NoError(t, refCache.WriteReference(ctx, ref, rn, false /*=mustClone*/))
+	require.Nil(t, ref.GetMetadata(), "the caller's reference should not be modified")
+	refWrites, refWritesCloned := totals()
+	require.Equal(t, 3, refWrites)
+	require.Equal(t, 2, refWritesCloned)
+	for _, dc := range dcs {
+		readAndCompareDigest(t, ctx, dc, rn)
+	}
+
+	// The written resource can be read back as a reference and dereferenced.
+	require.True(t, refCache.IsReferenceable(ctx, rn))
+	gotRef, err := refCache.ReadReference(ctx, rn)
+	require.NoError(t, err)
+	rc, err := refCache.Dereference(ctx, gotRef, rn, 0, 0)
+	require.NoError(t, err)
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.NoError(t, rc.Close())
+	require.Equal(t, buf, got)
+
+	// If the caller keeps its blob, every peer clones it.
+	rn2, buf2 := testdigest.RandomCASResourceBuf(t, 100)
+	store.put("client/blob2", buf2)
+	ref2 := &refpb.Reference{
+		Resource:        rn2,
+		StoredSizeBytes: int64(len(buf2)),
+		Gcs:             &refpb.GCSLocation{BlobName: "client/blob2", LastCustomTimeUsec: time.Now().UnixMicro()},
+	}
+	require.NoError(t, refCache.WriteReference(ctx, ref2, rn2, true /*=mustClone*/))
+	refWrites, refWritesCloned = totals()
+	require.Equal(t, 6, refWrites)
+	require.Equal(t, 5, refWritesCloned)
+
+	// A blob the peers hold as bytes has no reference, and the first peer
+	// to answer with bytes settles that.
+	smallRN, smallBuf := testdigest.RandomCASResourceBuf(t, 10)
+	require.NoError(t, dcs[0].Set(ctx, smallRN, smallBuf))
+	_, err = refCache.ReadReference(ctx, smallRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+	require.Contains(t, err.Error(), "is not stored as a reference")
+
+	// A cache whose local cache can't store references rejects them.
+	plainPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	plain := startNewDCache(t, env, Options{
+		ReplicationFactor: 1,
+		Nodes:             []string{plainPeer},
+		ListenAddr:        plainPeer,
+	}, newMemoryCache(t, 1_000_000))
+	require.False(t, plain.IsReferenceable(ctx, rn))
+	err = plain.WriteReference(ctx, ref, rn, false /*=mustClone*/)
+	require.True(t, status.IsUnimplementedError(err), "expected Unimplemented, got %v", err)
+	_, err = plain.ReadReference(ctx, rn)
+	require.True(t, status.IsUnimplementedError(err), "expected Unimplemented, got %v", err)
 }
