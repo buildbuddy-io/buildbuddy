@@ -489,7 +489,7 @@ func TestRun_GitTokenFromSecrets(t *testing.T) {
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	require.Len(t, execClient.executeRequests, 1)
 	execReq := execClient.executeRequests[0]
-	overrides := execReq.Metadata.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+	overrides := execReq.Metadata.Get(platform.DeprecatedOverrideHeaderPrefix + platform.EnvOverridesPropertyName)
 	require.NotEmpty(t, overrides)
 	for _, override := range overrides {
 		require.NotContains(t, override, "REPO_TOKEN=")
