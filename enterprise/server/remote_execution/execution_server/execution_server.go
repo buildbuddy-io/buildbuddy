@@ -700,14 +700,14 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	return executionProto, nil
 }
 
-func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string) {
+func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string, cmd *repb.Command) {
 	execution, err := s.flushExecutionToOLAP(ctx, taskID)
 	if err != nil {
 		log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
 	}
 	if execution != nil {
 		// TODO(vanja) should this be done when the executor got a cache hit?
-		if err := s.updateUsageFromStoredExecution(ctx, execution); err != nil {
+		if err := s.updateUsageAndQuotaFromStoredExecution(ctx, execution, cmd); err != nil {
 			log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
 		}
 	}
@@ -956,6 +956,24 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if !opts.teedRequest {
 		if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
 			return nil, status.UnavailableErrorf("link execution to invocation: %s", err)
+		}
+	}
+
+	// Check quota *after* insertExecution and insertInvocationLink so that we can mark the execution failed and
+	// surface the quota error in the UI.
+	if !pool.IsSelfHosted {
+		if qm := s.env.GetQuotaManager(); qm != nil {
+			// Usage isn't known until completion, so check without consuming
+			// quota here and record actual usage afterwards.
+			if platform.IsCIRunnerCommand(command) {
+				if err := qm.Allow(ctx, quota.RemoteRunnerComputeNamespace, 0, enableWorkflowsQuota.Get(ctx)); err != nil {
+					return nil, err
+				}
+			} else {
+				if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos), 0, false /* force */); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 
@@ -1278,16 +1296,6 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
 	if op == action_merger.New {
 		log.CtxDebugf(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
-
-		// Check CPU time quota before dispatching execution. Usage isn't known
-		// until the execution completes, so do a read-only check here and
-		// record the actual usage afterwards.
-		if qm := s.env.GetQuotaManager(); qm != nil {
-			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			if err := qm.Allow(ctx, namespace, 0, false /* force */); err != nil {
-				return err
-			}
-		}
 
 		if err := s.Dispatch(ctx, req, action, executionID); err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
@@ -1661,7 +1669,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		op, err := stream.Recv()
 		if err == io.EOF {
 			if flushExecutionsOnEOF {
-				s.flushAndRecordUsage(ctx, taskID)
+				s.flushAndRecordUsage(ctx, taskID, cmd)
 			}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
@@ -1998,14 +2006,11 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	return lastErr
 }
 
-// updateUsageFromStoredExecution records usage counters from a merged
+// updateUsageAndQuotaFromStoredExecution records usage and quota from a merged
 // StoredExecution read out of Redis by flushExecutionToOLAP.
-func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, execution *repb.StoredExecution) error {
-	ut := s.env.GetUsageTracker()
-	if ut == nil {
-		return nil
-	}
-	dur, err := executionDurationFromStored(execution)
+// If cmd is unavailable on a retried stream, quota recording is skipped.
+func (s *ExecutionServer) updateUsageAndQuotaFromStoredExecution(ctx context.Context, execution *repb.StoredExecution, cmd *repb.Command) error {
+	executionDuration, err := executionDurationFromStored(execution)
 	if err != nil {
 		// If the task encountered an error, it's somewhat expected that the
 		// execution duration will be unset, so don't return an error. For
@@ -2020,20 +2025,38 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 	}
 
 	counts := &tables.UsageCounts{}
-	setExecutionDuration(counts, dur, execution.GetSelfHosted(), execution.GetOs())
-	if !execution.GetSelfHosted() && execution.GetCpuNanos() > 0 {
-		counts.CPUNanos = execution.GetCpuNanos()
+	setExecutionDuration(counts, executionDuration, execution.GetSelfHosted(), execution.GetOs())
+	if !execution.GetSelfHosted() {
+		if execution.GetCpuNanos() > 0 {
+			counts.CPUNanos = execution.GetCpuNanos()
+		}
 
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
-			withinQuota, err := qm.RecordUsage(ctx, namespace, counts.CPUNanos, false /* force */)
-			if err != nil {
-				log.CtxWarningf(ctx, "Failed to record CPU time quota usage: %s", err)
-			} else if !withinQuota {
-				log.CtxInfof(ctx, "CPU time quota exhausted after execution")
+			quantity := counts.CPUNanos
+			force := false
+			if platform.IsCIRunnerCommand(cmd) {
+				// The merged StoredExecution includes snapshot saving, so charge execution
+				// and pause time together.
+				totalDuration := executionDuration + time.Duration(max(execution.GetPauseDurationUsec(), 0))*time.Microsecond
+				namespace = quota.RemoteRunnerComputeNamespace
+				quantity = int64(fixedComputeUnits(execution) * float64(totalDuration.Nanoseconds()))
+				force = enableWorkflowsQuota.Get(ctx)
+			}
+			if quantity > 0 {
+				withinQuota, err := qm.RecordUsage(ctx, namespace, quantity, force)
+				if err != nil {
+					log.CtxWarningf(ctx, "Failed to record execution quota usage for %q: %s", namespace, err)
+				} else if !withinQuota {
+					log.CtxInfof(ctx, "Execution quota %q exhausted after execution", namespace)
+				}
 			}
 		}
+	}
+	ut := s.env.GetUsageTracker()
+	if ut == nil {
+		return nil
 	}
 	labels, olapLabels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
 	if err != nil {
@@ -2044,7 +2067,7 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 		log.CtxWarningf(ctx, "Failed to increment usage: %s", err)
 		lastErr = err
 	}
-	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, execution, dur); err != nil {
+	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, execution, executionDuration); err != nil {
 		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
 		lastErr = err
 	}
@@ -2067,12 +2090,7 @@ func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker
 	}
 	if isolationLabel == string(platform.FirecrackerContainerType) || execution.GetRequestedComputeUnits() > 0 {
 		// Fixed compute
-		computeUnits := max(
-			execution.GetRequestedComputeUnits(),
-			tasksize.CpuComputeUnits(execution.GetRequestedMilliCpu()),
-			tasksize.MemoryComputeUnits(execution.GetRequestedMemoryBytes()),
-			tasksize.DiskComputeUnits(execution.GetRequestedFreeDiskBytes()),
-		)
+		computeUnits := fixedComputeUnits(execution)
 		executionCounts[sku.RemoteExecutionExecuteFixedComputeNanos] = int64(computeUnits * float64(duration.Nanoseconds()))
 	} else {
 		// Flexible compute
@@ -2091,6 +2109,15 @@ func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker
 		executionCounts[sku.RemoteExecutionExecuteLocalSnapshotSavedBytes] = execution.GetSnapshotSavedBytes()
 	}
 	return ut.IncrementOLAP(ctx, executionLabels, executionCounts)
+}
+
+func fixedComputeUnits(execution *repb.StoredExecution) float64 {
+	return max(
+		execution.GetRequestedComputeUnits(),
+		tasksize.CpuComputeUnits(execution.GetRequestedMilliCpu()),
+		tasksize.MemoryComputeUnits(execution.GetRequestedMemoryBytes()),
+		tasksize.DiskComputeUnits(execution.GetRequestedFreeDiskBytes()),
+	)
 }
 
 func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, error) {
