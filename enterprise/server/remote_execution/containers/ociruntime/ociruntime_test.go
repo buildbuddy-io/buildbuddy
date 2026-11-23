@@ -1289,6 +1289,7 @@ func TestNetworking(t *testing.T) {
 	for _, tc := range []struct {
 		name                       string
 		defaultNetworkFlag         string
+		networkProp                string
 		dockerNetworkProp          string
 		userspaceNetworking        bool
 		expectExternalConnectivity bool
@@ -1301,6 +1302,15 @@ func TestNetworking(t *testing.T) {
 			name:                       "enabled explicitly via prop",
 			dockerNetworkProp:          "bridge",
 			expectExternalConnectivity: true,
+		},
+		{
+			name:              "disabled via network prop overrides dockerNetwork",
+			networkProp:       "off",
+			dockerNetworkProp: "bridge",
+		},
+		{
+			name:              "disabled via dockerNetwork none",
+			dockerNetworkProp: "none",
 		},
 		{
 			name:                       "disabled via flag",
@@ -1349,6 +1359,7 @@ func TestNetworking(t *testing.T) {
 			c, err := provider.New(ctx, &container.Init{
 				Props: &platform.Properties{
 					ContainerImage: image,
+					Network:        tc.networkProp,
 					DockerNetwork:  tc.dockerNetworkProp,
 				},
 				Task: &repb.ScheduledTask{ExecutionTask: &repb.ExecutionTask{}},
