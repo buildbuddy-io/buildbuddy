@@ -539,6 +539,7 @@ func TestRunnerPool_DefaultImageInPlatform(t *testing.T) {
 			})
 			pool := newRunnerPool(t, env, cfg)
 			r := mustGetNewRunner(t, ctx, pool, newTask())
+			assert.Equal(t, "gcr.io/default:v1", r.Metadata().GetContainerImage())
 			mustAddWithoutEviction(t, ctx, pool, r)
 			// Only with the experiment is the runner reused for a task that
 			// explicitly requests the default image.
