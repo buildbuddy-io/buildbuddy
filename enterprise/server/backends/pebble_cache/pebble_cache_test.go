@@ -3204,7 +3204,7 @@ func TestRatchetDB(t *testing.T) {
 	require.NoError(t, err)
 	desc, err := pebble.Peek(rootDir, vfs.Default)
 	require.NoError(t, err)
-	require.Equal(t, pebble.FormatNewest, desc.FormatMajorVersion, "db should be ratcheted to the newest format")
+	require.Equal(t, pebble.FormatVirtualSSTables, desc.FormatMajorVersion, "db should be ratcheted to the default auto-ratchet format")
 }
 
 func TestGCSBlobStorage(t *testing.T) {
