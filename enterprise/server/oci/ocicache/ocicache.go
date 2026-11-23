@@ -3,6 +3,7 @@ package ocicache
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -114,8 +115,25 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 		manifestMiss(ctx, repo, hash, originalRef)
 		return nil, status.InternalErrorf("missing OCIManifestContent in auxiliary metadata for manifest %s@%s", repo, hash)
 	}
+	if err := verifyManifestDigest(mc.GetRaw(), hash); err != nil {
+		log.CtxWarningf(ctx, "Ignoring cached manifest %s@%s: %s", repo, hash, err)
+		manifestMiss(ctx, repo, hash, originalRef)
+		return nil, status.NotFoundErrorf("cached manifest %s@%s does not match its digest", repo, hash)
+	}
 	manifestHit(ctx, repo, hash, originalRef)
 	return mc, nil
+}
+
+func verifyManifestDigest(raw []byte, hash ctr.Hash) error {
+	h, err := ctr.Hasher(hash.Algorithm)
+	if err != nil {
+		return status.InvalidArgumentErrorf("manifest digest %s: %s", hash, err)
+	}
+	h.Write(raw)
+	if got := hex.EncodeToString(h.Sum(nil)); got != hash.Hex {
+		return status.DataLossErrorf("manifest content hashes to %s:%s, expected %s", hash.Algorithm, got, hash)
+	}
+	return nil
 }
 
 func manifestACKey(repo ctrname.Repository, refhash ctr.Hash) (*digest.ACResourceName, error) {

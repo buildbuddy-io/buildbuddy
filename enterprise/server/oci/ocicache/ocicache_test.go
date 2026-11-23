@@ -3,6 +3,8 @@ package ocicache_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha512"
+	"encoding/hex"
 	"io"
 	"testing"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
@@ -536,4 +539,40 @@ func TestNewBlobFetchKey_DifferentDigestsDifferentKeys(t *testing.T) {
 	key1 := ocicache.NewBlobFetchKey(repo, mustHash(t, testDigest1), creds)
 	key2 := ocicache.NewBlobFetchKey(repo, mustHash(t, testDigest2), creds)
 	require.NotEqual(t, key1, key2, "different digests must produce different keys")
+}
+
+func TestFetchManifestFromAC_IgnoresBytesNotMatchingDigest(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+	acClient := te.GetActionCacheClient()
+	ref, err := ctrname.ParseReference("buildbuddy.io/manifest_digest_mismatch")
+	require.NoError(t, err)
+
+	imageA, err := crane.Image(map[string][]byte{"/a": []byte("a")})
+	require.NoError(t, err)
+	imageB, err := crane.Image(map[string][]byte{"/b": []byte("b")})
+	require.NoError(t, err)
+	rawA, err := imageA.RawManifest()
+	require.NoError(t, err)
+	rawB, err := imageB.RawManifest()
+	require.NoError(t, err)
+	sha256A, err := imageA.Digest()
+	require.NoError(t, err)
+	sum := sha512.Sum512(rawA)
+	sha512A := ctr.Hash{Algorithm: "sha512", Hex: hex.EncodeToString(sum[:])}
+
+	for _, hash := range []ctr.Hash{sha256A, sha512A} {
+		t.Run(hash.Algorithm, func(t *testing.T) {
+			err := ocicache.WriteManifestToAC(ctx, rawB, acClient, ref.Context(), hash, "application/json", ref)
+			require.NoError(t, err)
+			_, err = ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash, ref)
+			require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+			err = ocicache.WriteManifestToAC(ctx, rawA, acClient, ref.Context(), hash, "application/json", ref)
+			require.NoError(t, err)
+			mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash, ref)
+			require.NoError(t, err)
+			require.Equal(t, rawA, mc.GetRaw())
+		})
+	}
 }
