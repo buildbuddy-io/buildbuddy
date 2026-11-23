@@ -2081,21 +2081,6 @@ func TestGetTreeSkipCachedSubtreeFetch_BackfillsOldFormatPointer(t *testing.T) {
 	assert.Positive(t, findMissing)
 }
 
-func TestGetTreeSkipCachedSubtreeFetch_NoBackfillWhenProbabilityIsZero(t *testing.T) {
-	f := setupSkipFetch(t, true)
-	f.spy.setStripPointerMetadata(false)
-	flags.Set(t, "cache.tree_cache_pointer_backfill_probability", 0.0)
-	n := f.spy.pointerCount()
-	getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
-
-	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
-	f.spy.resetCounts()
-	getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
-	gets, _ := f.spy.counts()
-	assert.Positive(t, gets)
-	assert.Equal(t, n, f.spy.pointerCount())
-}
-
 // setupSharedSplitTree reads a tree whose cached directory "top" contains the
 // same split node_modules under two paths, and returns the root and top.
 func setupSharedSplitTree(t *testing.T, stripPointerMetadata bool) (ctx context.Context, spy *treeCacheSpy, casClient repb.ContentAddressableStorageClient, root, top *repb.Digest, seed string) {

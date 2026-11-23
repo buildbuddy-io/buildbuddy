@@ -1357,6 +1357,15 @@ var (
 		TreeCacheSetStatus,
 	})
 
+	TreeCachePointerBackfillCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "tree_cache_pointer_backfill_count",
+		Help:      "Total number of TreeCache pointers rewritten to add metadata, by status: success/error.",
+	}, []string{
+		TreeCacheSetStatus,
+	})
+
 	TreeCacheBytesTransferred = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",

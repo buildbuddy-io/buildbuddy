@@ -830,7 +830,15 @@ func (s *ContentAddressableStorageServer) backfillTreeCachePointer(ctx context.C
 	if err != nil {
 		return err
 	}
-	return s.cache.Set(ctx, treeCachePointer.ToProto(), pointerBuf)
+	err = s.cache.Set(ctx, treeCachePointer.ToProto(), pointerBuf)
+	setStatus := "success"
+	if err != nil {
+		setStatus = "error"
+	}
+	metrics.TreeCachePointerBackfillCount.With(prometheus.Labels{
+		metrics.TreeCacheSetStatus: setStatus,
+	}).Inc()
+	return err
 }
 
 // lookupCachedTreeNode returns the cached tree that a tree cache pointer refers
