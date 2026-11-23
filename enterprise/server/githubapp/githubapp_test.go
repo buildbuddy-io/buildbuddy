@@ -88,6 +88,68 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	return te, ctx
 }
 
+func TestNormalizeTemplateURL(t *testing.T) {
+	testCases := []struct {
+		name    string
+		url     string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "GitHub URL",
+			url:  "https://github.com/acme/template.git",
+			want: "https://github.com/acme/template",
+		},
+		{
+			name: "GitHub shorthand",
+			url:  "acme/template",
+			want: "https://github.com/acme/template",
+		},
+		{
+			name:    "non-GitHub host",
+			url:     "https://git.example/acme/template.git",
+			wantErr: true,
+		},
+		{
+			name:    "GitHub lookalike host",
+			url:     "https://github.com.example/acme/template.git",
+			wantErr: true,
+		},
+		{
+			name:    "GitHub in userinfo",
+			url:     "https://github.com@git.example/acme/template.git",
+			wantErr: true,
+		},
+		{
+			name:    "file URL",
+			url:     "file:///tmp/template.git",
+			wantErr: true,
+		},
+		{
+			name:    "localhost",
+			url:     "http://localhost/acme/template.git",
+			wantErr: true,
+		},
+		{
+			name:    "custom port",
+			url:     "https://github.com:443/acme/template.git",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := normalizeTemplateURL(tc.url)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func insertInstallation(t *testing.T, te *testenv.TestEnv, ctx context.Context) {
 	err := te.GetDBHandle().NewQuery(ctx, "test_insert_installation").Create(&tables.GitHubAppInstallation{
 		UserID:         testUserID,
