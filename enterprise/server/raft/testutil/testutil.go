@@ -32,6 +32,7 @@ import (
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
@@ -53,6 +54,7 @@ type StoreFactory struct {
 	gossipAddrs []string
 	clock       clockwork.Clock
 	session     *client.Session
+	stores      []*TestingStore
 
 	partitions []disk.Partition
 }
@@ -79,11 +81,15 @@ func newStoreFactory(t *testing.T, rootDir string, clock clockwork.Clock) *Store
 	require.NoError(t, err)
 	session := client.NewSessionWithClock(clock)
 	t.Cleanup(session.Close)
-	return &StoreFactory{
+	sf := &StoreFactory{
 		rootDir: rootDir,
 		clock:   clock,
 		session: session,
 	}
+	t.Cleanup(func() {
+		sf.stopStores(t)
+	})
+	return sf
 }
 
 type nodeRegistryFactory func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error)
@@ -220,10 +226,21 @@ func (sf *StoreFactory) NewStore(t *testing.T, opts StoreOptions) *TestingStore 
 		ts.pebbleFS = newCrashableFS(t, ts.RootDir)
 	}
 	sf.RecreateStore(t, ts)
-	t.Cleanup(func() {
-		ts.Stop()
-	})
+	sf.stores = append(sf.stores, ts)
 	return ts
+}
+
+// stopStores stops the stores that are still running. It stops them
+// concurrently because stopping a store is mostly waiting.
+//
+// Serf warns "timeout waiting for leave broadcast" for the last store to
+// leave gossip: by then the others have left, so it has no one to tell.
+func (sf *StoreFactory) stopStores(t testing.TB) {
+	var eg errgroup.Group
+	for _, ts := range sf.stores {
+		eg.Go(ts.stop)
+	}
+	require.NoError(t, eg.Wait())
 }
 
 func (sf *StoreFactory) NewStoreWithGRPCServerConfig(t *testing.T, grpcServerConfig grpc_server.GRPCServerConfig) *TestingStore {
@@ -280,16 +297,26 @@ func (ts *TestingStore) NewReplica(rangeID, replicaID uint64) *replica.Replica {
 }
 
 func (ts *TestingStore) Stop() {
+	require.NoError(ts.t, ts.stop())
+}
+
+func (ts *TestingStore) stop() error {
 	if ts.closed {
-		return
+		return nil
 	}
-	ctx := context.Background()
-	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second)
 	defer cancelFn()
-	require.NoError(ts.t, ts.Store.Stop(ctx))
-	require.NoError(ts.t, ts.gm.Leave())
-	require.NoError(ts.t, ts.gm.Shutdown())
+	if err := ts.Store.Stop(ctx); err != nil {
+		return err
+	}
+	if err := ts.gm.Leave(); err != nil {
+		return err
+	}
+	if err := ts.gm.Shutdown(); err != nil {
+		return err
+	}
 	ts.closed = true
+	return nil
 }
 
 // Crash drops unsynced Pebble writes, ignoring shutdown syncs.
