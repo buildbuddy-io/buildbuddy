@@ -3,7 +3,6 @@ auth:
     target: "grpc://localhost:1985"
   reparse_jwts: false
 cache:
-  tree_cache_splitting: true
   pebble:
     name: "pebble_cache"
     active_key_version: 5
