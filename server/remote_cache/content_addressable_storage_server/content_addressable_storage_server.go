@@ -816,8 +816,8 @@ func (s *ContentAddressableStorageServer) readTreeCachePointer(ctx context.Conte
 // lookupCachedTreeNode returns the cached tree that a tree cache pointer refers
 // to, or a NotFoundError. The hit is sent to the client as a digest only if
 // digestAllowed, and its contents are left unread only if it is sent as a
-// digest and skipAllowed.
-func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, digestAllowed, skipAllowed bool) (*treeCacheHit, error) {
+// digest and readSkipAllowed.
+func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, digestAllowed, readSkipAllowed bool) (*treeCacheHit, error) {
 	levelLabel := fmt.Sprintf("%d", min(level, 12))
 	miss := func() (*treeCacheHit, error) {
 		metrics.TreeCacheLookupCount.With(prometheus.Labels{
@@ -833,15 +833,17 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 	}
 	hit := &treeCacheHit{rn: treeCacheRN}
 	bytesRead := 0
-	dirCount := int(meta.GetDirCount())
 	// Unless the contents may be skipped, size the tree from its contents, as
 	// older servers do. Older pointers have no dir count.
-	readFirst := meta == nil || !skipAllowed
+	readFirst := meta == nil || !readSkipAllowed
+	var dirCount int
 	if readFirst {
 		if hit.dirs, bytesRead, err = s.readTreeCacheContents(ctx, treeCacheRN); err != nil {
 			return miss()
 		}
 		dirCount = len(hit.dirs)
+	} else {
+		dirCount = int(meta.GetDirCount())
 	}
 	hit.sendAsDigest = digestAllowed && worthSendingAsDigest(dirCount)
 	if !readFirst {
@@ -1051,8 +1053,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if *enableTreeCaching && level >= *minTreeCacheLevel {
 			// The root is never sent as a digest.
 			digestAllowed := subtreesRequested && level > 0
-			skipAllowed := skipSubtreeFetch && !contentsNeeded
-			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, digestAllowed, skipAllowed); err == nil {
+			readSkipAllowed := skipSubtreeFetch && !contentsNeeded
+			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, digestAllowed, readSkipAllowed); err == nil {
 				return &fetchResult{
 					mainDirectories: hit.dirs,
 					cachedRoot:      hit.rn,
