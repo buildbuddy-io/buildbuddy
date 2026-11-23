@@ -274,8 +274,8 @@ message TreeCache {
 // can serve a cached subtree as a digest without reading its contents. Absent
 // on pointers written by older servers.
 message TreeCachePointerMetadata {
-  // Total number of directories in the cached subtree, including its split
-  // children.
+  // The number of directories a read of this entry returns: the root
+  // TreeCache's children plus each distinct split child's children.
   int64 dir_count = 1;
 
   // The root TreeCache's tree_cache_children.

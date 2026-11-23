@@ -1653,7 +1653,10 @@ func (c *treeCacheSpy) Set(ctx context.Context, rn *rspb.ResourceName, data []by
 	tc := &capb.TreeCache{}
 	isPointer := rn.GetCacheType() == rspb.CacheType_AC
 	if isPointer {
-		if err := proto.Unmarshal(data, ar); err == nil && c.stripPointerMetadata {
+		c.mu.Lock()
+		strip := c.stripPointerMetadata
+		c.mu.Unlock()
+		if err := proto.Unmarshal(data, ar); err == nil && strip {
 			ar.ExecutionMetadata = nil
 			data, _ = proto.Marshal(ar)
 		}
@@ -2010,4 +2013,150 @@ func setupSplitSkipFetch(t *testing.T) *skipFetchFixture {
 	f.splitRootBlob = spy.blobRN(idx)
 	f.splitChildBlob = meta.GetTreeCacheChildren()[0]
 	return f
+}
+
+func (c *treeCacheSpy) setStripPointerMetadata(strip bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stripPointerMetadata = strip
+}
+
+// lastPointerMetadata returns the metadata of the latest pointer written for
+// the directory with the given digest.
+func (c *treeCacheSpy) lastPointerMetadata(t *testing.T, dirHash, seed string) *capb.TreeCachePointerMetadata {
+	ptr, err := digest.Compute(strings.NewReader(dirHash+seed), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i, ar := range slices.Backward(c.pointers) {
+		if c.pointerRNs[i].GetDigest().GetHash() != ptr.GetHash() {
+			continue
+		}
+		meta := &capb.TreeCachePointerMetadata{}
+		require.NotEmpty(t, ar.GetExecutionMetadata().GetAuxiliaryMetadata(), "pointer has no metadata")
+		require.NoError(t, ar.GetExecutionMetadata().GetAuxiliaryMetadata()[0].UnmarshalTo(meta))
+		return meta
+	}
+	require.FailNow(t, "no pointer for directory", dirHash)
+	return nil
+}
+
+func (c *treeCacheSpy) pointerCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.pointers)
+}
+
+// countTreeDirs returns the number of directories in a GetTree response,
+// counting duplicates.
+func countTreeDirs(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, rootDigest *repb.Digest) int {
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{RootDigest: rootDigest})
+	require.NoError(t, err)
+	n := 0
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			return n
+		}
+		require.NoError(t, err)
+		n += len(rsp.GetDirectories())
+	}
+}
+
+func TestGetTreeSkipCachedSubtreeFetch_BackfillsOldFormatPointer(t *testing.T) {
+	f := setupSkipFetch(t, true)
+	f.spy.setStripPointerMetadata(false)
+	flags.Set(t, "cache.tree_cache_pointer_backfill_probability", 1.0)
+	n := f.spy.pointerCount()
+	want := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	require.Len(t, want.subtrees, 1)
+	f.spy.waitForPointers(t, n+1)
+
+	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
+	f.spy.resetCounts()
+	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	gets, findMissing := f.spy.counts()
+	assert.Equal(t, want, got)
+	assert.Zero(t, gets)
+	assert.Positive(t, findMissing)
+}
+
+func TestGetTreeSkipCachedSubtreeFetch_NoBackfillWhenProbabilityIsZero(t *testing.T) {
+	f := setupSkipFetch(t, true)
+	f.spy.setStripPointerMetadata(false)
+	flags.Set(t, "cache.tree_cache_pointer_backfill_probability", 0.0)
+	n := f.spy.pointerCount()
+	getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+
+	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
+	f.spy.resetCounts()
+	getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	gets, _ := f.spy.counts()
+	assert.Positive(t, gets)
+	assert.Equal(t, n, f.spy.pointerCount())
+}
+
+// setupSharedSplitTree reads a tree whose cached directory "top" contains the
+// same split node_modules under two paths, and returns the root and top.
+func setupSharedSplitTree(t *testing.T, stripPointerMetadata bool) (ctx context.Context, spy *treeCacheSpy, casClient repb.ContentAddressableStorageClient, root, top *repb.Digest, seed string) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	flags.Set(t, "cache.tree_cache_min_descendents", 2000)
+	flags.Set(t, "cache.tree_cache_splitting", true)
+	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
+	flags.Set(t, "cache.get_tree_subtree_support", true)
+	seed = "shared-split-test"
+	flags.Set(t, "cache.tree_cache_seed", seed)
+
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+	c, err := memory_cache.NewMemoryCache(1000000000)
+	require.NoError(t, err)
+	spy = &treeCacheSpy{Cache: c, stripPointerMetadata: stripPointerMetadata}
+	te.SetCache(spy)
+	clientConn := runCASServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient = repb.NewContentAddressableStorageClient(clientConn)
+
+	nodeModules, _ := cas.MakeTree(ctx, t, bsClient, "", 10, 2)
+	child3, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
+	child4, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
+	upload := func(d *repb.Directory) *repb.Digest {
+		rn, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, d)
+		require.NoError(t, err)
+		return rn
+	}
+	a := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "node_modules", Digest: nodeModules}, {Name: "child3", Digest: child3}}})
+	b := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "node_modules", Digest: nodeModules}, {Name: "child4", Digest: child4}}})
+	top = upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: a}, {Name: "b", Digest: b}}})
+	root = upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "top", Digest: top}}})
+
+	// Caches top, a and b.
+	cas.ReadTree(ctx, t, casClient, "", root)
+	spy.waitForPointers(t, 3)
+	flags.Set(t, "cache.tree_cache_write_probability", 0.0)
+	return
+}
+
+func TestTreeCachePointerDirCount_SharedSplitChildCountedOnce(t *testing.T) {
+	ctx, spy, casClient, root, top, seed := setupSharedSplitTree(t, false)
+
+	meta := spy.lastPointerMetadata(t, top.GetHash(), seed)
+	require.Len(t, meta.GetTreeCacheChildren(), 1, "the split child appears under two paths but is stored once")
+	// The root directory is not part of the cached entry.
+	assert.Equal(t, countTreeDirs(ctx, t, casClient, root)-1, int(meta.GetDirCount()))
+}
+
+func TestTreeCachePointerDirCount_BackfillMatchesRead(t *testing.T) {
+	ctx, spy, casClient, root, top, seed := setupSharedSplitTree(t, true)
+	spy.setStripPointerMetadata(false)
+	flags.Set(t, "cache.tree_cache_pointer_backfill_probability", 1.0)
+	n := spy.pointerCount()
+
+	read := countTreeDirs(ctx, t, casClient, root) - 1
+	spy.waitForPointers(t, n+1)
+
+	meta := spy.lastPointerMetadata(t, top.GetHash(), seed)
+	assert.Equal(t, read, int(meta.GetDirCount()))
+	require.Len(t, meta.GetTreeCacheChildren(), 1)
 }
