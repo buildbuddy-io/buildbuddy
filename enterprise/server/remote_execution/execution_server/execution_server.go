@@ -959,8 +959,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	// Create and link the execution before checking quotas so the caller can
-	// mark it failed and surface the quota error in the invocation UI.
+	// Check quota *after* insertExecution and insertInvocationLink so that we can mark the execution failed and
+	// surface the quota error in the UI.
 	if !pool.IsSelfHosted {
 		if qm := s.env.GetQuotaManager(); qm != nil {
 			// Usage isn't known until completion, so check without consuming
@@ -2037,7 +2037,7 @@ func (s *ExecutionServer) updateUsageAndQuotaFromStoredExecution(ctx context.Con
 			quantity := counts.CPUNanos
 			force := false
 			if platform.IsCIRunnerCommand(cmd) {
-				// The merged record includes snapshot saving, so charge execution
+				// The merged StoredExecution includes snapshot saving, so charge execution
 				// and pause time together.
 				totalDuration := executionDuration + time.Duration(max(execution.GetPauseDurationUsec(), 0))*time.Microsecond
 				namespace = quota.RemoteRunnerComputeNamespace
@@ -2109,6 +2109,15 @@ func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker
 		executionCounts[sku.RemoteExecutionExecuteLocalSnapshotSavedBytes] = execution.GetSnapshotSavedBytes()
 	}
 	return ut.IncrementOLAP(ctx, executionLabels, executionCounts)
+}
+
+func fixedComputeUnits(execution *repb.StoredExecution) float64 {
+	return max(
+		execution.GetRequestedComputeUnits(),
+		tasksize.CpuComputeUnits(execution.GetRequestedMilliCpu()),
+		tasksize.MemoryComputeUnits(execution.GetRequestedMemoryBytes()),
+		tasksize.DiskComputeUnits(execution.GetRequestedFreeDiskBytes()),
+	)
 }
 
 func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, error) {
@@ -2370,13 +2379,4 @@ func debugUserInputBytes(b []byte) string {
 	}
 	n := maxLength / 2
 	return strconv.QuoteToASCII(string(b[:n]) + "..." + strconv.QuoteToASCII(string(b[len(b)-n:])))
-}
-
-func fixedComputeUnits(execution *repb.StoredExecution) float64 {
-	return max(
-		execution.GetRequestedComputeUnits(),
-		tasksize.CpuComputeUnits(execution.GetRequestedMilliCpu()),
-		tasksize.MemoryComputeUnits(execution.GetRequestedMemoryBytes()),
-		tasksize.DiskComputeUnits(execution.GetRequestedFreeDiskBytes()),
-	)
 }
