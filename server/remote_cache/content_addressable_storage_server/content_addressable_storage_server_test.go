@@ -2103,7 +2103,7 @@ func TestGetTreeSkipCachedSubtreeFetch_BackfillsOldFormatPointer(t *testing.T) {
 // same split node_modules under two paths, and returns the root and top.
 func setupSharedSplitTree(t *testing.T, stripPointerMetadata bool) (ctx context.Context, spy *treeCacheSpy, casClient repb.ContentAddressableStorageClient, root, top *repb.Digest, seed string) {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
-	flags.Set(t, "cache.tree_cache_min_descendents", 2000)
+	flags.Set(t, "cache.tree_cache_min_descendents", 3000)
 	flags.Set(t, "cache.tree_cache_splitting", true)
 	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
 	flags.Set(t, "cache.get_tree_subtree_support", true)
@@ -2134,8 +2134,8 @@ func setupSharedSplitTree(t *testing.T, stripPointerMetadata bool) (ctx context.
 	top = upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: a}, {Name: "b", Digest: b}}})
 	root = upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "top", Digest: top}}})
 
-	// Caches top, a and b. node_modules is cached twice (under a and b), so
-	// wait for top's pointer specifically rather than a write count.
+	// Only top (~4100 dirs) is big enough to cache, so its pointer write is the
+	// last background write; a, b and node_modules (~2050 each) are not cached.
 	cas.ReadTree(ctx, t, casClient, "", root)
 	spy.waitForPointerWrites(t, top.GetHash(), seed, 1)
 	flags.Set(t, "cache.tree_cache_write_probability", 0.0)
