@@ -30,6 +30,7 @@ import (
 
 	"github.com/armon/circbuf"
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
@@ -78,6 +79,7 @@ import (
 	"google.golang.org/grpc"
 
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1469,6 +1471,18 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 	}
 	if platform.FindEffectiveValue(c.task, platform.SkipRemoteSnapshotSavePropertyName) == "true" {
 		log.CtxInfof(ctx, "Skipping remote snapshot save: over snapshot save quota")
+		return false
+	}
+
+	// Remote snapshot saves require an authenticated caller with AC write
+	// permission, since manifests are stored in the action cache.
+	user, err := auth.UserFromTrustedJWT(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Skipping remote snapshot save: failed to read authenticated claims: %s", err)
+		return false
+	}
+	if !user.HasCapability(cappb.Capability_CACHE_WRITE) {
+		log.CtxInfof(ctx, "Skipping remote snapshot save: missing AC write capability")
 		return false
 	}
 
