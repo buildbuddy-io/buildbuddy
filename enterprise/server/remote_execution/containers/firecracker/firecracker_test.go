@@ -5483,12 +5483,15 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoo
 		flags.Set(t, "executor.firecracker_generic_vm_pool_max_size", 1)
 		t.Cleanup(firecracker.StartGenericVMPool(ctx, env, experiments, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig(1, off)}))
 		var c *firecracker.FirecrackerContainer
-		require.Eventually(t, func() bool {
+		for start := time.Now(); ; time.Sleep(100 * time.Millisecond) {
 			c = newContainer(t, ctx, busyboxImage, "", 1, fcpb.NetworkMode_NETWORK_MODE_EXTERNAL)
 			snapshotID := c.SnapshotID()
 			require.NoError(t, c.Create(ctx, testfs.MakeTempDir(t)))
-			return c.SnapshotID() != snapshotID
-		}, 30*time.Second, 100*time.Millisecond, "no task adopted a pooled VM")
+			if c.SnapshotID() != snapshotID {
+				break
+			}
+			require.Less(t, time.Since(start), 30*time.Second, "no task adopted a pooled VM")
+		}
 		command := `test -e /etc/hostname; test "$(grep -c '^processor' /proc/cpuinfo)" -eq 1; test "$(cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.max)" = 1073741824`
 		result := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-ec", command}}, nil)
 		require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)

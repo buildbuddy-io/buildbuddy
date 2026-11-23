@@ -155,7 +155,7 @@ type Handler struct {
 	removedAddresses map[int64]struct{}
 
 	// Most memory copied into the guest per page fault.
-	copyWindowBytes int64
+	copyWindowBytes atomic.Int64
 
 	// faultResolver performs the userfaultfd ioctls.
 	faultResolver faultResolver
@@ -166,15 +166,21 @@ const defaultCopyWindowBytes = 256 * 1024
 // NewHandler returns a handler that copies at most copyWindowBytes, a power of
 // two of at least the page size, into the guest per page fault.
 func NewHandler(copyWindowBytes int64) (*Handler, error) {
+	h := &Handler{
+		removedAddresses: make(map[int64]struct{}),
+		faultResolver:    uffdFaultResolver{},
+	}
+	h.SetCopyWindowBytes(copyWindowBytes)
+	return h, nil
+}
+
+// SetCopyWindowBytes changes the most memory copied per page fault.
+func (h *Handler) SetCopyWindowBytes(copyWindowBytes int64) {
 	if copyWindowBytes < int64(os.Getpagesize()) || copyWindowBytes&(copyWindowBytes-1) != 0 {
 		alert.UnexpectedEvent("invalid_uffd_copy_window", "UFFD fault copy window %d is not a power of two of at least the page size; using %d", copyWindowBytes, defaultCopyWindowBytes)
 		copyWindowBytes = defaultCopyWindowBytes
 	}
-	return &Handler{
-		removedAddresses: make(map[int64]struct{}),
-		copyWindowBytes:  copyWindowBytes,
-		faultResolver:    uffdFaultResolver{},
-	}, nil
+	h.copyWindowBytes.Store(copyWindowBytes)
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
@@ -598,10 +604,11 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 			return status.WrapError(err, "get backing page address")
 		}
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-		windowOffset := relOffset &^ uintptr(h.copyWindowBytes-1)
+		copyWindowBytes := h.copyWindowBytes.Load()
+		windowOffset := relOffset &^ uintptr(copyWindowBytes-1)
 		hostAddr = chunkAddr + windowOffset
 		destAddr = faultingAddress - relOffset + windowOffset
-		copySize = min(copySize-int64(windowOffset), h.copyWindowBytes)
+		copySize = min(copySize-int64(windowOffset), copyWindowBytes)
 	}
 
 	// Check that the request is within the valid guest memory range.

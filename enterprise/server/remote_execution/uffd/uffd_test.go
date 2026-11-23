@@ -25,11 +25,12 @@ func (f *fakeResolver) zeropage(uffd uintptr, z *uffdIoZeropage) syscall.Errno {
 }
 
 func newTestHandler(r faultResolver) *Handler {
-	return &Handler{
+	h := &Handler{
 		removedAddresses: make(map[int64]struct{}),
-		copyWindowBytes:  defaultCopyWindowBytes,
 		faultResolver:    r,
 	}
+	h.copyWindowBytes.Store(defaultCopyWindowBytes)
+	return h
 }
 
 func newTestMemoryStore(t *testing.T, totalPages int64) *copy_on_write.COWStore {
@@ -423,9 +424,9 @@ func TestNewHandler_InvalidCopyWindowUsesDefault(t *testing.T) {
 	for _, size := range []int64{0, 1000, 3 * 4096} {
 		h, err := NewHandler(size)
 		require.NoError(t, err)
-		require.Equal(t, int64(defaultCopyWindowBytes), h.copyWindowBytes)
+		require.Equal(t, int64(defaultCopyWindowBytes), h.copyWindowBytes.Load())
 	}
 	h, err := NewHandler(4 << 20)
 	require.NoError(t, err)
-	require.Equal(t, int64(4<<20), h.copyWindowBytes)
+	require.Equal(t, int64(4<<20), h.copyWindowBytes.Load())
 }
