@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/require"
 
@@ -238,7 +238,7 @@ type formatBenchDataset struct {
 	dir            string
 	format         pebble.FormatMajorVersion
 	numRecords     int
-	rawBytes       int64 // uncompressed key and value bytes written
+	rawBytes       int64 // uncompressed bytes written, including atime-index keys
 	sstBytes       int64 // on-disk SSTable bytes after compaction
 	presentBatches [][]byte
 	missingBatches [][]byte
@@ -250,6 +250,10 @@ const (
 	formatBenchWriteBatchSize = 100 // SetRequests per raft entry
 	formatBenchWriteFlushes   = 4
 )
+
+// formatBenchNowUsec is the fixed "now" that record atimes are relative to,
+// so keys are identical across formats and runs.
+var formatBenchNowUsec = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).UnixMicro()
 
 var (
 	formatBenchMu       sync.Mutex
@@ -316,6 +320,21 @@ func (d *formatBenchDB) sstBytes() int64 {
 	return n
 }
 
+// formatBenchRand is the seeded randomness for generating records and
+// lookups. The same seed gives the same data, so every format is benchmarked
+// on identical keys and values.
+type formatBenchRand struct {
+	rng     *rand.Rand
+	digests *digest.Generator
+}
+
+func newFormatBenchRand(seed uint64) *formatBenchRand {
+	return &formatBenchRand{
+		rng:     rand.New(rand.NewPCG(seed, seed)),
+		digests: digest.RandomGenerator(int64(seed)),
+	}
+}
+
 // formatBenchRecords are random CAS records, marshaled as SetRequest batches.
 type formatBenchRecords struct {
 	keys     [][]byte
@@ -323,9 +342,8 @@ type formatBenchRecords struct {
 	rawBytes int64
 }
 
-func makeFormatBenchRecords(b *testing.B, rng *rand.Rand, storage formatBenchStorage, n int) *formatBenchRecords {
+func makeFormatBenchRecords(b *testing.B, r *formatBenchRand, storage formatBenchStorage, n int) *formatBenchRecords {
 	fs := filestore.New()
-	now := time.Now().UnixMicro()
 	atimeSpreadUsec := (6 * time.Hour).Microseconds()
 	recs := &formatBenchRecords{}
 	batch := rbuilder.NewBatchBuilder()
@@ -338,9 +356,13 @@ func makeFormatBenchRecords(b *testing.B, rng *rand.Rand, storage formatBenchSto
 	for i := range n {
 		// Spread atimes over the last 6 hours, as in production, so
 		// atime-index keys don't all share the same atime prefix.
-		key, md := formatBenchFileMetadata(b, fs, storage, now-rng.Int64N(atimeSpreadUsec))
+		atimeUsec := formatBenchNowUsec - r.rng.Int64N(atimeSpreadUsec)
+		key, md := formatBenchFileMetadata(b, r.digests, fs, storage, atimeUsec)
 		recs.keys = append(recs.keys, key)
-		recs.rawBytes += int64(len(key) + proto.Size(md))
+		// Each SetRequest writes the record and an atime-index key with an
+		// empty value.
+		indexKey := keys.AtimeIndexKey(defaultPartition, atimeUsec, key)
+		recs.rawBytes += int64(len(key) + proto.Size(md) + len(indexKey))
 		batch.Add(&rfpb.SetRequest{Key: key, FileMetadata: md})
 		if (i+1)%formatBenchWriteBatchSize == 0 {
 			appendBatch()
@@ -371,8 +393,8 @@ func buildFormatBenchDataset(b *testing.B, storage formatBenchStorage, format pe
 	dir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "pebble-format-")
 	require.NoError(b, err)
 
-	rng := rand.New(rand.NewPCG(1, 2))
-	recs := makeFormatBenchRecords(b, rng, storage, storage.numRecords)
+	r := newFormatBenchRand(1)
+	recs := makeFormatBenchRecords(b, r, storage, storage.numRecords)
 	d := openFormatBenchDB(b, dir, format, 64<<20)
 	writeDefaultRangeDescriptor(b, d.em, d.repl.Replica)
 	d.write(b, recs.batches, 0 /*flushEvery*/)
@@ -390,10 +412,10 @@ func buildFormatBenchDataset(b *testing.B, storage formatBenchStorage, format pe
 		present := rbuilder.NewBatchBuilder()
 		missing := rbuilder.NewBatchBuilder()
 		for range formatBenchFindBatchSize {
-			present.Add(&rfpb.FindRequest{Key: recs.keys[rng.IntN(len(recs.keys))]})
+			present.Add(&rfpb.FindRequest{Key: recs.keys[r.rng.IntN(len(recs.keys))]})
 			// 64 random bytes make each missing key unique; a tiny digest
 			// would repeat a few keys whose blocks always stay cached.
-			missingKey, _ := formatBenchFileMetadata(b, fs, formatBenchStorage{digestSizeBytes: 64}, 0)
+			missingKey, _ := formatBenchFileMetadata(b, r.digests, fs, formatBenchStorage{digestSizeBytes: 64}, 0)
 			missing.Add(&rfpb.FindRequest{Key: missingKey})
 		}
 		buf, err := present.ToBuf()
@@ -410,15 +432,16 @@ func buildFormatBenchDataset(b *testing.B, storage formatBenchStorage, format pe
 
 // formatBenchFileMetadata returns a random CAS record's v5 key and metadata,
 // shaped like BenchmarkFind's.
-func formatBenchFileMetadata(b *testing.B, fs filestore.Store, storage formatBenchStorage, atimeUsec int64) ([]byte, *sgpb.FileMetadata) {
-	r, buf := testdigest.RandomCASResourceBuf(b, storage.digestSizeBytes)
+func formatBenchFileMetadata(b *testing.B, gen *digest.Generator, fs filestore.Store, storage formatBenchStorage, atimeUsec int64) ([]byte, *sgpb.FileMetadata) {
+	d, buf, err := gen.RandomDigestBuf(storage.digestSizeBytes)
+	require.NoError(b, err)
 	fileRecord := &sgpb.FileRecord{
 		Isolation: &sgpb.Isolation{
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: defaultPartition,
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		Digest:         r.GetDigest(),
+		Digest:         d,
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 	pebbleKey, err := fs.PebbleKey(fileRecord)
@@ -429,13 +452,13 @@ func formatBenchFileMetadata(b *testing.B, fs filestore.Store, storage formatBen
 	storageMetadata := &sgpb.StorageMetadata{
 		InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
 			Data:          buf,
-			CreatedAtNsec: time.Now().UnixNano(),
+			CreatedAtNsec: atimeUsec * 1000,
 		},
 	}
 	if storage.gcs {
 		storageMetadata = &sgpb.StorageMetadata{
 			GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
-				BlobName:           r.GetDigest().GetHash(),
+				BlobName:           d.GetHash(),
 				LastCustomTimeUsec: atimeUsec,
 			},
 		}
@@ -553,7 +576,7 @@ func benchmarkFormatRead(b *testing.B, ds *formatBenchDataset, op string, cache 
 // not timed.
 func benchmarkFormatWrite(b *testing.B, storage formatBenchStorage, format pebble.FormatMajorVersion) {
 	n := storage.numRecords / 10
-	recs := makeFormatBenchRecords(b, rand.New(rand.NewPCG(3, 4)), storage, n)
+	recs := makeFormatBenchRecords(b, newFormatBenchRand(2), storage, n)
 	flushEvery := max(len(recs.batches)/formatBenchWriteFlushes, 1)
 
 	var flushedBytes, compactedBytes uint64
