@@ -326,6 +326,9 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 		}
 
 		if hasAppleSDKPlatform && hasXcodeVersionOverride {
+			if appleSDKPlatform == "" {
+				return status.FailedPreconditionError("APPLE_SDK_PLATFORM must not be empty when XCODE_VERSION_OVERRIDE is set")
+			}
 			developerDir, sdkRoot, err := env.GetXcodeLocator().PathsForVersionAndSDK(xcodeVersion, appleSDKPlatform)
 			if err != nil {
 				return err

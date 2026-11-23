@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
@@ -290,6 +291,20 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		}
 		assert.ElementsMatch(t, command.EnvironmentVariables, append(testCase.startingEnvVars, testCase.expectedEnvVars...))
 	}
+}
+
+func TestApplyOverrides_RejectsEmptyAppleSDKPlatform(t *testing.T) {
+	command := &repb.Command{EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+		{Name: "APPLE_SDK_PLATFORM", Value: ""},
+		{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4"},
+	}}
+	env := testenv.GetTestEnv(t)
+	env.SetXcodeLocator(&xcodeLocator{})
+
+	err := ApplyOverrides(t.Context(), env, bare, &platform.Properties{OS: "Darwin"}, &repb.ExecutionTask{Command: command})
+	require.True(t, status.IsFailedPreconditionError(err), "%v", err)
+	require.ErrorContains(t, err, "APPLE_SDK_PLATFORM must not be empty")
+	require.Len(t, command.EnvironmentVariables, 2)
 }
 
 func TestApplyOverrides_PersistentVolumesExperiment(t *testing.T) {
@@ -821,8 +836,14 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 		developerDir = "/Applications/Xcode_12.4.app/Contents/Developer"
 		sdkPath = x.sdks12_4[sdk]
 	} else {
+		if sdk == "" && xcodeVersion != "" {
+			return "", "", status.FailedPreconditionErrorf("Xcode version %s not installed on remote executor", xcodeVersion)
+		}
 		developerDir = "/Applications/Xcode.app/Contents/Developer"
 		sdkPath = x.sdksDefault[sdk]
+	}
+	if sdk == "" {
+		return developerDir, "", nil
 	}
 	if sdkPath == "" {
 		return "", "", fmt.Errorf("Invalid SDK '%s' for Xcode '%s'", sdk, xcodeVersion)
