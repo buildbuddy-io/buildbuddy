@@ -221,6 +221,7 @@ func xcodePlistForPath(path string) (*xcodePlist, error) {
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to open %s: %s", path, err.Error())
 	}
+	defer versionFileReader.Close()
 	if err := plist.NewXMLDecoder(versionFileReader).Decode(&xcodePlist); err != nil {
 		return nil, status.InternalErrorf("Failed to decode %s: %s", path, err.Error())
 	}
