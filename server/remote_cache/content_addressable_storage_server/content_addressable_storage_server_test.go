@@ -2041,6 +2041,24 @@ func (c *treeCacheSpy) lastPointerMetadata(t *testing.T, dirHash, seed string) *
 	return nil
 }
 
+// waitForPointerWrites waits until at least n pointers have been written for
+// the directory with the given digest.
+func (c *treeCacheSpy) waitForPointerWrites(t *testing.T, dirHash, seed string, n int) {
+	ptr, err := digest.Compute(strings.NewReader(dirHash+seed), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		writes := 0
+		for _, rn := range c.pointerRNs {
+			if rn.GetDigest().GetHash() == ptr.GetHash() {
+				writes++
+			}
+		}
+		return writes >= n
+	}, 30*time.Second, 10*time.Millisecond)
+}
+
 func (c *treeCacheSpy) pointerCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -2116,9 +2134,10 @@ func setupSharedSplitTree(t *testing.T, stripPointerMetadata bool) (ctx context.
 	top = upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: a}, {Name: "b", Digest: b}}})
 	root = upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "top", Digest: top}}})
 
-	// Caches top, a and b.
+	// Caches top, a and b. node_modules is cached twice (under a and b), so
+	// wait for top's pointer specifically rather than a write count.
 	cas.ReadTree(ctx, t, casClient, "", root)
-	spy.waitForPointers(t, 3)
+	spy.waitForPointerWrites(t, top.GetHash(), seed, 1)
 	flags.Set(t, "cache.tree_cache_write_probability", 0.0)
 	return
 }
@@ -2136,10 +2155,8 @@ func TestTreeCachePointerDirCount_BackfillMatchesRead(t *testing.T) {
 	ctx, spy, casClient, root, top, seed := setupSharedSplitTree(t, true)
 	spy.setStripPointerMetadata(false)
 	flags.Set(t, "cache.tree_cache_pointer_backfill_probability", 1.0)
-	n := spy.pointerCount()
-
 	read := countTreeDirs(ctx, t, casClient, root) - 1
-	spy.waitForPointers(t, n+1)
+	spy.waitForPointerWrites(t, top.GetHash(), seed, 2)
 
 	meta := spy.lastPointerMetadata(t, top.GetHash(), seed)
 	assert.Equal(t, read, int(meta.GetDirCount()))
