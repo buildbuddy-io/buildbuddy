@@ -1011,7 +1011,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		cachedDirCount int
 		// The trees that should be sent directly to the client (they are not
 		// part of a cached subtree).  Note that when cachedRoot is set, this
-		// slice will contain the entire tree.
+		// slice will contain the entire tree, or be empty if its contents
+		// were not read.
 		mainDirectories []*capb.DirectoryWithDigest
 		// Resource names pointing to subtrees that were found in the cache and
 		// are considered big enough to be worth caching on the client side.
@@ -1022,6 +1023,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	}
 
 	subtreesRequested := *getTreeSubtreeSupport && req.GetSendCachedSubtreeDigests()
+	skipSubtreeFetch := subtreesRequested && getTreeSkipCachedSubtreeFetch.Get(ctx)
 
 	// contentsNeeded is set if an ancestor will write a tree cache entry that
 	// includes the contents of this directory's cached subtrees.
@@ -1039,7 +1041,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}
 		if *enableTreeCaching && level >= *minTreeCacheLevel {
 			// The root is never sent as a subtree.
-			skipContents := getTreeSkipCachedSubtreeFetch.Get(ctx) && subtreesRequested && !contentsNeeded && level > 0
+			skipContents := skipSubtreeFetch && !contentsNeeded && level > 0
 			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, skipContents); err == nil {
 				return &fetchResult{
 					mainDirectories: hit.dirs,

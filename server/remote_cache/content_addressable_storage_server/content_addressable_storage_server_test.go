@@ -1998,10 +1998,14 @@ func setupSplitSkipFetch(t *testing.T) *skipFetchFixture {
 	idx := slices.IndexFunc(spy.pointerRNs, func(rn *rspb.ResourceName) bool {
 		return rn.GetCacheType() == rspb.CacheType_AC && rn.GetDigest().GetHash() == wPointer.GetHash()
 	})
+	var wAR *repb.ActionResult
+	if idx >= 0 {
+		wAR = spy.pointers[idx]
+	}
 	spy.mu.Unlock()
 	require.GreaterOrEqual(t, idx, 0, "expected a tree cache pointer for w")
 	meta := &capb.TreeCachePointerMetadata{}
-	require.NoError(t, spy.pointers[idx].GetExecutionMetadata().GetAuxiliaryMetadata()[0].UnmarshalTo(meta))
+	require.NoError(t, wAR.GetExecutionMetadata().GetAuxiliaryMetadata()[0].UnmarshalTo(meta))
 	require.NotEmpty(t, meta.GetTreeCacheChildren(), "expected w's entry to be split")
 	f.splitRootBlob = spy.blobRN(idx)
 	f.splitChildBlob = meta.GetTreeCacheChildren()[0]
