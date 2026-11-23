@@ -336,6 +336,31 @@ func TestReadThroughCacher(t *testing.T) {
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
+func TestReadThroughCacher_SharedBlobMetadata(t *testing.T) {
+	te := setupTestEnv(t)
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	const size = int64(8 << 20)
+	const contentType = "application/vnd.oci.image.layer.v1.tar+gzip"
+	resource, blob := testdigest.RandomCASResourceBuf(t, size)
+	hash := mustHash(t, "sha256:"+resource.GetDigest().GetHash())
+
+	for _, repoName := range []string{"buildbuddy.io/repo-a", "buildbuddy.io/repo-b"} {
+		repo := mustRepo(t, repoName)
+		cacher, err := ocicache.NewBlobReadThroughCacher(ctx, io.NopCloser(bytes.NewReader(blob)), bsClient, acClient, repo, hash, contentType, size)
+		require.NoError(t, err)
+		_, err = io.Copy(io.Discard, cacher)
+		require.NoError(t, err)
+		require.NoError(t, cacher.Close())
+
+		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+		require.NoError(t, err, "blob metadata for %s", repoName)
+		require.Equal(t, size, metadata.GetContentLength())
+		require.Equal(t, contentType, metadata.GetContentType())
+	}
+}
+
 func TestReadThroughCacher_PartialReadPreventsCommit(t *testing.T) {
 	te := setupTestEnv(t)
 
