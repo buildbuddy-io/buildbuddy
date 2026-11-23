@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -21,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
@@ -29,16 +32,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	guuid "github.com/google/uuid"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -1488,6 +1495,178 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 			require.Equal(t, tc.want, cache.maxConcurrentReads())
 			close(cache.release)
 			require.NoError(t, <-errCh)
+		})
+	}
+}
+
+// referenceWriteCache records the references written to it, and stores the
+// blob it was given for them so later reads and existence checks succeed.
+type referenceWriteCache struct {
+	interfaces.Cache
+	blob []byte
+
+	mu   sync.Mutex
+	refs []*refpb.Reference
+}
+
+var _ interfaces.ReferenceCache = (*referenceWriteCache)(nil)
+
+func (c *referenceWriteCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
+	if mustClone {
+		return status.InternalError("the server should hand the client's blob to the cache")
+	}
+	c.mu.Lock()
+	c.refs = append(c.refs, ref)
+	c.mu.Unlock()
+	return c.Cache.Set(ctx, r, c.blob)
+}
+
+func (c *referenceWriteCache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	return true
+}
+
+func (c *referenceWriteCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *referenceWriteCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *referenceWriteCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *referenceWriteCache) storedRefs() []*refpb.Reference {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.refs)
+}
+
+func TestWriteReference(t *testing.T) {
+	const bucket = "test-bucket"
+	for _, tc := range []struct {
+		name       string
+		identity   string
+		noRefCache bool
+		exists     bool
+		modify     func(req *bspb.WriteRequest)
+		wantCode   codes.Code
+		wantStored bool
+	}{
+		{name: "reference", identity: interfaces.ClientIdentityCacheProxy, wantStored: true},
+		{name: "no_identity", wantCode: codes.PermissionDenied},
+		{name: "executor_identity", identity: interfaces.ClientIdentityExecutor, wantCode: codes.PermissionDenied},
+		{name: "cache_without_references", identity: interfaces.ClientIdentityCacheProxy, noRefCache: true, wantCode: codes.Unimplemented},
+		{name: "already_exists", identity: interfaces.ClientIdentityCacheProxy, exists: true},
+		{
+			name: "with_data", identity: interfaces.ClientIdentityCacheProxy,
+			modify:   func(req *bspb.WriteRequest) { req.Data = []byte("data") },
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "not_finished", identity: interfaces.ClientIdentityCacheProxy,
+			modify:   func(req *bspb.WriteRequest) { req.FinishWrite = false },
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "digest_mismatch", identity: interfaces.ClientIdentityCacheProxy,
+			modify:   func(req *bspb.WriteRequest) { req.Reference.Resource.Digest.SizeBytes++ },
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "encrypted", identity: interfaces.ClientIdentityCacheProxy,
+			modify:   func(req *bspb.WriteRequest) { req.Reference.Encryption = &refpb.EncryptionInfo{KeyId: "key"} },
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "no_blob_name", identity: interfaces.ClientIdentityCacheProxy,
+			modify:   func(req *bspb.WriteRequest) { req.Reference.Gcs.BlobName = "" },
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "no_stored_size", identity: interfaces.ClientIdentityCacheProxy,
+			modify:   func(req *bspb.WriteRequest) { req.Reference.StoredSizeBytes = 0 },
+			wantCode: codes.InvalidArgument,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "app.client_identity.key", "test-client-identity-key")
+			te := testenv.GetTestEnv(t)
+			identityService, err := clientidentity.New(te.GetClock())
+			require.NoError(t, err)
+			te.SetClientIdentityService(identityService)
+
+			rn, blob := testdigest.RandomCASResourceBuf(t, 1000)
+			ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+			require.NoError(t, err)
+			stored := rn.CloneVT()
+			stored.Compressor = repb.Compressor_ZSTD
+			if tc.exists {
+				require.NoError(t, te.GetCache().Set(ctx, rn, blob))
+			}
+			cache := &referenceWriteCache{Cache: te.GetCache(), blob: blob}
+			if !tc.noRefCache {
+				te.SetCache(cache)
+			}
+			bsClient := bspb.NewByteStreamClient(runByteStreamServer(ctx, t, te))
+
+			if tc.identity != "" {
+				header, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+					Origin: interfaces.ClientIdentityInternalOrigin,
+					Client: tc.identity,
+				}, clientidentity.DefaultExpiration)
+				require.NoError(t, err)
+				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, header)
+			}
+			req := &bspb.WriteRequest{
+				ResourceName: digest.NewCASResourceName(rn.GetDigest(), "", rn.GetDigestFunction()).NewUploadString(),
+				FinishWrite:  true,
+				Reference: &refpb.Reference{
+					// The server must ignore the deprecated metadata and the
+					// shared bit from clients.
+					Metadata:        &sgpb.FileMetadata{StoredSizeBytes: 1},
+					Resource:        stored,
+					StoredSizeBytes: 500,
+					Gcs: &refpb.GCSLocation{
+						Bucket:             bucket,
+						BlobName:           "proxy/blob",
+						LastCustomTimeUsec: 1234,
+						Shared:             true,
+					},
+				},
+			}
+			if tc.modify != nil {
+				tc.modify(req)
+			}
+			stream, err := bsClient.Write(ctx)
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(req))
+			resp, err := stream.CloseAndRecv()
+			if tc.wantCode != codes.OK {
+				require.Equal(t, tc.wantCode, gstatus.Code(err), "err = %v", err)
+				require.Empty(t, cache.storedRefs())
+				return
+			}
+			require.NoError(t, err)
+			if !tc.wantStored {
+				require.Equal(t, rn.GetDigest().GetSizeBytes(), resp.GetCommittedSize())
+				require.Empty(t, cache.storedRefs())
+				return
+			}
+			require.Equal(t, int64(500), resp.GetCommittedSize())
+			refs := cache.storedRefs()
+			require.Len(t, refs, 1)
+			want := &refpb.Reference{
+				Resource:        stored,
+				StoredSizeBytes: 500,
+				Gcs: &refpb.GCSLocation{
+					Bucket:             bucket,
+					BlobName:           "proxy/blob",
+					LastCustomTimeUsec: 1234,
+				},
+			}
+			require.Empty(t, cmp.Diff(want, refs[0], protocmp.Transform()))
 		})
 	}
 }

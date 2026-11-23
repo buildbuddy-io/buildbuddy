@@ -2449,6 +2449,9 @@ func (p *PebbleCache) WriteReference(ctx context.Context, ref *refpb.Reference, 
 	if err := validateReference(ref); err != nil {
 		return err
 	}
+	if gcs := ref.GetGcs(); gcs != nil && gcs.GetBucket() != p.gcsBucket {
+		return status.InvalidArgumentErrorf("this cache cannot access GCS bucket %q", gcs.GetBucket())
+	}
 	refMD := ref.GetMetadata()
 	if err := p.checkFileMetadata(refMD); err != nil {
 		return err

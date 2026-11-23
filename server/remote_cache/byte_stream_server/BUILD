@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:bytestream_go_proto",
         "//proto:capability_go_proto",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -50,9 +51,12 @@ go_test(
     srcs = ["byte_stream_server_test.go"],
     embed = [":byte_stream_server"],
     deps = [
+        "//enterprise/server/clientidentity",
         "//proto:bytestream_go_proto",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
+        "//proto:storage_go_proto",
         "//server/backends/memory_metrics_collector",
         "//server/interfaces",
         "//server/remote_cache/cachetools",
@@ -63,6 +67,7 @@ go_test(
         "//server/testutil/testcompression",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/bytebufferpool",
         "//server/util/clientfeatures",
@@ -71,6 +76,7 @@ go_test(
         "//server/util/random",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
@@ -79,5 +85,6 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )
