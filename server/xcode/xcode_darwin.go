@@ -156,16 +156,22 @@ func applicationPaths(bundleID string) []string {
 
 func versionMap(paths []string, defaultDeveloperDir string) map[string]*xcodeVersion {
 	versionMap := make(map[string]*xcodeVersion)
-	for _, path := range paths {
+	var defaultInfo fs.FileInfo
+	if defaultDeveloperDir != "" {
+		defaultInfo, _ = os.Stat(defaultDeveloperDir)
+	}
+
+	addBundle := func(path string, selectedFallback bool) {
 		xcodePlist, err := xcodePlistForPath(filepath.Join(path, versionPlistPath))
 		if err != nil {
 			log.Warningf("Error reading plist for Xcode: %s", err.Error())
-			continue
+			return
 		}
 		developerDirPath := filepath.Join(path, developerDirectoryPath)
-		if info, err := os.Stat(developerDirPath); err != nil || !info.IsDir() {
+		info, err := os.Stat(developerDirPath)
+		if err != nil || !info.IsDir() {
 			log.Warningf("Skipping Xcode bundle without a developer directory: %s", path)
-			continue
+			return
 		}
 		sdks := installedSDKs(developerDirPath, "Platforms/*.platform/Developer/SDKs/*.sdk")
 		log.Infof("Found Xcode version %s (%s) at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
@@ -178,14 +184,28 @@ func versionMap(paths []string, defaultDeveloperDir string) map[string]*xcodeVer
 		}
 		for _, version := range versions {
 			existingXcode, ok := versionMap[version]
-			if ok && mostPreciseVersion < existingXcode.version {
+			// An unregistered default should not shadow a registered
+			// copy of the same build in an explicit version lookup.
+			if ok && (mostPreciseVersion < existingXcode.version ||
+				(selectedFallback && mostPreciseVersion == existingXcode.version)) {
 				continue
 			}
 			log.Debugf("Mapped Xcode Version %s=>%s with SDKs %+v", version, developerDirPath, sdks)
 			versionMap[version] = xv
 		}
-		if defaultDeveloperDir == developerDirPath {
+		// A selected path can refer to the same installation through a symlink.
+		if defaultDeveloperDir == developerDirPath ||
+			(versionMap[defaultXcodeVersion] == nil && defaultInfo != nil && os.SameFile(defaultInfo, info)) {
 			versionMap[defaultXcodeVersion] = xv
+		}
+	}
+	for _, path := range paths {
+		addBundle(path, false)
+	}
+	// A manually installed Xcode can be selected before Launch Services lists it.
+	if versionMap[defaultXcodeVersion] == nil && defaultInfo != nil && defaultInfo.IsDir() {
+		if bundle, ok := strings.CutSuffix(defaultDeveloperDir, "/"+developerDirectoryPath); ok && filepath.IsAbs(bundle) {
+			addBundle(bundle, true)
 		}
 	}
 
