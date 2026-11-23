@@ -398,9 +398,10 @@ func NewBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bs
 		return nil, err
 	}
 	return &readThroughCacher{
-		ctx:   ctx,
-		rc:    rc,
-		cache: cache,
+		ctx:       ctx,
+		rc:        rc,
+		cache:     cache,
+		remaining: contentLength,
 	}, nil
 }
 
@@ -409,16 +410,20 @@ type readThroughCacher struct {
 	rc    io.ReadCloser
 	cache interfaces.CommittedWriteCloser
 
-	cacheErr error
+	cacheErr   error
+	remaining  int64
+	blobExists bool
 }
 
 func (r *readThroughCacher) Read(p []byte) (int, error) {
 	n, err := r.rc.Read(p)
-	if r.cacheErr != nil {
+	if err != nil && err != io.EOF {
+		r.cacheErr = err
 		return n, err
 	}
+	r.remaining -= int64(n)
 
-	if n > 0 {
+	if n > 0 && r.cacheErr == nil && !r.blobExists {
 		written, writeErr := r.cache.Write(p[:n])
 		r.cacheErr = writeErr
 		if r.cacheErr == nil {
@@ -426,12 +431,15 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 				log.CtxWarningf(r.ctx, "Short write to cache. Wanted %v, wrote %v", n, written)
 				r.cacheErr = io.ErrShortWrite
 			}
-		} else if !status.IsAlreadyExistsError(r.cacheErr) {
+		} else if status.IsAlreadyExistsError(r.cacheErr) {
+			r.blobExists = true
+			r.cacheErr = nil
+		} else {
 			log.CtxWarningf(r.ctx, "Error writing to cache: %s", r.cacheErr)
 		}
 	}
 
-	if err == io.EOF && r.cacheErr == nil {
+	if err == io.EOF && r.remaining == 0 && r.cacheErr == nil {
 		r.cacheErr = r.cache.Commit()
 		if r.cacheErr != nil {
 			log.CtxWarningf(r.ctx, "Error committing blob to cache: %s", r.cacheErr)
