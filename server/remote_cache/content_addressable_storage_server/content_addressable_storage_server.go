@@ -833,28 +833,18 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 	}
 	hit := &treeCacheHit{rn: treeCacheRN}
 	bytesRead := 0
-	// Unless the contents may be skipped, size the tree from its contents, as
-	// older servers do. Older pointers have no dir count.
-	readFirst := meta == nil || !readSkipAllowed
-	var dirCount int
-	if readFirst {
+	// Older pointers have no metadata; for those the size is only known after
+	// reading the contents.
+	if meta != nil && readSkipAllowed && digestAllowed && worthSendingAsDigest(int(meta.GetDirCount())) {
+		if err := s.checkTreeCacheBlobsExist(ctx, treeCacheRN, meta); err != nil {
+			return miss()
+		}
+		hit.sendAsDigest = true
+	} else {
 		if hit.dirs, bytesRead, err = s.readTreeCacheContents(ctx, treeCacheRN); err != nil {
 			return miss()
 		}
-		dirCount = len(hit.dirs)
-	} else {
-		dirCount = int(meta.GetDirCount())
-	}
-	hit.sendAsDigest = digestAllowed && worthSendingAsDigest(dirCount)
-	if !readFirst {
-		if hit.sendAsDigest {
-			err = s.checkTreeCacheBlobsExist(ctx, treeCacheRN, meta)
-		} else {
-			hit.dirs, bytesRead, err = s.readTreeCacheContents(ctx, treeCacheRN)
-		}
-		if err != nil {
-			return miss()
-		}
+		hit.sendAsDigest = digestAllowed && worthSendingAsDigest(len(hit.dirs))
 	}
 
 	metrics.TreeCacheLookupCount.With(prometheus.Labels{
