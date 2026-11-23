@@ -253,6 +253,8 @@ const (
 	// a snapshot.
 	// All runs on default refs will save a snapshot.
 	OnlySaveNonDefaultSnapshotIfNoneAvailable = "none-available"
+	// Never save a snapshot, remote or local, on any ref.
+	NeverSaveSnapshot = "never"
 )
 
 // Values for platform.SnapshotReadPolicyPropertyName:
@@ -568,7 +570,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 
 	snapshotSavePolicy := stringProp(m, SnapshotSavePolicyPropertyName, "")
 	switch snapshotSavePolicy {
-	case AlwaysSaveSnapshot, OnlySaveFirstNonDefaultSnapshot, OnlySaveNonDefaultSnapshotIfNoneAvailable, "":
+	case AlwaysSaveSnapshot, OnlySaveFirstNonDefaultSnapshot, OnlySaveNonDefaultSnapshotIfNoneAvailable, NeverSaveSnapshot, "":
 	default:
 		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `remote-snapshot-save-policy` platform property", snapshotSavePolicy)
 	}

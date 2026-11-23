@@ -1758,6 +1758,72 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 	}
 }
 
+func TestFirecracker_SnapshotSharing_NeverSavePolicy(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	fc := newTestFileCache(ctx, t, testfs.MakeTempDir(t), fileCacheSize)
+	env.SetFileCache(fc)
+	rootDir := testfs.MakeTempDir(t)
+	cfg := getExecutorConfig(t)
+
+	var containersToCleanup []*firecracker.FirecrackerContainer
+	t.Cleanup(func() {
+		for _, vm := range containersToCleanup {
+			err := vm.Remove(ctx)
+			assert.NoError(t, err)
+		}
+	})
+
+	// The default branch, where the other policies always save, so a save
+	// here can only be stopped by the never policy.
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.NeverSaveSnapshot},
+				{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+				{Name: "GIT_BRANCH", Value: "main"},
+			},
+		},
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName: "test-instance-name",
+		},
+	}
+
+	for _, run := range []string{"First", "Second"} {
+		workDir := testfs.MakeDirAll(t, rootDir, "work-"+run)
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         minMemSizeMB,
+				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: cfg,
+		}
+		vm, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		containersToCleanup = append(containersToCleanup, vm)
+		require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+		require.NoError(t, vm.Create(ctx, workDir))
+
+		res := vm.Exec(ctx, appendToLog(run), nil /*=stdio*/)
+		require.NoError(t, res.Error)
+		// The second run starts clean because the first saved nothing.
+		require.Equal(t, run+"\n", string(res.Stdout))
+		assert.False(t, res.VMMetadata.GetSavedLocalSnapshot())
+		assert.False(t, res.VMMetadata.GetSavedRemoteSnapshot())
+		require.NoError(t, vm.Pause(ctx))
+	}
+}
+
 func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 	tests := []struct {
 		name                      string
