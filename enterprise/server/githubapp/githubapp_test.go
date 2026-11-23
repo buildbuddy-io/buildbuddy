@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -230,6 +232,21 @@ func TestGetInstallationTokenForInternalUseOnly(t *testing.T) {
 		WHERE group_id = ?
 	`, testGroupID).Take(gitRepository)
 	require.Error(t, err)
+}
+
+func TestReplaceRejectsSymlink(t *testing.T) {
+	templateDir := t.TempDir()
+	targetDir := t.TempDir()
+	targetPath := filepath.Join(targetDir, "target.txt")
+	require.NoError(t, os.WriteFile(targetPath, []byte("before"), 0644))
+	require.NoError(t, os.Symlink(targetPath, filepath.Join(templateDir, "link.txt")))
+
+	err := replace(templateDir, map[string]string{"before": "after"})
+	require.ErrorContains(t, err, "template cannot contain symlinks")
+
+	contents, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	require.Equal(t, "before", string(contents))
 }
 
 func TestUnlinkGitHubRepo_DeletesScheduledRuns(t *testing.T) {
