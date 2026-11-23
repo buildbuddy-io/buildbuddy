@@ -702,9 +702,19 @@ func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.Re
 	return flushToClient(ctx, remoteReadStream, stream)
 }
 
+// recvRemote receives the next response from the provided read stream, failing
+// if it contains an unsupported reference.
+func recvRemote(remoteReadStream bspb.ByteStream_ReadClient) (*bspb.ReadResponse, error) {
+	rsp, err := remoteReadStream.Recv()
+	if err == nil && rsp.GetReference() != nil {
+		return nil, status.InternalError("remote cache answered a read with an unsupported reference")
+	}
+	return rsp, err
+}
+
 func flushToClient(ctx context.Context, remoteReadStream bspb.ByteStream_ReadClient, stream bspb.ByteStream_ReadServer) error {
 	for {
-		message, err := remoteReadStream.Recv()
+		message, err := recvRemote(remoteReadStream)
 		if err == io.EOF {
 			return nil
 		}
@@ -757,7 +767,7 @@ type readThroughCacheStream struct {
 // Recv turns a ReadResponse from a remote read into a WriteRequest that gets
 // returned to a local write.
 func (r *readThroughCacheStream) Recv() (*bspb.WriteRequest, error) {
-	resp, err := r.remote.Recv()
+	resp, err := recvRemote(r.remote)
 	if err != nil {
 		r.remoteRecvErr = err
 		if err == io.EOF {

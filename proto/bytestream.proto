@@ -15,6 +15,7 @@
 syntax = "proto3";
 
 import "proto/capability.proto";
+import "proto/reference.proto";
 
 package google.bytestream;
 
@@ -125,6 +126,16 @@ message ReadResponse {
   // client that the request is still live while it is running an operation to
   // generate more data.
   bytes data = 10;
+
+  // If set, this response carries no data and is the only response on the
+  // stream: the client should read the resource from the referenced location.
+  // Servers only send references to storage that the client advertised it can
+  // read in the request's `cache_capabilities`, and only for reads of the
+  // whole resource (`read_offset` and `read_limit` both 0). The stored bytes
+  // are encoded with `reference.resource.compressor`, which may differ from
+  // the compressor in the requested resource name, so the client must
+  // transcode them as needed.
+  reference.Reference reference = 11;
 }
 
 // Request object for ByteStream.Write.
@@ -158,6 +169,12 @@ message WriteRequest {
   // service that the request is still live while it is running an operation to
   // generate more data.
   bytes data = 10;
+
+  // If set, the client has already stored the resource at the referenced
+  // location and this is the only request on the stream: `data` must be empty,
+  // `write_offset` must be 0, and `finish_write` must be true. Servers reject
+  // references to storage they cannot read.
+  reference.Reference reference = 11;
 }
 
 // Response object for ByteStream.Write.

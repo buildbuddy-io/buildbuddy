@@ -54,6 +54,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
@@ -3695,4 +3696,44 @@ func TestWriteSkipValidationKeepsValidatedUpload(t *testing.T) {
 			require.Equal(t, data, readWholeBlob(t, ctx, env.proxy, rn))
 		})
 	}
+}
+
+// referenceRemote answers every read with a reference instead of bytes.
+type referenceRemote struct {
+	bspb.UnimplementedByteStreamServer
+}
+
+func (r *referenceRemote) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	return stream.Send(&bspb.ReadResponse{Reference: &refpb.Reference{
+		Gcs: &refpb.GCSLocation{Bucket: "bucket", BlobName: "blob"},
+	}})
+}
+
+func TestReadFailsOnRemoteReference(t *testing.T) {
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
+	bspb.RegisterByteStreamServer(grpcServer, &referenceRemote{})
+	go runFunc()
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	proxyEnv := testenv.GetTestEnv(t)
+	proxy := runBSProxy(ctx, bspb.NewByteStreamClient(conn), proxyEnv, t)
+
+	rn, _ := testdigest.RandomCASResourceBuf(t, 1234)
+	casrn, err := digest.CASResourceNameFromProto(rn)
+	require.NoError(t, err)
+	stream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: casrn.DownloadString()})
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	require.True(t, status.IsInternalError(err), "expected Internal, got %v", err)
+
+	// Nothing should have been written to the proxy's cache.
+	cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+	found, err := proxyEnv.GetCache().Contains(cacheCtx, rn)
+	require.NoError(t, err)
+	require.False(t, found)
 }
