@@ -85,15 +85,19 @@ func noLimitsCfg() *RunnerPoolOptions {
 type fakeContainer struct {
 	container.CommandContainer // TODO: implement all methods
 	CreateError                error
+	PauseError                 error
 	UnpauseError               error
+	RemoveError                error
 	Removed                    chan struct{}
 	Result                     *interfaces.CommandResult
 	ExecFunc                   func(context.Context) *interfaces.CommandResult
+	PauseFunc                  func() // Called when the container is paused, if set.
 	Isolation                  string // Fake isolation type name
 	ImageCached                bool   // Return value for IsImageCached
 	BlockPull                  bool   // PullImage blocks forever if true.
 	FakeStats                  *repb.UsageStats
 	Paused                     bool
+	WritesHostWorkspace        bool // Return value for ExecutionWritesHostWorkspace
 }
 
 func NewFakeContainer() *fakeContainer {
@@ -108,6 +112,10 @@ func (c *fakeContainer) IsolationType() string {
 		return "bare"
 	}
 	return c.Isolation
+}
+
+func (c *fakeContainer) ExecutionWritesHostWorkspace() bool {
+	return c.WritesHostWorkspace
 }
 
 func (c *fakeContainer) Run(ctx context.Context, cmd *repb.Command, workdir string, creds oci.Credentials) *interfaces.CommandResult {
@@ -143,12 +151,18 @@ func (c *fakeContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 
 func (c *fakeContainer) Remove(ctx context.Context) error {
 	close(c.Removed)
-	return nil
+	return c.RemoveError
 }
 
 func (c *fakeContainer) Pause(ctx context.Context) error {
+	if c.PauseError != nil {
+		return c.PauseError
+	}
 	if c.Paused {
 		return status.FailedPreconditionError("container is already paused")
+	}
+	if c.PauseFunc != nil {
+		c.PauseFunc()
 	}
 	c.Paused = true
 	return nil
@@ -1345,6 +1359,233 @@ func TestRecycledRunnerUnpauseError(t *testing.T) {
 
 	assert.True(t, status.IsUnavailableError(res.Error), "want Unavailable, got %+#v", res.Error)
 	assert.Equal(t, 1, execCount, "the second task should not run")
+}
+
+func TestUploadOutputsPausesContainer(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		writesHostWorkspace   bool
+		wantPausedAfterUpload bool
+	}{
+		{
+			name:                  "should pause before upload if container writes to host workspace",
+			writesHostWorkspace:   true,
+			wantPausedAfterUpload: true,
+		},
+		{
+			name:                  "should keep running during upload if container does not write to host workspace",
+			writesHostWorkspace:   false,
+			wantPausedAfterUpload: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+			testcache.Setup(t, env, lis)
+			go runServer()
+			cfg := noLimitsCfg()
+			ctr := NewFakeContainer()
+			ctr.WritesHostWorkspace = tc.writesHostWorkspace
+			cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+				return ctr, nil
+			})
+			pool := newRunnerPool(t, env, cfg)
+			ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+			r, err := pool.Get(ctx, newTask())
+			require.NoError(t, err)
+			err = r.PrepareForTask(ctx)
+			require.NoError(t, err)
+			res := r.Run(ctx, &repb.IOStats{})
+			require.NoError(t, res.Error)
+
+			err = r.UploadOutputs(ctx, &repb.IOStats{}, &repb.ExecuteResponse{Result: &repb.ActionResult{}}, res)
+			require.NoError(t, err)
+			pausedAfterUpload := ctr.Paused
+			pool.TryRecycle(ctx, r, true)
+
+			assert.Equal(t, tc.wantPausedAfterUpload, pausedAfterUpload)
+			assert.True(t, ctr.Paused)
+			assert.Equal(t, 1, pool.PausedRunnerCount())
+		})
+	}
+}
+
+func TestUploadOutputsPausesContainerBeforeReadingWorkspace(t *testing.T) {
+	env := newTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	go runServer()
+	cfg := noLimitsCfg()
+	ctr := NewFakeContainer()
+	ctr.WritesHostWorkspace = true
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	task := newTask()
+	task.ExecutionTask.Command.OutputPaths = []string{"out.txt"}
+	r, err := get(ctx, pool, task)
+	require.NoError(t, err)
+	// Create the output file when the container is paused, so that the upload
+	// only finds the file if it reads the workspace after the pause.
+	ctr.PauseFunc = func() {
+		testfs.WriteFile(t, r.Workspace.Path(), "out.txt", "output")
+	}
+	err = r.PrepareForTask(ctx)
+	require.NoError(t, err)
+	res := r.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+
+	rsp := &repb.ExecuteResponse{Result: &repb.ActionResult{}}
+	err = r.UploadOutputs(ctx, &repb.IOStats{}, rsp, res)
+	require.NoError(t, err)
+	var uploadedPaths []string
+	for _, f := range rsp.GetResult().GetOutputFiles() {
+		uploadedPaths = append(uploadedPaths, f.GetPath())
+	}
+
+	assert.Equal(t, []string{"out.txt"}, uploadedPaths)
+}
+
+func TestUploadOutputsPausesReusedContainer(t *testing.T) {
+	env := newTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	go runServer()
+	cfg := noLimitsCfg()
+	ctr := NewFakeContainer()
+	ctr.WritesHostWorkspace = true
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	r1, err := pool.Get(ctx, newTask())
+	require.NoError(t, err)
+	err = r1.PrepareForTask(ctx)
+	require.NoError(t, err)
+	res := r1.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+	err = r1.UploadOutputs(ctx, &repb.IOStats{}, &repb.ExecuteResponse{Result: &repb.ActionResult{}}, res)
+	require.NoError(t, err)
+	pool.TryRecycle(ctx, r1, true)
+	require.Equal(t, 1, pool.PausedRunnerCount())
+
+	r2, err := pool.Get(ctx, newTask())
+	require.NoError(t, err)
+	require.Same(t, r1, r2)
+	err = r2.PrepareForTask(ctx)
+	require.NoError(t, err)
+	res = r2.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+	pausedAfterRun := ctr.Paused
+	err = r2.UploadOutputs(ctx, &repb.IOStats{}, &repb.ExecuteResponse{Result: &repb.ActionResult{}}, res)
+	require.NoError(t, err)
+	pausedAfterUpload := ctr.Paused
+
+	assert.False(t, pausedAfterRun)
+	assert.True(t, pausedAfterUpload)
+}
+
+func TestUploadOutputsDoesNotPauseNonRecycledRunner(t *testing.T) {
+	env := newTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	go runServer()
+	cfg := noLimitsCfg()
+	ctr := NewFakeContainer()
+	ctr.WritesHostWorkspace = true
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	task := newTask()
+	task.ExecutionTask.Command.Platform.Properties = []*repb.Platform_Property{
+		{Name: recycleRunnerPropertyName, Value: "false"},
+	}
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	err = r.PrepareForTask(ctx)
+	require.NoError(t, err)
+	res := r.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+
+	err = r.UploadOutputs(ctx, &repb.IOStats{}, &repb.ExecuteResponse{Result: &repb.ActionResult{}}, res)
+	require.NoError(t, err)
+	pausedAfterUpload := ctr.Paused
+
+	assert.False(t, pausedAfterUpload)
+}
+
+func TestUploadOutputsPauseError(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		removeError  error
+		wantErr      bool
+		wantUploaded bool
+	}{
+		{
+			name:         "should upload outputs if container removal succeeds",
+			removeError:  nil,
+			wantErr:      false,
+			wantUploaded: true,
+		},
+		{
+			name:         "should fail without uploading if container removal fails",
+			removeError:  fmt.Errorf("test remove error"),
+			wantErr:      true,
+			wantUploaded: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+			testcache.Setup(t, env, lis)
+			go runServer()
+			cfg := noLimitsCfg()
+			ctr := NewFakeContainer()
+			ctr.WritesHostWorkspace = true
+			ctr.PauseError = fmt.Errorf("test pause error")
+			ctr.RemoveError = tc.removeError
+			cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+				return ctr, nil
+			})
+			pool := newRunnerPool(t, env, cfg)
+			ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+			r, err := pool.Get(ctx, newTask())
+			require.NoError(t, err)
+			err = r.PrepareForTask(ctx)
+			require.NoError(t, err)
+			res := r.Run(ctx, &repb.IOStats{})
+			require.NoError(t, res.Error)
+
+			rsp := &repb.ExecuteResponse{Result: &repb.ActionResult{}}
+			err = r.UploadOutputs(ctx, &repb.IOStats{}, rsp, res)
+			removeCalledAfterUpload := false
+			select {
+			case <-ctr.Removed:
+				removeCalledAfterUpload = true
+			default:
+			}
+			uploaded := rsp.GetResult().GetStdoutDigest() != nil
+			// Clear the pause error so that TryRecycle could pause the container
+			// and pool the runner. The runner should stay out of the pool
+			// anyway, because the pause failed during the upload.
+			ctr.PauseError = nil
+			pool.TryRecycle(ctx, r, true)
+
+			if tc.wantErr {
+				assert.True(t, status.IsUnavailableError(err), "want Unavailable, got %+#v", err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.True(t, removeCalledAfterUpload)
+			assert.Equal(t, tc.wantUploaded, uploaded)
+			assert.Equal(t, 0, pool.PausedRunnerCount())
+		})
+	}
 }
 
 func TestRunnerCrashedExitCodes(t *testing.T) {

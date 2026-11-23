@@ -68,6 +68,10 @@ func (c *bareCommandContainer) IsolationType() string {
 	return "bare"
 }
 
+func (c *bareCommandContainer) ExecutionWritesHostWorkspace() bool {
+	return true
+}
+
 func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	if err := c.Create(ctx, workDir); err != nil {
 		return commandutil.ErrorResult(err)

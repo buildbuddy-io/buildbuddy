@@ -737,6 +737,10 @@ func (c *ociContainer) IsolationType() string {
 	return "oci" // TODO: make const in platform.go
 }
 
+func (c *ociContainer) ExecutionWritesHostWorkspace() bool {
+	return true
+}
+
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
 	if c.lockedImage != nil {
 		return true, nil

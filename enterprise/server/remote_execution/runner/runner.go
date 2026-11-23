@@ -232,6 +232,10 @@ type taskRunner struct {
 	// nothing in the container runs while the executor prepares the workspace
 	// for the task.
 	containerPaused bool
+	// containerRemoved is whether the container has been removed. This can
+	// happen before the runner is removed, if the container could not be paused
+	// before uploading outputs.
+	containerRemoved bool
 
 	worker *persistentworker.Worker
 
@@ -619,6 +623,28 @@ func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, e
 		// chunking.
 		ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
 	}
+	// If the container can write to the host workspace, pause it so that nothing
+	// in the container runs while the executor uploads outputs from the
+	// workspace. Other containers are paused when the runner is added back to
+	// the pool. Only runners in the ready state have a container that can be
+	// paused.
+	r.p.mu.RLock()
+	s := r.getState()
+	r.p.mu.RUnlock()
+	if s == ready && !r.containerPaused && r.Container.ExecutionWritesHostWorkspace() {
+		if err := r.Container.Pause(ctx); err != nil {
+			// If pause failed (e.g. all processes have exited), remove
+			// instead, and prevent recycling since the container cannot be
+			// reused in this state.
+			log.CtxWarningf(ctx, "Failed to pause container before uploading outputs, removing it instead: %s", err)
+			r.doNotReuse = true
+			if err := r.removeContainer(ctx); err != nil {
+				return status.UnavailableErrorf("remove container: %s", err)
+			}
+		} else {
+			r.containerPaused = true
+		}
+	}
 	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
 	if err != nil {
 		return err
@@ -668,6 +694,30 @@ func (r *taskRunner) shutdown(ctx context.Context) error {
 	return nil
 }
 
+// removeContainer stops the persistent worker, if there is one, and removes
+// the container, which kills any processes that are still running in it. It
+// does nothing if the container was already removed.
+func (r *taskRunner) removeContainer(ctx context.Context) error {
+	if r.containerRemoved {
+		return nil
+	}
+	errs := []error{}
+	if r.worker != nil {
+		if err := r.worker.Stop(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if err := r.Container.Remove(ctx); err != nil {
+		errs = append(errs, err)
+	} else {
+		r.containerRemoved = true
+	}
+	if len(errs) > 0 {
+		return errSlice(errs)
+	}
+	return nil
+}
+
 func (r *taskRunner) Remove(ctx context.Context) error {
 	r.p.mu.Lock()
 	s := r.getState()
@@ -685,14 +735,10 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 	if err := r.shutdown(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if r.worker != nil {
-		if err := r.worker.Stop(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if err := r.Container.Remove(ctx); err != nil {
+	if err := r.removeContainer(ctx); err != nil {
 		errs = append(errs, err)
-	} else {
+	}
+	if r.containerRemoved {
 		// Pool the workspace for later tasks, now that no container uses it.
 		// Note: if we don't move the workspace to the pool dir here (e.g. if
 		// the task is not eligible for pooling or if pooling fails), then

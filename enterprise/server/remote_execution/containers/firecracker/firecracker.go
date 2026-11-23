@@ -2624,6 +2624,13 @@ func (c *FirecrackerContainer) IsolationType() string {
 	return "firecracker"
 }
 
+// ExecutionWritesHostWorkspace returns false because commands write to the
+// guest's workspace. The executor copies their outputs to the host workspace
+// after they finish.
+func (c *FirecrackerContainer) ExecutionWritesHostWorkspace() bool {
+	return false
+}
+
 // Run the given command within the container and remove the container after
 // it is done executing.
 //
