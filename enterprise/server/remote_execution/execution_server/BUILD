@@ -40,7 +40,6 @@ go_library(
         "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
-        "//server/util/capabilities",
         "//server/util/claims",
         "//server/util/clientip",
         "//server/util/db",

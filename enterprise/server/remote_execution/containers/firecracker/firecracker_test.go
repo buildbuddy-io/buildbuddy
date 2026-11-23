@@ -25,6 +25,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
@@ -59,6 +60,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -76,6 +79,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -943,7 +947,7 @@ func TestFirecrackerVMExecReadySignalAfterSnapshotResume(t *testing.T) {
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
 	for _, memorySize := range []int64{minMemSizeMB, 4000} {
-		ctx := context.Background()
+		ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 		env := getTestEnv(ctx, t, envOpts{})
 		env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 		rootDir := testfs.MakeTempDir(t)
@@ -1071,7 +1075,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecrackerSnapshotAndResume_GuestKernelVersionChange(t *testing.T) {
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	workDir := testfs.MakeDirAll(t, testfs.MakeTempDir(t), "work")
@@ -1138,7 +1142,7 @@ func TestFirecrackerSnapshotAndResume_GuestKernelVersionChange(t *testing.T) {
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	rootDir := testfs.MakeTempDir(t)
@@ -1388,7 +1392,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 }
 
 func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *testing.T) {
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
@@ -1500,6 +1504,82 @@ func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *test
 	assert.False(t, res.VMMetadata.GetSavedLocalSnapshot())
 }
 
+func TestFirecracker_SnapshotSave_ACWriteCapability(t *testing.T) {
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	for _, tc := range []struct {
+		name         string
+		capabilities []cappb.Capability
+		anonymous    bool
+		malformedJWT bool
+		skipRemote   bool
+		wantRemote   bool
+	}{
+		{name: "CAS-only key", capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE}, wantRemote: false},
+		{name: "Read only key", capabilities: []cappb.Capability{}, wantRemote: false},
+		{name: "AC write key", capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE}, wantRemote: true},
+		{name: "quota still applies", capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE}, skipRemote: true},
+		{name: "anonymous", anonymous: true, wantRemote: false},
+		{name: "malformed JWT", malformedJWT: true, wantRemote: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			workDir := testfs.MakeTempDir(t)
+			// An explicit save policy and platform override cannot grant AC write.
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+					}},
+				},
+				PlatformOverrides: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
+					{Name: platform.SkipRemoteSnapshotSavePropertyName, Value: "false"},
+					{Name: platform.SkipLocalSnapshotSavePropertyName, Value: "false"},
+				}},
+			}
+			if tc.skipRemote {
+				platform.SetValue(task.PlatformOverrides, platform.SkipRemoteSnapshotSavePropertyName, "true")
+			}
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB,
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.NoError(t, c.Remove(ctx)) })
+			require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+			require.NoError(t, c.Create(ctx, workDir))
+			res := c.Exec(ctx, &repb.Command{Arguments: []string{"true"}}, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+			require.Zero(t, res.ExitCode)
+
+			saveCtx := ctx
+			if tc.malformedJWT {
+				saveCtx = auth.ContextWithTrustedJWT(ctx, "invalid")
+			} else if !tc.anonymous {
+				saveCtx = claims.AuthContextWithJWT(ctx, &claims.Claims{Capabilities: tc.capabilities}, nil)
+				saveCtx = auth.ContextWithTrustedJWT(saveCtx, saveCtx.Value(authutil.ContextTokenStringKey).(string))
+			}
+			require.NoError(t, c.Pause(saveCtx))
+			stats := c.PostCompletionStats().GetFirecrackerPostExecStats()
+			assert.Equal(t, tc.wantRemote, stats.GetSnapshotSavedRemotely())
+			// Only remote snapshot saves require AC write; local saves are
+			// left as requested by the user.
+			assert.True(t, stats.GetSnapshotSavedLocally())
+		})
+	}
+}
+
 func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -1540,7 +1620,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 			env := getTestEnv(ctx, t, envOpts{})
 			rootDir := testfs.MakeTempDir(t)
 			cfg := getExecutorConfig(t)
@@ -1717,7 +1797,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 			cfg := getExecutorConfig(t)
 			rootDir1 := testfs.MakeTempDir(t)
 			rootDir2 := testfs.MakeTempDir(t)
@@ -1849,7 +1929,7 @@ func TestFirecracker_SnapshotSharing_UniversalFallback(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 			env := getTestEnv(ctx, t, envOpts{})
 			env.SetClock(fakeClock)
 			rootDir := testfs.MakeTempDir(t)
@@ -1981,7 +2061,7 @@ func TestFirecracker_SnapshotSharing_UniversalFallback_SavePolicy(t *testing.T) 
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 			env := getTestEnv(ctx, t, envOpts{})
 			cfg := getExecutorConfig(t)
 			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
@@ -2093,7 +2173,7 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 			cfg := getExecutorConfig(t)
 			rootDir1 := testfs.MakeTempDir(t)
 			rootDir2 := testfs.MakeTempDir(t)
@@ -2237,7 +2317,7 @@ func TestFirecracker_SnapshotSharing_MinWriteInterval(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 			rootDir := testfs.MakeTempDir(t)
 			workDir := testfs.MakeDirAll(t, rootDir, "work")
 			env := getTestEnv(ctx, t, envOpts{})
@@ -2319,7 +2399,7 @@ func TestFirecracker_SnapshotSharing_MinWriteInterval(t *testing.T) {
 
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
 	skipUnsupportedImage(t, workflowsImage)
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
@@ -2388,7 +2468,7 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecracker_RemoteSnapshotSharing_Devbox(t *testing.T) {
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
@@ -2471,7 +2551,7 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
@@ -2683,7 +2763,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 	// Enable cache proxy cluster-local snapshot storage
 	flags.Set(t, "executor.store_snapshots_in_local_cluster_only", true)
 
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 	env := getTestEnv(ctx, t, envOpts{runProxy: true})
 	rootDir := testfs.MakeTempDir(t)
 	cfg := getExecutorConfig(t)
@@ -2759,7 +2839,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 
 func TestFirecrackerBalloon(t *testing.T) {
 	flags.Set(t, "executor.firecracker_enable_balloon", true)
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 
 	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
@@ -2843,7 +2923,7 @@ free -h
 }
 
 func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
-	ctx := context.Background()
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("US1", "GR1"))
 
 	// execAndPause runs a memory intensive command in a VM and saves the snapshot.
 	// Returns the number of bytes written to the cache.
