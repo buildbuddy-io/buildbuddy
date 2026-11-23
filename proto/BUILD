@@ -2429,7 +2429,6 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":git_ts_proto",
-        ":resource_ts_proto",
     ],
 )
 
