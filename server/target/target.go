@@ -295,7 +295,7 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 		// overlap, which adds some complexity. So for now, we just return an
 		// empty page token whenever there is less than a single page of data
 		// available.
-		if g.TotalCount < page.Limit {
+		if inv.InvocationStatus == ispb.InvocationStatus_PARTIAL_INVOCATION_STATUS && g.TotalCount < page.Limit {
 			g.NextPageToken = ""
 		}
 	}

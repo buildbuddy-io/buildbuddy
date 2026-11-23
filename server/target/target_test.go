@@ -2,11 +2,13 @@ package target_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
@@ -21,6 +23,8 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
@@ -306,6 +310,87 @@ func TestGetTargetStats_NearlyTimedOutRuns(t *testing.T) {
 		{Date: "2026-01-15", Data: &trpb.TargetStatsData{TotalRuns: 2, NearlyTimedOutRuns: 1}},
 	}}, dailyTargetStats, protocmp.Transform())
 	require.Empty(t, diff)
+}
+
+func TestGetTarget_FileLimitPagination(t *testing.T) {
+	idx := event_index.New()
+	for _, target := range []struct {
+		label     string
+		fileCount int
+	}{
+		// After 100 files have been returned in a single page, the server stops returning additional targets.
+		// Additional targets must be fetched via a subsequent page token.
+		{"//pkg:a", 101},
+		{"//pkg:b", 1},
+	} {
+		files := &bespb.NamedSetOfFiles{}
+		for i := range target.fileCount {
+			files.Files = append(files.Files, &bespb.File{
+				Name: fmt.Sprintf("output-%d", i),
+				File: &bespb.File_Uri{Uri: fmt.Sprintf("bytestream://cache/blobs/hash-%d/1", i)},
+			})
+		}
+		idx.AllTargetLabels = append(idx.AllTargetLabels, target.label)
+		idx.NamedSetOfFilesByID[target.label] = files
+		idx.TargetCompleteEventByLabel[target.label] = &bespb.BuildEvent{
+			Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				Success: true,
+				OutputGroup: []*bespb.OutputGroup{{
+					FileSets: []*bespb.BuildEventId_NamedSetOfFilesId{{Id: target.label}},
+				}},
+			}},
+		}
+	}
+	idx.Finalize()
+
+	for _, test := range []struct {
+		name   string
+		status ispb.InvocationStatus
+	}{
+		// When the invocation is in progress, a token to fetch package b is not returned because
+		// returning it might cause duplicate entries in the UI.
+		{"running", ispb.InvocationStatus_PARTIAL_INVOCATION_STATUS},
+		// Once the invocation is no longer running, a token to fetch package b
+		// should be returned so that target is accessible.
+		{"disconnected", ispb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS},
+		{"completed", ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			inv := &inpb.Invocation{InvocationId: "iid", InvocationStatus: test.status}
+			listing := func(pageToken string) *trpb.TargetGroup {
+				rsp, err := target.GetTarget(t.Context(), nil, inv, idx, &trpb.GetTargetRequest{
+					InvocationId: inv.GetInvocationId(),
+					Status:       common.Status_STATUS_UNSPECIFIED.Enum(),
+					PageToken:    pageToken,
+				})
+				require.NoError(t, err)
+				require.Len(t, rsp.GetTargetGroups(), 1)
+				return rsp.GetTargetGroups()[0]
+			}
+
+			// The first page should only include the first target, which exceeds the 100 file limit.
+			first := listing("")
+			require.Equal(t, int64(2), first.GetTotalCount())
+			require.Len(t, first.GetTargets(), 1)
+			require.Equal(t, "//pkg:a", first.GetTargets()[0].GetMetadata().GetLabel())
+			require.Len(t, first.GetTargets()[0].GetFiles(), 101, "the soft limit must not truncate any single target's files")
+
+			// When the invocation is in progress, no additional targets should be available.
+			if test.status == ispb.InvocationStatus_PARTIAL_INVOCATION_STATUS {
+				require.Empty(t, first.GetNextPageToken())
+				return
+			}
+
+			// Once the invocation is no longer running, additional targets should be available.
+			require.NotEmpty(t, first.GetNextPageToken(), "remaining targets must be reachable when the invocation is no longer running")
+			second := listing(first.GetNextPageToken())
+			require.Equal(t, int64(2), second.GetTotalCount())
+			require.Len(t, second.GetTargets(), 1)
+			require.Equal(t, "//pkg:b", second.GetTargets()[0].GetMetadata().GetLabel())
+			require.Len(t, second.GetTargets()[0].GetFiles(), 1)
+			require.Empty(t, second.GetNextPageToken(), "pagination must stop after the final target")
+		})
+	}
 }
 
 func timingUsec(startUsec, durationUsec int64) *common.Timing {
