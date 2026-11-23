@@ -383,6 +383,8 @@ func (f *JSONMapFlag[T]) Map() T {
 	return *(reflect.Value)(*f).Interface().(*T)
 }
 
+// StringSliceFlag accepts comma-separated values. Escape a literal comma with
+// \, and a literal backslash with \\. Other backslashes are preserved.
 type StringSliceFlag []string
 
 func NewStringSliceFlag(slice *[]string) *StringSliceFlag {
@@ -406,16 +408,39 @@ func StringSliceVar(flagset *flag.FlagSet, value *[]string, name string, default
 }
 
 func (f *StringSliceFlag) String() string {
-	return strings.Join(*f, ",")
+	escaped := make([]string, len(*f))
+	// Escape commas and backslashes within each value so Set can parse this
+	// string back into the original list.
+	replacer := strings.NewReplacer("\\", "\\\\", ",", "\\,")
+	for i, value := range *f {
+		escaped[i] = replacer.Replace(value)
+	}
+	return strings.Join(escaped, ",")
 }
 
 func (f *StringSliceFlag) Set(values string) error {
 	if values == "" {
 		return nil
 	}
-	for val := range strings.SplitSeq(values, ",") {
-		*f = append(*f, val)
+	var value strings.Builder
+	for i := 0; i < len(values); i++ {
+		switch values[i] {
+		case '\\':
+			// A backslash escapes only a comma or another backslash.
+			// Skip it so the next character is written literally.
+			if i+1 < len(values) && (values[i+1] == ',' || values[i+1] == '\\') {
+				i++
+			}
+			// If no escape matched, preserve the backslash itself.
+			value.WriteByte(values[i])
+		case ',':
+			*f = append(*f, value.String())
+			value.Reset()
+		default:
+			value.WriteByte(values[i])
+		}
 	}
+	*f = append(*f, value.String())
 	return nil
 }
 

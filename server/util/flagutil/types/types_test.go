@@ -71,6 +71,99 @@ func TestStringSliceFlag(t *testing.T) {
 	assert.Equal(t, "", reflect.New(reflect.TypeFor[StringSliceFlag]()).Interface().(flag.Value).String())
 }
 
+func TestStringSliceFlag_Escaping(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		inputs []string
+		want   []string
+	}{
+		{
+			name:   "empty input",
+			inputs: []string{""},
+			want:   []string{},
+		},
+		{
+			name:   "unescaped commas separate values",
+			inputs: []string{"a,b,c"},
+			want:   []string{"a", "b", "c"},
+		},
+		{
+			name:   "escaped comma within a value",
+			inputs: []string{`a,b\,c,d`},
+			want:   []string{"a", "b,c", "d"},
+		},
+		{
+			name:   "escaped commas at the edges",
+			inputs: []string{`\,a\,`},
+			want:   []string{",a,"},
+		},
+		{
+			name:   "escaped backslash before a separator",
+			inputs: []string{`a\\,b`},
+			want:   []string{`a\`, "b"},
+		},
+		{
+			name:   "escaped backslash followed by an escaped comma",
+			inputs: []string{`a\\\,b`},
+			want:   []string{`a\,b`},
+		},
+		{
+			name:   "consecutive escaped backslashes",
+			inputs: []string{`a\\\\,b`},
+			want:   []string{`a\\`, "b"},
+		},
+		{
+			name:   "other backslashes are preserved",
+			inputs: []string{`a\n,b\t`},
+			want:   []string{`a\n`, `b\t`},
+		},
+		{
+			name:   "trailing backslash is preserved",
+			inputs: []string{`a\`},
+			want:   []string{`a\`},
+		},
+		{
+			name:   "empty values are preserved",
+			inputs: []string{`,a\,b,,`},
+			want:   []string{"", "a,b", "", ""},
+		},
+		{
+			name:   "repeated flags append values",
+			inputs: []string{`a\,b`, "", `c,d\\`},
+			want:   []string{"a,b", "c", `d\`},
+		},
+		{
+			name:   "unicode values",
+			inputs: []string{`你好\,世界,café`},
+			want:   []string{"你好,世界", "café"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags := flag.NewFlagSet("test", flag.ContinueOnError)
+			values := StringSlice(flags, "values", []string{}, "")
+			for _, input := range tc.inputs {
+				require.NoError(t, flags.Set("values", input))
+			}
+			require.Equal(t, tc.want, *values)
+
+			// String must preserve value boundaries when parsed again.
+			copy := StringSlice(flags, "copy", []string{}, "")
+			require.NoError(t, flags.Set("copy", flags.Lookup("values").Value.String()))
+			require.Equal(t, tc.want, *copy)
+		})
+	}
+}
+
+func TestStringSliceFlag_ResetEscapedDefaults(t *testing.T) {
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	defaults := []string{"a,b", `c\`, `d\\e`, ""}
+	values := StringSlice(flags, "values", defaults, "")
+	require.NoError(t, flags.Set("values", "other"))
+
+	require.NoError(t, common.ResetFlags(flags))
+	require.Equal(t, defaults, *values)
+}
+
 func TestStructSliceFlag(t *testing.T) {
 	var err error
 
