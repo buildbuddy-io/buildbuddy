@@ -33,7 +33,6 @@ ts_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:duration_ts_proto",
-        "//proto:grpc_status_ts_proto",
         "//proto:timestamp_ts_proto",
     ],
 )
