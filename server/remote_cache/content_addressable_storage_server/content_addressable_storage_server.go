@@ -753,17 +753,19 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.
 	return nil, 0, status.NotFoundErrorf("tree-cache-not-found")
 }
 
-// treeCacheHit is a tree cache hit. dirs is nil if the contents weren't read.
+// treeCacheHit is a tree cache hit. dirs is nil if the contents weren't read,
+// which only happens when sendAsDigest is set.
 type treeCacheHit struct {
-	rn       *digest.ResourceName
-	dirs     []*capb.DirectoryWithDigest
-	dirCount int
+	rn *digest.ResourceName
+	// If set, the client gets this tree as a digest instead of its directories.
+	sendAsDigest bool
+	dirs         []*capb.DirectoryWithDigest
 }
 
-// sentAsSubtreeDigest returns whether a cached subtree with dirCount
-// directories is returned to the client as a digest (given that the client
-// requested subtrees) rather than inline.
-func sentAsSubtreeDigest(dirCount int) bool {
+// worthSendingAsDigest returns whether a cached subtree with dirCount
+// directories is big enough to send to the client as a digest instead of
+// inline.
+func worthSendingAsDigest(dirCount int) bool {
 	return dirCount >= *getTreeSubtreeMinDirCount
 }
 
@@ -810,35 +812,48 @@ func (s *ContentAddressableStorageServer) readTreeCachePointer(ctx context.Conte
 }
 
 // readCachedTreeNode returns the cached tree that a tree cache pointer refers
-// to, and the number of bytes read.
-func (s *ContentAddressableStorageServer) readCachedTreeNode(ctx context.Context, treeCachePointer *digest.ResourceName, skipContents bool) (*treeCacheHit, int, error) {
+// to, and the number of bytes read. digestAllowed is whether the tree may be
+// sent as a digest; skipAllowed is whether its contents may then go unread.
+func (s *ContentAddressableStorageServer) readCachedTreeNode(ctx context.Context, treeCachePointer *digest.ResourceName, digestAllowed, skipAllowed bool) (*treeCacheHit, int, error) {
 	treeCacheRN, meta, err := s.readTreeCachePointer(ctx, treeCachePointer)
 	if err != nil {
 		return nil, 0, err
 	}
-	if skipContents && meta != nil && sentAsSubtreeDigest(int(meta.GetDirCount())) {
-		if err := s.checkCachedTreeNode(ctx, treeCacheRN, meta); err != nil {
+	hit := &treeCacheHit{rn: treeCacheRN}
+	bytesRead := 0
+	dirCount := int(meta.GetDirCount())
+	// Unless the contents may be skipped, size the tree from its contents, as
+	// older servers do. Older pointers have no dir count.
+	readFirst := meta == nil || !skipAllowed
+	if readFirst {
+		hit.dirs, bytesRead, err = s.lookupCachedTreeNodeInCAS(ctx, treeCacheRN)
+		if err != nil {
 			return nil, 0, err
 		}
-		return &treeCacheHit{rn: treeCacheRN, dirCount: int(meta.GetDirCount())}, 0, nil
+		dirCount = len(hit.dirs)
 	}
-	children, bytesRead, err := s.lookupCachedTreeNodeInCAS(ctx, treeCacheRN)
-	if err != nil {
-		return nil, 0, err
+	hit.sendAsDigest = digestAllowed && worthSendingAsDigest(dirCount)
+	if !readFirst {
+		if hit.sendAsDigest {
+			err = s.checkCachedTreeNode(ctx, treeCacheRN, meta)
+		} else {
+			hit.dirs, bytesRead, err = s.lookupCachedTreeNodeInCAS(ctx, treeCacheRN)
+		}
+		if err != nil {
+			return nil, 0, err
+		}
 	}
-	return &treeCacheHit{rn: treeCacheRN, dirs: children, dirCount: len(children)}, bytesRead, nil
+	return hit, bytesRead, nil
 }
 
 // Given a resource name for the AC pointer to a cached tree, this returns the
 // cached tree and a direct pointer to its location in the CAS.  If the tree
-// isn't found, a NotFoundError is returned instead. If skipContents is set, the
-// pointer has metadata, and the tree will be sent as a subtree digest, the
-// contents are not read (only checked for existence) and the returned dirs are
-// nil.
-func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, skipContents bool) (*treeCacheHit, error) {
+// isn't found, a NotFoundError is returned instead. See readCachedTreeNode for
+// digestAllowed and skipAllowed.
+func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, digestAllowed, skipAllowed bool) (*treeCacheHit, error) {
 	levelLabel := fmt.Sprintf("%d", min(level, 12))
 
-	hit, bytesRead, err := s.readCachedTreeNode(ctx, treeCachePointer, skipContents)
+	hit, bytesRead, err := s.readCachedTreeNode(ctx, treeCachePointer, digestAllowed, skipAllowed)
 	if err != nil {
 		metrics.TreeCacheLookupCount.With(prometheus.Labels{
 			metrics.TreeCacheLookupStatus: "miss",
@@ -1006,9 +1021,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		// If the root node of the tree was found in the TreeCache, this value
 		// will be non-nil and contain the CAS RN of the whole tree.
 		cachedRoot *digest.ResourceName
-		// The number of directories in cachedRoot; mainDirectories is empty
-		// if the contents were not read.
-		cachedDirCount int
+		// If set, cachedRoot is sent to the client as a digest instead of its
+		// directories.
+		sendAsDigest bool
 		// The trees that should be sent directly to the client (they are not
 		// part of a cached subtree).  Note that when cachedRoot is set, this
 		// slice will contain the entire tree, or be empty if its contents
@@ -1040,13 +1055,14 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 		if *enableTreeCaching && level >= *minTreeCacheLevel {
-			// The root is never sent as a subtree.
-			skipContents := skipSubtreeFetch && !contentsNeeded && level > 0
-			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, skipContents); err == nil {
+			// The root is never sent as a digest.
+			digestAllowed := subtreesRequested && level > 0
+			skipAllowed := skipSubtreeFetch && !contentsNeeded
+			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, digestAllowed, skipAllowed); err == nil {
 				return &fetchResult{
 					mainDirectories: hit.dirs,
 					cachedRoot:      hit.rn,
-					cachedDirCount:  hit.dirCount,
+					sendAsDigest:    hit.sendAsDigest,
 				}, nil
 			}
 		}
@@ -1086,7 +1102,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				if subtreesRequested && grandchild.cachedRoot != nil && sentAsSubtreeDigest(grandchild.cachedDirCount) {
+				if grandchild.sendAsDigest {
 					// This grandchild was cached--we are guaranteed that cachedSubtrees
 					// will be empty (TreeCache entries are always complete), so we
 					// record the subtree root for our response.  The contents (nil
