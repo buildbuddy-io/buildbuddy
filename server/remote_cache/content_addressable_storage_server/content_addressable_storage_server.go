@@ -824,7 +824,10 @@ func (s *ContentAddressableStorageServer) readTreeCachePointer(ctx context.Conte
 	return treeCacheRN, meta, nil
 }
 
-// backfillTreeCachePointer rewrites a pointer that has no metadata.
+// backfillTreeCachePointer rewrites a pointer that has no metadata. The
+// distributed cache's lookaside cache treats pointers as immutable, so apps
+// may keep serving the old pointer (and backfilling it again) until their
+// lookaside entry expires.
 func (s *ContentAddressableStorageServer) backfillTreeCachePointer(ctx context.Context, treeCachePointer, treeCacheBlob *digest.ResourceName, meta *capb.TreeCachePointerMetadata) error {
 	pointerBuf, err := makeTreeCacheActionResult(treeCacheBlob.ToProto(), meta)
 	if err != nil {
@@ -1094,7 +1097,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, digestAllowed, readSkipAllowed, backfillProbability); err == nil {
 				if hit.backfillMeta != nil {
 					cacheEG.Go(func() error {
-						return s.backfillTreeCachePointer(cacheEGCtx, treeCachePointer, hit.rn, hit.backfillMeta)
+						// Don't fail the group: that would cancel the other tree
+						// cache writes. Failures are counted in the backfill metric.
+						s.backfillTreeCachePointer(cacheEGCtx, treeCachePointer, hit.rn, hit.backfillMeta)
+						return nil
 					})
 				}
 				return &fetchResult{
