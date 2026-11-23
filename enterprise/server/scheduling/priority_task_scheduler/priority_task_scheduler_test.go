@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -60,6 +62,60 @@ func TestPropagateExecutionTaskValuesToContext_ExperimentFlags(t *testing.T) {
 	value, details := testExperiment.GetWithDetails(ctx)
 	require.True(t, value)
 	require.Equal(t, "treatment", details.GetVariant())
+}
+
+func TestPropagateExecutionTaskValuesToContext_UsageClientLabel(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		executorClient string
+		args           []string
+		expectedClient string
+	}{
+		{
+			name:           "regular action on regular executor",
+			executorClient: "executor",
+			args:           []string{"/bin/echo", "hello"},
+			expectedClient: "executor",
+		},
+		{
+			name:           "CI runner on regular executor",
+			executorClient: "executor",
+			args:           []string{"./buildbuddy_ci_runner", "--bes_backend=grpc://localhost:1985"},
+			expectedClient: "executor-workflows",
+		},
+		{
+			name:           "Windows CI runner on regular executor",
+			executorClient: "executor",
+			args:           []string{`.\buildbuddy_ci_runner.exe`},
+			expectedClient: "executor-workflows",
+		},
+		{
+			name:           "CI runner on workflows executor",
+			executorClient: "executor-workflows",
+			args:           []string{"./buildbuddy_ci_runner"},
+			expectedClient: "executor-workflows",
+		},
+		{
+			name:           "regular action on workflows executor",
+			executorClient: "executor-workflows",
+			args:           []string{"/bin/echo", "hello"},
+			expectedClient: "executor-workflows",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			originalServerName := usageutil.ServerName()
+			usageutil.SetServerName(test.executorClient)
+			t.Cleanup(func() { usageutil.SetServerName(originalServerName) })
+			scheduler := &PriorityTaskScheduler{exec: NewFakeExecutor()}
+
+			task := &repb.ExecutionTask{Command: &repb.Command{Arguments: test.args}}
+			ctx := scheduler.propagateExecutionTaskValuesToContext(t.Context(), task)
+
+			md, ok := metadata.FromOutgoingContext(ctx)
+			require.True(t, ok)
+			require.Equal(t, []string{test.expectedClient}, md.Get(usageutil.ClientHeaderName))
+		})
+	}
 }
 
 func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb.EnqueueTaskReservationRequest {
