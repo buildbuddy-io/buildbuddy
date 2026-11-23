@@ -1499,6 +1499,13 @@ var (
 		Help:      "Number of tasks started remotely, but not necessarily completed. Includes retry attempts of the same task.",
 	})
 
+	RemoteExecutionXcodeVersionFallbacks = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "xcode_version_fallbacks",
+		Help:      "Number of times the executor falls back to the worker default because a version-only request did not match an installed Xcode.",
+	})
+
 	RemoteExecutionExecutedActionMetadataDurationsUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

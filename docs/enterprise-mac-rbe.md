@@ -58,6 +58,19 @@ And run the "first launch" with
 sudo xcodebuild -runFirstLaunch
 ```
 
+For an action that specifies an Xcode version without an SDK, the executor
+uses that Xcode if it is available, or keeps the worker's default if it is
+not. An explicit `DEVELOPER_DIR` takes precedence for these actions. For a
+version-only Bazel test, pass `--test_env=DEVELOPER_DIR=` to keep the worker
+default even when the requested Xcode is available.
+
+An `APPLE_SDK_PLATFORM` environment override takes precedence over the SDK
+platform in the action when resolving Xcode and the SDK.
+
+A remote cache hit can return a result built with the worker default without
+running Xcode selection again. This matters when workers in a pool have
+different Xcode versions installed.
+
 ### Installing Homebrew
 
 You'll likely want to install [Homebrew](https://brew.sh/) on your fresh executor to make installing other software easier. You can install it with the following line:
