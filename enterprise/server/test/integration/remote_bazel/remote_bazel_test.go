@@ -638,6 +638,15 @@ fi
 	// Run a server and executor locally to run remote bazel against.
 	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
 
+	var vendorDir string
+	for _, f := range testbazel.HermeticFlags(t) {
+		if v, ok := strings.CutPrefix(f, "--vendor_dir="); ok {
+			vendorDir = v
+		}
+	}
+	require.NotEmpty(t, vendorDir)
+	bazelrc := "common --lockfile_mode=off\ncommon --registry=file://" + vendorDir + "/_registries/bcr.bazel.build\n"
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repoDir, _ := makeLocalGitRepo(t, map[string]string{
@@ -685,7 +694,7 @@ module(name = "runfiles_test")
 bazel_dep(name = "message_dep", version = "1.0", repo_name = "messages")
 local_path_override(module_name = "message_dep", path = "dep")
 `,
-				".bazelrc": "common --lockfile_mode=off\n",
+				".bazelrc": bazelrc,
 				"dep/MODULE.bazel": `
 module(name = "message_dep", version = "1.0")
 `,
