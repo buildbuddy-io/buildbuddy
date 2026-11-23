@@ -2074,6 +2074,23 @@ var (
 		CreatedFromSnapshot,
 	})
 
+	FirecrackerGenericVMPoolTakes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "generic_vm_pool_takes",
+		Help:      "Number of tasks that looked for a pooled generic VM, by whether one was idle (`hit`) or not (`miss`).",
+	}, []string{
+		StatusHumanReadableLabel,
+	})
+
+	FirecrackerGenericVMPoolRestoreDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "generic_vm_pool_restore_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Minute, 2),
+		Help:      "Time from requesting a pooled generic VM until it is ready, including waiting for a restore slot, in **microseconds**.",
+	})
+
 	FirecrackerErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",

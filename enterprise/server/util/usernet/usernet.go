@@ -130,7 +130,7 @@ type Network struct {
 	cancel context.CancelFunc
 
 	gateway         tcpip.Address
-	externalNetwork bool
+	externalNetwork atomic.Bool
 	allowedPrefixes []netip.Prefix
 	pings           chan struct{}
 	udpIdleTimeout  time.Duration
@@ -213,11 +213,11 @@ func newNetwork(ctx context.Context, gatewayCIDR string, enableExternalNetworkin
 	n := &Network{
 		fd:              -1,
 		gateway:         tcpip.AddrFrom4(gateway.Addr().As4()),
-		externalNetwork: enableExternalNetworking,
 		allowedPrefixes: allowed,
 		pings:           make(chan struct{}, maxPingsInFlight),
 		udpIdleTimeout:  udpIdleTimeout,
 	}
+	n.externalNetwork.Store(enableExternalNetworking)
 	defer func() {
 		if err != nil {
 			n.Cleanup(ctx)
@@ -321,8 +321,13 @@ func (n *Network) startStack(prefixLen int) error {
 	return nil
 }
 
+// SetExternalNetworking sets whether hosts other than the gateway are reachable.
+func (n *Network) SetExternalNetworking(enabled bool) {
+	n.externalNetwork.Store(enabled)
+}
+
 func (n *Network) isAllowed(addr tcpip.Address) bool {
-	if !n.externalNetwork {
+	if !n.externalNetwork.Load() {
 		return false
 	}
 	ip, _ := netip.AddrFromSlice(addr.AsSlice())

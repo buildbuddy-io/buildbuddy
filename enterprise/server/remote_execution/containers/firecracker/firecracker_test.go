@@ -5479,6 +5479,21 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoo
 		require.NoError(t, result.Error)
 		require.Equal(t, 0, result.ExitCode)
 	})
+	t.Run("pooled", func(t *testing.T) {
+		flags.Set(t, "executor.firecracker_generic_vm_pool_max_size", 1)
+		t.Cleanup(firecracker.StartGenericVMPool(ctx, env, experiments, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig(1, off)}))
+		var c *firecracker.FirecrackerContainer
+		require.Eventually(t, func() bool {
+			c = newContainer(t, ctx, busyboxImage, "", 1, fcpb.NetworkMode_NETWORK_MODE_EXTERNAL)
+			snapshotID := c.SnapshotID()
+			require.NoError(t, c.Create(ctx, testfs.MakeTempDir(t)))
+			return c.SnapshotID() != snapshotID
+		}, 30*time.Second, 100*time.Millisecond, "no task adopted a pooled VM")
+		command := `test -e /etc/hostname; test "$(grep -c '^processor' /proc/cpuinfo)" -eq 1; test "$(cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.max)" = 1073741824`
+		result := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-ec", command}}, nil)
+		require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+		require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
+	})
 	// Without a usable snapshot, generic VMs boot from scratch.
 	runFromScratch := func(t *testing.T, cpus int64) {
 		c := newContainer(t, ctx, busyboxImage, "", cpus, off)
@@ -5522,8 +5537,13 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 		// Allocates and fills 1GiB, which touches that much guest memory.
 		{"touch_1GiB", []string{"dd", "if=/dev/zero", "of=/dev/null", "bs=1G", "count=1"}},
 	} {
-		for _, generic := range []bool{false, true} {
-			b.Run(fmt.Sprintf("command=%s/generic=%t", tc.name, generic), func(b *testing.B) {
+		for _, v := range []struct{ generic, pool bool }{{false, false}, {true, false}, {true, true}} {
+			generic := v.generic
+			b.Run(fmt.Sprintf("command=%s/generic=%t/pool=%t", tc.name, v.generic, v.pool), func(b *testing.B) {
+				if v.pool {
+					flags.Set(b, "executor.firecracker_generic_vm_pool_max_size", 2)
+					b.Cleanup(firecracker.StartGenericVMPool(ctx, env, nil /*=experiments*/, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
+				}
 				var createTime, execTime time.Duration
 				run := func() {
 					b.StopTimer()

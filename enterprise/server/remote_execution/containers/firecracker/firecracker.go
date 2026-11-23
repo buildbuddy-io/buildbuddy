@@ -106,6 +106,8 @@ var (
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
 	enableLinux6_18                       = flag.Bool("executor.firecracker_enable_linux_6_18", false, "Enable the 6.18 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
+	genericVMPoolMaxSize                  = flag.Int("executor.firecracker_generic_vm_pool_max_size", 0, "Max VMs per generic snapshot shape to restore ahead of time, so that tasks only need to attach their container root. Each pool grows when tasks arrive faster than it can restore VMs, and shrinks as demand falls. 0 disables pooling.")
+	genericVMPoolMaxRestores              = flag.Int("executor.firecracker_generic_vm_pool_max_concurrent_restores", 8, "Max pooled generic VMs restored at once, across all shapes.")
 	enableGenericSnapshots                = flag.Bool("executor.firecracker_enable_generic_snapshots", false, "Build generic snapshots on startup for each shape that fits on the executor. Actions with use-generic-snapshot are rounded up to the smallest shape that fits them.")
 	genericErofsRoot                      = flag.Bool("executor.firecracker_generic_erofs_root", true, "Give generic snapshot VMs a read-only EROFS container root under an overlay whose writes go to a sparse ext4 scratch disk.", flag.Internal)
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
@@ -732,6 +734,13 @@ func (p *Provider) buildGenericSnapshot(ctx context.Context, cgroupParent string
 		return
 	}
 	log.CtxInfof(ctx, "Built %d vCPU generic snapshot in %s", vmConfig.GetNumCpus(), time.Since(start))
+	StartGenericVMPool(p.env.GetServerContext(), p.env, experiments, ContainerOpts{
+		VMConfiguration:        vmConfig,
+		CgroupParent:           cgroupParent,
+		ExecutorConfig:         p.executorConfig,
+		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		HostResolvConf:         p.hostResolvConf,
+	})
 }
 
 // rebuildGenericSnapshot builds c's generic snapshot in the background.
@@ -2770,8 +2779,11 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 			}
 		}
 	}()
-	restored := false
-	if c.hasGenericSnapshot() {
+	restored, err := c.adoptPooledVM(ctx)
+	if err != nil {
+		return err
+	}
+	if !restored && c.hasGenericSnapshot() {
 		if err := c.restoreGenericSnapshot(ctx); err != nil {
 			if ctx.Err() != nil {
 				return err
@@ -2794,6 +2806,291 @@ func (c *FirecrackerContainer) createFromGenericSnapshot(ctx context.Context) (r
 		}
 	}
 	return c.attachContainerRoot(ctx)
+}
+
+// genericVMPools maps each generic snapshot's configuration hash to its
+// *genericVMPool.
+var genericVMPools sync.Map
+
+// genericVMPoolDecay is how quickly a pool's target size falls after a burst.
+const genericVMPoolDecay = 5 * time.Minute
+
+// genericVMRestoreSlots limits concurrent pooled VM restores across shapes.
+var genericVMRestoreSlots = sync.OnceValue(func() chan struct{} {
+	return make(chan struct{}, max(1, *genericVMPoolMaxRestores))
+})
+
+// vmDemand estimates how many VMs a pool needs: the most takes seen within
+// one restore time, so a burst is covered while its replacements restore.
+// The estimate rises immediately and decays exponentially.
+type vmDemand struct {
+	restore time.Duration // moving average, including waits for a slot
+	takes   []time.Time   // takes within the last restore time
+	peak    float64
+	peakAt  time.Time
+}
+
+func (d *vmDemand) take(now time.Time) {
+	d.takes = append(d.takes, now)
+	i := 0
+	for now.Sub(d.takes[i]) > d.restore {
+		i++
+	}
+	d.takes = d.takes[i:]
+	d.peak = max(d.decayedPeak(now), float64(len(d.takes)))
+	d.peakAt = now
+}
+
+func (d *vmDemand) restored(dur time.Duration) {
+	d.restore += (dur - d.restore) / 10
+}
+
+func (d *vmDemand) decayedPeak(now time.Time) float64 {
+	return d.peak * math.Exp(-now.Sub(d.peakAt).Seconds()/genericVMPoolDecay.Seconds())
+}
+
+// target returns how many VMs the pool should hold, idle or restoring.
+func (d *vmDemand) target(now time.Time, maxSize int) int {
+	peak := d.decayedPeak(now)
+	if peak < 1 {
+		// The decay never reaches zero.
+		peak = 0
+	}
+	return min(int(math.Ceil(peak))+1, maxSize)
+}
+
+type genericVMPool struct {
+	mu        sync.Mutex
+	idle      []*FirecrackerContainer // oldest first
+	restoring int
+	demand    vmDemand
+	wake      chan struct{}
+}
+
+// take removes an idle VM from the pool, or returns nil if there is none.
+func (p *genericVMPool) take() *FirecrackerContainer {
+	p.mu.Lock()
+	p.demand.take(time.Now())
+	var v *FirecrackerContainer
+	if n := len(p.idle); n > 0 {
+		v = p.idle[n-1]
+		p.idle = p.idle[:n-1]
+	}
+	p.mu.Unlock()
+	p.signal()
+	result := "hit"
+	if v == nil {
+		result = "miss"
+	}
+	metrics.FirecrackerGenericVMPoolTakes.With(prometheus.Labels{metrics.StatusHumanReadableLabel: result}).Inc()
+	return v
+}
+
+func (p *genericVMPool) signal() {
+	select {
+	case p.wake <- struct{}{}:
+	default:
+	}
+}
+
+// resize restores or removes VMs to match the pool's target size, until ctx is
+// done.
+func (p *genericVMPool) resize(ctx context.Context, env environment.Env, experiments []string, opts ContainerOpts) {
+	for {
+		p.mu.Lock()
+		target := p.demand.target(time.Now(), *genericVMPoolMaxSize)
+		n := min(max(len(p.idle)+p.restoring-target, 0), len(p.idle))
+		extra := p.idle[:n]
+		p.idle = slices.Clone(p.idle[n:])
+		need := max(target-len(p.idle)-p.restoring, 0)
+		p.restoring += need
+		p.mu.Unlock()
+		for _, v := range extra {
+			v.Remove(context.WithoutCancel(ctx))
+		}
+		for range need {
+			go p.restore(ctx, env, experiments, opts)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.wake:
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func (p *genericVMPool) restore(ctx context.Context, env environment.Env, experiments []string, opts ContainerOpts) {
+	start := time.Now()
+	v, err := func() (*FirecrackerContainer, error) {
+		select {
+		case genericVMRestoreSlots() <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		defer func() { <-genericVMRestoreSlots() }()
+		return newPooledGenericVM(ctx, env, experiments, opts)
+	}()
+	if err != nil {
+		if ctx.Err() == nil {
+			log.CtxWarningf(ctx, "Failed to restore pooled generic VM: %s", err)
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+		}
+	}
+	p.mu.Lock()
+	p.restoring--
+	if v != nil {
+		if ctx.Err() != nil {
+			p.mu.Unlock()
+			v.Remove(context.WithoutCancel(ctx))
+			return
+		}
+		p.idle = append(p.idle, v)
+		p.demand.restored(time.Since(start))
+		metrics.FirecrackerGenericVMPoolRestoreDurationUsec.Observe(float64(time.Since(start).Microseconds()))
+	}
+	p.mu.Unlock()
+	p.signal()
+}
+
+// StartGenericVMPool keeps VMs restored from the generic snapshot for
+// experiments and opts until ctx is done or stop is called, sized by recent
+// demand up to executor.firecracker_generic_vm_pool_max_size. stop returns
+// after the pooled VMs are removed.
+func StartGenericVMPool(ctx context.Context, env environment.Env, experiments []string, opts ContainerOpts) (stop func()) {
+	if *genericVMPoolMaxSize <= 0 {
+		return func() {}
+	}
+	opts.GenericSnapshot = true
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// The first VM gives the configuration hash that tasks look up.
+		var v *FirecrackerContainer
+		for v == nil {
+			var err error
+			v, err = newPooledGenericVM(ctx, env, experiments, opts)
+			if err == nil {
+				break
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			if !status.IsNotFoundError(err) {
+				log.CtxWarningf(ctx, "Failed to restore pooled generic VM: %s", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
+		hash := v.snapshotKeySet.GetWriteKey().GetConfigurationHash()
+		p := &genericVMPool{
+			idle:   []*FirecrackerContainer{v},
+			demand: vmDemand{restore: 100 * time.Millisecond},
+			wake:   make(chan struct{}, 1),
+		}
+		if _, loaded := genericVMPools.LoadOrStore(hash, p); loaded {
+			// Another goroutine already fills this pool.
+			v.Remove(ctx)
+			return
+		}
+		p.resize(ctx, env, experiments, opts)
+		genericVMPools.CompareAndDelete(hash, p)
+		for {
+			p.mu.Lock()
+			idle, restoring := p.idle, p.restoring
+			p.idle = nil
+			p.mu.Unlock()
+			for _, v := range idle {
+				v.Remove(context.WithoutCancel(ctx))
+			}
+			if restoring == 0 {
+				return
+			}
+			<-p.wake
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+// newPooledGenericVM restores a VM from the generic snapshot for experiments
+// and opts, and waits until vmexec is ready.
+func newPooledGenericVM(ctx context.Context, env environment.Env, experiments []string, opts ContainerOpts) (*FirecrackerContainer, error) {
+	v, err := NewContainer(ctx, env, &repb.ExecutionTask{Experiments: experiments}, opts)
+	if err != nil {
+		return nil, err
+	}
+	if !v.hasGenericSnapshot() {
+		v.Remove(ctx)
+		return nil, status.NotFoundError("generic snapshot not built")
+	}
+	if err := v.restoreGenericSnapshot(ctx); err != nil {
+		v.Remove(ctx)
+		return nil, err
+	}
+	if _, err := v.vmExecConn(ctx); err != nil {
+		v.Remove(ctx)
+		return nil, err
+	}
+	// The adopting task leases its own CPUs.
+	v.releaseCPUs()
+	v.releaseCPUs = nil
+	return v, nil
+}
+
+// adoptPooledVM takes over a pooled VM restored from c's generic snapshot, if
+// one is available, and reports whether it did. The VM's chroot takes the
+// files from c's chroot.
+func (c *FirecrackerContainer) adoptPooledVM(ctx context.Context) (bool, error) {
+	p, ok := genericVMPools.Load(c.snapshotKeySet.GetWriteKey().GetConfigurationHash())
+	if !ok {
+		return false, nil
+	}
+	v := p.(*genericVMPool).take()
+	if v == nil {
+		return false, nil
+	}
+	if v.vmCtx.Err() != nil {
+		v.Remove(ctx)
+		return false, nil
+	}
+	entries, err := os.ReadDir(c.getChroot())
+	if err != nil && !os.IsNotExist(err) {
+		v.Remove(ctx)
+		return false, status.UnavailableErrorf("read chroot: %s", err)
+	}
+	for _, e := range entries {
+		if err := os.Rename(filepath.Join(c.getChroot(), e.Name()), filepath.Join(v.getChroot(), e.Name())); err != nil {
+			v.Remove(ctx)
+			return false, status.UnavailableErrorf("move %q into pooled VM chroot: %s", e.Name(), err)
+		}
+	}
+	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
+		log.CtxWarningf(ctx, "Failed to remove chroot: %s", err)
+	}
+	c.id, c.snapshotID, c.vmIdx, c.rmOnce, c.rmErr = v.id, v.snapshotID, v.vmIdx, v.rmOnce, nil
+	c.vmLog, c.network, c.machine, c.snapshot = v.vmLog, v.network, v.machine, v.snapshot
+	c.vmCtx, c.cancelVmCtx = v.vmCtx, v.cancelVmCtx
+	c.uffdHandler, c.memoryStore = v.uffdHandler, v.memoryStore
+	c.rootStore, c.rootVBD, c.scratchStore, c.scratchVBD = v.rootStore, v.rootVBD, v.scratchStore, v.scratchVBD
+	c.vmExec = v.vmExec
+	c.vmConfig.GuestKernelVersion = v.vmConfig.GuestKernelVersion
+	c.createFromSnapshot = true
+	c.postCompletionStats = nil
+	c.network.(*usernet.Network).SetExternalNetworking(externalNetworkingEnabled(c.vmConfig.NetworkMode))
+	if err := c.setupCgroup(ctx); err != nil {
+		return false, status.UnavailableErrorf("setup cgroup: %s", err)
+	}
+	return true, nil
 }
 
 func (c *FirecrackerContainer) hasGenericSnapshot() bool {
