@@ -998,7 +998,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 	if err != nil {
 		return nil, err
 	}
-	if err := d.authorizeWriteByAPIKeyCaller(ctx, u, groupID, "" /*=targetKeyID*/); err != nil {
+	if err := d.restrictNonAdminAPIKeyCallersToSelf(ctx, u, groupID, "" /*=targetKeyID*/); err != nil {
 		return nil, err
 	}
 
@@ -1248,10 +1248,10 @@ func (d *AuthDB) toListedAPIKeys(rows []*apiKeyGroupRow) ([]*tables.APIKey, erro
 	return keys, nil
 }
 
-// authorizeWriteByAPIKeyCaller prevents callers authenticated with an API key
-// that lacks ORG_ADMIN from creating or updating API keys other than the one
-// they are authenticated with.
-func (d *AuthDB) authorizeWriteByAPIKeyCaller(ctx context.Context, u interfaces.UserInfo, groupID, targetKeyID string) error {
+// restrictNonAdminAPIKeyCallersToSelf prevents callers authenticated with an
+// API key lacking ORG_ADMIN from modifying API keys other than the one they
+// authenticated with.
+func (d *AuthDB) restrictNonAdminAPIKeyCallersToSelf(ctx context.Context, u interfaces.UserInfo, groupID, targetKeyID string) error {
 	callerKeyID := u.GetAPIKeyInfo().ID
 	if callerKeyID == "" || callerKeyID == targetKeyID {
 		return nil
@@ -1292,7 +1292,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 			return nil, err
 		}
 	}
-	if err := d.authorizeWriteByAPIKeyCaller(ctx, user, key.GroupID, key.APIKeyID); err != nil {
+	if err := d.restrictNonAdminAPIKeyCallersToSelf(ctx, user, key.GroupID, key.APIKeyID); err != nil {
 		return nil, err
 	}
 	// Only group admins can write to group-level API keys.
