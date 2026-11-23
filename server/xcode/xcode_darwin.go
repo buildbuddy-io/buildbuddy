@@ -126,7 +126,7 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 // Locates all Xcode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
 func (x *xcodeLocator) locate() {
-	x.versions = versionMap(applicationPaths(xcodeBundleID))
+	x.versions = versionMap(applicationPaths(xcodeBundleID), xcodeSelectDeveloperDir())
 }
 
 func applicationPaths(bundleID string) []string {
@@ -154,8 +154,7 @@ func applicationPaths(bundleID string) []string {
 	return paths
 }
 
-func versionMap(paths []string) map[string]*xcodeVersion {
-	defaultDeveloperDir := xcodeSelectDeveloperDir()
+func versionMap(paths []string, defaultDeveloperDir string) map[string]*xcodeVersion {
 	versionMap := make(map[string]*xcodeVersion)
 	for _, path := range paths {
 		xcodePlist, err := xcodePlistForPath(filepath.Join(path, versionPlistPath))
@@ -164,33 +163,29 @@ func versionMap(paths []string) map[string]*xcodeVersion {
 			continue
 		}
 		developerDirPath := filepath.Join(path, developerDirectoryPath)
-		sdkPaths, err := fs.Glob(os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
-		if err != nil {
-			log.Warningf("Error reading Xcode SDKs from %s: %s", path, err.Error())
+		if info, err := os.Stat(developerDirPath); err != nil || !info.IsDir() {
+			log.Warningf("Skipping Xcode bundle without a developer directory: %s", path)
 			continue
 		}
-		sdks := make(map[string]string)
-		for _, sdkPath := range sdkPaths {
-			sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
-		}
+		sdks := installedSDKs(developerDirPath, "Platforms/*.platform/Developer/SDKs/*.sdk")
 		log.Infof("Found Xcode version %s (%s) at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
 		versions := expandXcodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
 		mostPreciseVersion := versions[len(versions)-1]
+		xv := &xcodeVersion{
+			version:          mostPreciseVersion,
+			developerDirPath: developerDirPath,
+			sdks:             sdks,
+		}
 		for _, version := range versions {
 			existingXcode, ok := versionMap[version]
 			if ok && mostPreciseVersion < existingXcode.version {
 				continue
 			}
 			log.Debugf("Mapped Xcode Version %s=>%s with SDKs %+v", version, developerDirPath, sdks)
-			xv := &xcodeVersion{
-				version:          mostPreciseVersion,
-				developerDirPath: developerDirPath,
-				sdks:             sdks,
-			}
 			versionMap[version] = xv
-			if defaultDeveloperDir == developerDirPath {
-				versionMap[defaultXcodeVersion] = xv
-			}
+		}
+		if defaultDeveloperDir == developerDirPath {
+			versionMap[defaultXcodeVersion] = xv
 		}
 	}
 
@@ -229,20 +224,32 @@ func xcodePlistForPath(path string) (*xcodePlist, error) {
 }
 
 func commandLineToolsVersion(developerDir string) *xcodeVersion {
-	sdkPaths, err := fs.Glob(os.DirFS(developerDir), "SDKs/*")
-	if err != nil {
-		log.Warningf("Error reading CommandLineTools SDKs from %s: %s", developerDir, err.Error())
+	if info, err := os.Stat(developerDir); err != nil || !info.IsDir() {
+		log.Warningf("Command Line Tools developer directory is missing: %s", developerDir)
 		return nil
-	}
-	sdks := make(map[string]string)
-	for _, sdkPath := range sdkPaths {
-		sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
 	}
 	return &xcodeVersion{
 		version:          defaultXcodeVersion,
 		developerDirPath: developerDir,
-		sdks:             sdks,
+		sdks:             installedSDKs(developerDir, "SDKs/*.sdk"),
 	}
+}
+
+func installedSDKs(developerDir, pattern string) map[string]string {
+	developerFS := os.DirFS(developerDir)
+	sdkPaths, err := fs.Glob(developerFS, pattern)
+	if err != nil {
+		log.Warningf("Error reading SDKs from %s: %s", developerDir, err.Error())
+		return nil
+	}
+	sdks := make(map[string]string)
+	for _, sdkPath := range sdkPaths {
+		// Stat follows the aliases Xcode ships, such as MacOSX.sdk.
+		if info, err := fs.Stat(developerFS, sdkPath); err == nil && info.IsDir() {
+			sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
+		}
+	}
+	return sdks
 }
 
 // Returns the version of the Xcode Command Line Tools, or "unknown" if it
