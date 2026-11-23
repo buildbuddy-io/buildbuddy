@@ -440,6 +440,7 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 	}
 
 	if err == io.EOF && r.remaining == 0 && r.cacheErr == nil {
+		// After AlreadyExists, UploadWriter.Commit returns nil, so this still writes the blob metadata.
 		r.cacheErr = r.cache.Commit()
 		if r.cacheErr != nil {
 			log.CtxWarningf(r.ctx, "Error committing blob to cache: %s", r.cacheErr)
