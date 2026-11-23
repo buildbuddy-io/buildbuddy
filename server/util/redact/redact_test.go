@@ -516,6 +516,12 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"action_env", "AWS_SECRET_ACCESS_KEY=super_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
 		{"host_action_env", "AWS_ACCESS_KEY_ID=super_secret_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
 		{"host_action_env", "AWS_SECRET_ACCESS_KEY=super_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
+		{"remote_cache", "grpcs://abcdefghij0123456789@remote.example.com", "grpcs://<REDACTED>@remote.example.com"},
+		{"remote_executor", "grpcs://abcdefghij0123456789@remote.example.com:443", "grpcs://<REDACTED>@remote.example.com:443"},
+		{"bes_backend", "abcdefghij0123456789@remote.example.com", "<REDACTED>@remote.example.com"},
+		{"bes_backend", "grpcs://remote.example.com", "grpcs://remote.example.com"},
+		{"bes_backend", "remote.example.com,grpcs://abcdefghij0123456789@other.example.com", "remote.example.com,grpcs://<REDACTED>@other.example.com"},
+		{"experimental_remote_downloader", "grpcs://abcdefghij0123456789@remote.example.com", "grpcs://<REDACTED>@remote.example.com"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
@@ -541,6 +547,10 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--url=https://user:two words@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
+			"--remote_cache=grpcs://abcdefghij0123456789@remote.example.com",
+			"--remote_executor",
+			"grpcs://abcdefghij0123456789@remote.example.com",
+			"--bes_backend=remote.example.com,grpcs://abcdefghij0123456789@other.example.com",
 		},
 		ExplicitCmdLine: []string{
 			"--flag=@repo//package",
@@ -564,6 +574,10 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--url=https://user:<REDACTED>@example.com",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
+			"--remote_cache=grpcs://<REDACTED>@remote.example.com",
+			"--remote_executor",
+			"grpcs://<REDACTED>@remote.example.com",
+			"--bes_backend=remote.example.com,grpcs://<REDACTED>@other.example.com",
 		},
 		optionsParsed.CmdLine)
 	assert.Equal(
