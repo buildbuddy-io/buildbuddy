@@ -47,6 +47,7 @@ import (
 	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -106,6 +107,9 @@ func (o *hintedHandoffOrder) String() string {
 	return fmt.Sprintf("{digest:%q cache_type:%s remote_instance_name:%q}",
 		o.r.GetDigest().GetHash(), o.r.GetCacheType(), o.r.GetInstanceName())
 }
+
+// Compile-time assertion that Cache implements interfaces.ReferenceCache.
+var _ interfaces.ReferenceCache = (*Cache)(nil)
 
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
@@ -1946,7 +1950,7 @@ func (rwc *referenceWriteCloser) Commit() error {
 
 	// The staged reference is the write: fan it out to the write peers, who
 	// will store it without receiving the blob's bytes.
-	mwc, err := rwc.c.referenceMultiWriter(rwc.ctx, rwc.refCache, rwc.rn, ref)
+	mwc, err := rwc.c.referenceMultiWriter(rwc.ctx, rwc.refCache, rwc.rn, ref, false /*=mustClone*/)
 	if err != nil {
 		return err
 	}
@@ -2024,10 +2028,11 @@ func (c *Cache) shareGCSReferences(ctx context.Context) bool {
 
 // referenceMultiWriter is like byteMultiWriter, but the peers receive only
 // the reference; committing the returned writer performs the reference
-// writes.
-func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.ReferenceCache, r *rspb.ResourceName, ref *refpb.Reference) (interfaces.CommittedWriteCloser, error) {
+// writes. If mustClone is true, the caller keeps the referenced blob and every
+// peer clones it.
+func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.ReferenceCache, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
 	shared := false
-	if c.shareGCSReferences(ctx) {
+	if !mustClone && c.shareGCSReferences(ctx) {
 		if ref.GetMetadata().GetStorageMetadata().GetGcsMetadata() != nil || ref.GetGcs() != nil {
 			ref = ref.CloneVT()
 			if gcs := ref.GetMetadata().GetStorageMetadata().GetGcsMetadata(); gcs != nil {
@@ -2039,7 +2044,7 @@ func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.Re
 			shared = true
 		}
 	}
-	refMustBeCloned := false
+	refMustBeCloned := mustClone
 	return c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
 		var wc interfaces.CommittedWriteCloser
 		if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
@@ -2058,6 +2063,123 @@ func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.Re
 		}
 		return wc, nil
 	})
+}
+
+func (c *Cache) localReferenceCache() (interfaces.ReferenceCache, error) {
+	refCache, ok := c.local.(interfaces.ReferenceCache)
+	if !ok {
+		return nil, status.UnimplementedError("the cache does not support references")
+	}
+	return refCache, nil
+}
+
+func (c *Cache) IsReferenceable(ctx context.Context, r *rspb.ResourceName) bool {
+	refCache, err := c.localReferenceCache()
+	return err == nil && refCache.IsReferenceable(ctx, r)
+}
+
+func (c *Cache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
+	refCache, err := c.localReferenceCache()
+	if err != nil {
+		return nil, err
+	}
+	return refCache.CreateReference(ctx, r)
+}
+
+func (c *Cache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	refCache, err := c.localReferenceCache()
+	if err != nil {
+		return nil, err
+	}
+	return refCache.Dereference(ctx, ref, r, offset, limit)
+}
+
+// ReadReference returns a reference to r from the first read peer that holds
+// it in shared storage.
+func (c *Cache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+	refCache, err := c.localReferenceCache()
+	if err != nil {
+		return nil, err
+	}
+	ps := c.readPeers(r)
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		var ref *refpb.Reference
+		var err error
+		if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
+			ref, err = refCache.ReadReference(ctx, r)
+		} else {
+			// If we get bytes back, the content is not referencable.
+			var rc io.ReadCloser
+			ref, rc, err = c.distributedProxy.RemoteReaderOrReference(ctx, peer, r)
+			if rc != nil {
+				rc.Close()
+				return nil, status.NotFoundErrorf("%q is not stored as a reference", r.GetDigest().GetHash())
+			}
+		}
+		if err == nil {
+			return ref, nil
+		}
+		if !status.IsNotFoundError(err) {
+			c.log.CtxDebugf(ctx, "ReadReference(%q) error on peer %s: %s", distributed_client.ResourceIsolationString(r), peer, err)
+			ps.MarkPeerAsFailed(peer)
+		}
+	}
+	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read a reference to %q.", r.GetDigest().GetHash())
+}
+
+// WriteReference writes r to the write peers as a reference to a blob in
+// shared storage. If mustClone is true the caller keeps the blob and every
+// peer clones it; otherwise the peers take it over.
+func (c *Cache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
+	refCache, err := c.localReferenceCache()
+	if err != nil {
+		return err
+	}
+	if ref.GetMetadata() == nil {
+		// Reject references if we can't tell if they're alive.
+		if ref.GetGcs().GetLastCustomTimeUsec() == 0 {
+			return status.InvalidArgumentError("reference is missing gcs.last_custom_time_usec")
+		}
+		// Peers still read the deprecated metadata field.
+		ref = ref.CloneVT()
+		ref.Metadata = legacyReferenceMetadata(ref)
+	}
+	mwc, err := c.referenceMultiWriter(ctx, refCache, r, ref, mustClone)
+	if err != nil {
+		return err
+	}
+	defer mwc.Close()
+	return mwc.Commit()
+}
+
+func legacyReferenceMetadata(ref *refpb.Reference) *sgpb.FileMetadata {
+	rn := ref.GetResource()
+	md := &sgpb.FileMetadata{
+		FileRecord: &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:          rn.GetCacheType(),
+				RemoteInstanceName: rn.GetInstanceName(),
+			},
+			Digest:         rn.GetDigest().CloneVT(),
+			DigestFunction: rn.GetDigestFunction(),
+			Compressor:     rn.GetCompressor(),
+		},
+		StorageMetadata: &sgpb.StorageMetadata{
+			GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+				BlobName:           ref.GetGcs().GetBlobName(),
+				LastCustomTimeUsec: ref.GetGcs().GetLastCustomTimeUsec(),
+				Shared:             ref.GetGcs().GetShared(),
+			},
+		},
+		StoredSizeBytes: ref.GetStoredSizeBytes(),
+	}
+	if enc := ref.GetEncryption(); enc != nil {
+		md.EncryptionMetadata = &sgpb.EncryptionMetadata{
+			EncryptionKeyId: enc.GetKeyId(),
+			Version:         enc.GetVersion(),
+		}
+	}
+	return md
 }
 
 // openMultiWriter opens a multiWriteCloser over the write peers for r, using
