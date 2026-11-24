@@ -41,7 +41,7 @@ func NewReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
 
 func newRandomCompressibleDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 	blob := compressibleBlobOfSize(int(sizeBytes))
-	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_BLAKE3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,12 +53,12 @@ func NewRandomResourceAndBuf(t testing.TB, sizeBytes int64, cacheType rspb.Cache
 	if err != nil {
 		t.Fatal(err)
 	}
-	return digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_SHA256).ToProto(), buf
+	return digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_BLAKE3).ToProto(), buf
 }
 
 func RandomCompressibleCASResourceBuf(t testing.TB, sizeBytes int64, instanceName string) (*rspb.ResourceName, []byte) {
 	d, buf := newRandomCompressibleDigestBuf(t, sizeBytes)
-	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto(), buf
+	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3).ToProto(), buf
 }
 
 func RandomCASResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []byte) {
@@ -71,7 +71,7 @@ func RandomACResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []b
 
 func ReadDigestAndClose(t testing.TB, r io.ReadCloser) *repb.Digest {
 	defer r.Close()
-	d, err := digest.Compute(r, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(r, repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 	return d
 }
