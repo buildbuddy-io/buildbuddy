@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/require"
 
@@ -195,19 +195,42 @@ func BenchmarkPebbleFormat(b *testing.B) {
 	}
 	for _, storage := range storages {
 		for _, format := range formats {
-			prefix := fmt.Sprintf("storage=%s/format=%d", storage.name, format)
-			for _, op := range []string{"find-present", "find-missing", "scan", "split-point"} {
-				for _, cache := range []string{"hot", "reduced"} {
-					b.Run(fmt.Sprintf("%s/op=%s/cache=%s", prefix, op, cache), func(b *testing.B) {
-						benchmarkFormatRead(b, getFormatBenchDataset(b, storage, format), op, cache)
-					})
-				}
-			}
-			b.Run(prefix+"/op=write", func(b *testing.B) {
-				benchmarkFormatWrite(b, storage, format)
+			b.Run(fmt.Sprintf("storage=%s/format=%d", storage.name, format), func(b *testing.B) {
+				benchmarkFormat(b, storage, format)
 			})
 		}
 	}
+}
+
+// benchmarkFormat runs every op for one storage and format. The read ops
+// share a dataset, built on first use and deleted when b finishes.
+func benchmarkFormat(b *testing.B, storage formatBenchStorage, format pebble.FormatMajorVersion) {
+	dir := testfs.MakeTempDir(b)
+	var ds *formatBenchDataset
+	builtBy := ""
+	dataset := func(b *testing.B) *formatBenchDataset {
+		if builtBy == "" {
+			// Set first: a failed build leaves a partial DB in dir, which
+			// must not be built on again.
+			builtBy = b.Name()
+			ds = buildFormatBenchDataset(b, dir, storage, format)
+		}
+		if ds == nil {
+			// That op already failed with the cause; don't repeat it here.
+			b.Skipf("dataset build failed; see the error under %s", builtBy)
+		}
+		return ds
+	}
+	for _, op := range []string{"find-present", "find-missing", "scan", "split-point"} {
+		for _, cache := range []string{"hot", "reduced"} {
+			b.Run(fmt.Sprintf("op=%s/cache=%s", op, cache), func(b *testing.B) {
+				benchmarkFormatRead(b, dataset(b), op, cache)
+			})
+		}
+	}
+	b.Run("op=write", func(b *testing.B) {
+		benchmarkFormatWrite(b, storage, format)
+	})
 }
 
 func parseBenchFormats(b *testing.B) []pebble.FormatMajorVersion {
@@ -254,11 +277,6 @@ const (
 // formatBenchNowUsec is the fixed "now" that record atimes are relative to,
 // so keys are identical across formats and runs.
 var formatBenchNowUsec = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).UnixMicro()
-
-var (
-	formatBenchMu       sync.Mutex
-	formatBenchDatasets = map[string]*formatBenchDataset{}
-)
 
 // formatBenchDB is a pebble DB in a given format, with a replica on top.
 type formatBenchDB struct {
@@ -374,25 +392,10 @@ func makeFormatBenchRecords(b *testing.B, r *formatBenchRand, storage formatBenc
 	return recs
 }
 
-func getFormatBenchDataset(b *testing.B, storage formatBenchStorage, format pebble.FormatMajorVersion) *formatBenchDataset {
-	formatBenchMu.Lock()
-	defer formatBenchMu.Unlock()
-	key := fmt.Sprintf("%s/%d", storage.name, format)
-	if ds, ok := formatBenchDatasets[key]; ok {
-		return ds
-	}
-	ds := buildFormatBenchDataset(b, storage, format)
-	formatBenchDatasets[key] = ds
-	return ds
-}
-
-func buildFormatBenchDataset(b *testing.B, storage formatBenchStorage, format pebble.FormatMajorVersion) *formatBenchDataset {
+// buildFormatBenchDataset writes the dataset into dir, which the caller owns:
+// it outlives the sub-benchmark that builds it.
+func buildFormatBenchDataset(b *testing.B, dir string, storage formatBenchStorage, format pebble.FormatMajorVersion) *formatBenchDataset {
 	start := time.Now()
-	// Not testfs.MakeTempDir: the dataset outlives the sub-benchmark that
-	// builds it. Bazel removes TEST_TMPDIR after the run.
-	dir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "pebble-format-")
-	require.NoError(b, err)
-
 	r := newFormatBenchRand(1)
 	recs := makeFormatBenchRecords(b, r, storage, storage.numRecords)
 	d := openFormatBenchDB(b, dir, format, 64<<20)
@@ -578,6 +581,7 @@ func benchmarkFormatWrite(b *testing.B, storage formatBenchStorage, format pebbl
 	n := storage.numRecords / 10
 	recs := makeFormatBenchRecords(b, newFormatBenchRand(2), storage, n)
 	flushEvery := max(len(recs.batches)/formatBenchWriteFlushes, 1)
+	root := testfs.MakeTempDir(b)
 
 	var flushedBytes, compactedBytes uint64
 	var sstBytes int64
@@ -585,7 +589,8 @@ func benchmarkFormatWrite(b *testing.B, storage formatBenchStorage, format pebbl
 	ops := 0
 	for b.Loop() {
 		b.StopTimer()
-		dir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "pebble-format-write-")
+		// Under root, so a failed iteration's directory is still deleted.
+		dir, err := os.MkdirTemp(root, "write-")
 		require.NoError(b, err)
 		d := openFormatBenchDB(b, dir, format, 64<<20)
 		writeDefaultRangeDescriptor(b, d.em, d.repl.Replica)
