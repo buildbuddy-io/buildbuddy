@@ -306,6 +306,10 @@ type Execution struct {
 	// Time the executor spent dialing the guest VM's vmexec server. Set for
 	// every firecracker execution, not just fresh boots.
 	VMExecDialDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	// SHA256 hash of the kernel image that the guest VM is running, which
+	// matches the sha256 of the vmlinux file in deps.bzl. Only set for
+	// firecracker executions.
+	GuestKernelImageHash string `gorm:"type:LowCardinality(String)"`
 
 	// Disk usage of the task's workspace (buildroot), measured after the task
 	// finishes. Only populated when executor.workspace.measure_disk_usage is
@@ -437,6 +441,7 @@ func (e *Execution) AdditionalFields() []string {
 		"VMDnsWaitDurationUsec",
 		"VMExecInitDurationUsec",
 		"VMExecDialDurationUsec",
+		"GuestKernelImageHash",
 		"BuildrootDiskUsageBytes",
 		"ExecutorHostname",
 		"Experiments",

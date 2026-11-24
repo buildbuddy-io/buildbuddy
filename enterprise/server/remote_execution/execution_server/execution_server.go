@@ -549,6 +549,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.VmDnsWaitDurationUsec = vmMetrics.GetVmDnsWaitDurationUsec()
 				executionProto.VmExecInitDurationUsec = vmMetrics.GetVmExecInitDurationUsec()
 				executionProto.VmExecDialDurationUsec = vmMetrics.GetVmExecDialDurationUsec()
+				executionProto.GuestKernelImageHash = vmMetrics.GetGuestKernelImageHash()
 			}
 
 			if properties != nil {

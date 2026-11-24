@@ -473,6 +473,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		VMDnsWaitDurationUsec:              in.GetVmDnsWaitDurationUsec(),
 		VMExecInitDurationUsec:             in.GetVmExecInitDurationUsec(),
 		VMExecDialDurationUsec:             in.GetVmExecDialDurationUsec(),
+		GuestKernelImageHash:               in.GetGuestKernelImageHash(),
 		BuildrootDiskUsageBytes:            in.GetBuildrootDiskUsageBytes(),
 	}
 

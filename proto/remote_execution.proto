@@ -3399,4 +3399,9 @@ message StoredExecution {
   // Maps experiment flag names to the variant selected for this execution.
   // Flags with an empty variant are omitted.
   map<string, string> experiment_variants = 97;
+
+  // SHA256 hash of the kernel image that the guest VM is running. VMs
+  // resumed from a snapshot keep running the kernel they were first booted
+  // with. Only set for firecracker executions.
+  string guest_kernel_image_hash = 98;
 }
