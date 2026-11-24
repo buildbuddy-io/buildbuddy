@@ -92,10 +92,19 @@ func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageL
 // values for both app 1, and the original client, but app 1's values would take
 // precedence.
 func WithLocalServerLabels(ctx context.Context) context.Context {
+	return WithLocalServerLabelsForClient(ctx, serverName)
+}
+
+// WithLocalServerLabelsForClient is like WithLocalServerLabels, but labels
+// outgoing requests with the given client label instead of this server's
+// configured name. This lets a single server (e.g. an executor) attribute
+// different units of work to different clients, such as labeling CI runner
+// tasks as workflow traffic on an executor that also runs regular actions.
+func WithLocalServerLabelsForClient(ctx context.Context, client string) context.Context {
 	// Note: we set the header values here even if they're empty so that they
 	// override other header values, e.g. bazel request metadata.
 	ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, *origin)
-	ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, serverName)
+	ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, client)
 	return ctx
 }
 

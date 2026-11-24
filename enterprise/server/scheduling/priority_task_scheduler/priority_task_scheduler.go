@@ -19,11 +19,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -635,9 +637,12 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 	// experiments on the executor.
 	ctx = expflag.ContextWithEvaluatedFlags(ctx, execTask.GetExperimentFlags())
 
-	// Make sure we identify any executor cache requests as being from the
-	// executor, and also set the client origin (e.g. internal / external).
-	ctx = usageutil.WithLocalServerLabels(ctx)
+	// Label all outgoing requests for this task (cache requests, as well as
+	// the PublishOperation stream, which the app uses to record execution
+	// duration and CPU usage) with the client type and origin (e.g.
+	// internal / external). This determines whether usage is attributed to
+	// RBE or to workflows.
+	ctx = usageutil.WithLocalServerLabelsForClient(ctx, usageClientLabel(execTask))
 
 	if execTask.GetJwt() != "" {
 		ctx = auth.ContextWithTrustedJWT(ctx, execTask.GetJwt())
@@ -652,6 +657,19 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 		ctx = context.WithValue(ctx, bazel_request.RequestMetadataKey, string(data))
 	}
 	return ctx
+}
+
+// usageClientLabel returns the client label to attach to outgoing requests made
+// on behalf of the given task. CI runner tasks (workflows and hosted runners)
+// are labeled as workflow traffic regardless of which executor runs them, so
+// that workflows and regular executions can share an executor pool without
+// being misattributed in usage. All other tasks use the executor's configured
+// client type.
+func usageClientLabel(execTask *repb.ExecutionTask) string {
+	if platform.IsCIRunnerCommand(execTask.GetCommand()) {
+		return string(sku.ClientExecutorWorkflows)
+	}
+	return usageutil.ServerName()
 }
 
 func (q *PriorityTaskScheduler) publishOperation(ctx context.Context, executionID string) (*operation.Publisher, error) {
