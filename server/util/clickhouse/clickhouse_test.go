@@ -136,12 +136,14 @@ func TestExecutionFromProto(t *testing.T) {
 				VmDnsWaitDurationUsec:     4002,
 				VmExecInitDurationUsec:    4003,
 				VmExecDialDurationUsec:    4004,
+				GuestKernelImageHash:      "test-guest-kernel-image-hash",
 			},
 			want: &schema.Execution{
 				VMDockerdWaitDurationUsec: 4001,
 				VMDnsWaitDurationUsec:     4002,
 				VMExecInitDurationUsec:    4003,
 				VMExecDialDurationUsec:    4004,
+				GuestKernelImageHash:      "test-guest-kernel-image-hash",
 			},
 		},
 		{
@@ -193,6 +195,7 @@ func TestExecutionFromProto(t *testing.T) {
 			require.Equal(t, testCase.want.VMDnsWaitDurationUsec, execution.VMDnsWaitDurationUsec)
 			require.Equal(t, testCase.want.VMExecInitDurationUsec, execution.VMExecInitDurationUsec)
 			require.Equal(t, testCase.want.VMExecDialDurationUsec, execution.VMExecDialDurationUsec)
+			require.Equal(t, testCase.want.GuestKernelImageHash, execution.GuestKernelImageHash)
 			require.Equal(t, testCase.want.ExperimentVariants, execution.ExperimentVariants)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})

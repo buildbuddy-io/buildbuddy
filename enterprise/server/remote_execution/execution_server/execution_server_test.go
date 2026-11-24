@@ -1353,6 +1353,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			VmDnsWaitDurationUsec:   4002,
 			VmExecInitDurationUsec:  4003,
 			VmExecDialDurationUsec:  4004,
+			GuestKernelImageHash:    "test-guest-kernel-image-hash",
 		}
 		aux.ExperimentFlags = []*expb.EvaluatedFlag{
 			{Name: "executor.foo_experiment", Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
@@ -1619,6 +1620,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.VmDnsWaitDurationUsec = 4002
 		expectedExecution.VmExecInitDurationUsec = 4003
 		expectedExecution.VmExecDialDurationUsec = 4004
+		expectedExecution.GuestKernelImageHash = "test-guest-kernel-image-hash"
 		expectedExecution.ExperimentVariants = map[string]string{"executor.foo_experiment": "treatment"}
 	}
 	require.Empty(t, cmp.Diff(

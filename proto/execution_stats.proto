@@ -203,6 +203,11 @@ message VMMetrics {
   // Whether the executor received a guest-triggered vmexec readiness signal
   // before dialing.
   bool vm_exec_ready_signal_received = 7;
+
+  // SHA256 hash of the kernel image that the guest is running. A VM resumed
+  // from a snapshot keeps running the kernel it was first booted with, so this
+  // can differ from the kernel that the executor uses to boot new VMs.
+  string guest_kernel_image_hash = 8;
 }
 
 // Stats about work done after the COMPLETED operation is streamed back to the

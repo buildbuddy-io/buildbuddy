@@ -3352,6 +3352,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		result.VMMetrics.VmExecTransportDialDurationUsec = c.vmExec.transportDialDuration.Microseconds()
 		result.VMMetrics.VmExecDialAttempts = c.vmExec.dialAttempts
 		result.VMMetrics.VmExecReadySignalReceived = c.vmExec.readySignalReceived
+		result.VMMetrics.GuestKernelImageHash = c.vmConfig.GetGuestKernelVersion()
 
 		// If a VFS (FUSE) download failed, always return that as the command
 		// error so that the task can be retried (even if the task ignored the

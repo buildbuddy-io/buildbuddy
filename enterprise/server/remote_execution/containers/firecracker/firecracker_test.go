@@ -1117,6 +1117,7 @@ func TestFirecrackerSnapshotAndResume_GuestKernelVersionChange(t *testing.T) {
 	res := original.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-c", "echo preserved > /root/kernel-version-test"}}, nil /*=stdio*/)
 	require.NoError(t, res.Error)
 	require.Zero(t, res.ExitCode)
+	require.Equal(t, originalGuestKernelVersion, res.VMMetrics.GetGuestKernelImageHash())
 	require.NoError(t, original.Pause(ctx))
 
 	// Simulate a change to the default guest kernel version.
@@ -1132,6 +1133,9 @@ func TestFirecrackerSnapshotAndResume_GuestKernelVersionChange(t *testing.T) {
 	require.Zero(t, res.ExitCode)
 	// The output from the original run should be present in the snapshot.
 	require.Equal(t, "preserved\n", string(res.Stdout))
+	// The resumed VM is still running the original kernel, so that's the
+	// version that should be reported for the execution.
+	require.Equal(t, originalGuestKernelVersion, res.VMMetrics.GetGuestKernelImageHash())
 
 	// Changing other fields in the snapshot key should still cause a cold boot.
 	// Cold boots should use the updated default guest kernel version.
