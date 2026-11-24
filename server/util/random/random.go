@@ -26,13 +26,21 @@ func RandUint64() uint64 {
 
 func RandomString(stringLength int) (string, error) {
 	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	bytes := make([]byte, stringLength)
-	if _, err := crand.Read(bytes); err != nil {
-		return "", err
+	// Bytes at or above the largest multiple of len(letters) are discarded
+	// so that every letter is equally likely.
+	const limit = 256 - 256%len(letters)
+	out := make([]byte, 0, stringLength)
+	buf := make([]byte, stringLength)
+	for len(out) < stringLength {
+		buf = buf[:stringLength-len(out)]
+		if _, err := crand.Read(buf); err != nil {
+			return "", err
+		}
+		for _, b := range buf {
+			if int(b) < limit {
+				out = append(out, letters[int(b)%len(letters)])
+			}
+		}
 	}
-	// Run through bytes; replacing each with the equivalent random char.
-	for i, b := range bytes {
-		bytes[i] = letters[b%byte(len(letters))]
-	}
-	return string(bytes), nil
+	return string(out), nil
 }
