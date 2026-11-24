@@ -3,7 +3,6 @@ package ocifetcher_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1325,21 +1324,26 @@ func TestServerNoRetryOnRateLimit(t *testing.T) {
 func TestServerNoRetryOnContextErrors(t *testing.T) {
 	var headAttempts, getAttempts, blobAttempts atomic.Int32
 	var blockHead, blockGet, blockBlob atomic.Bool
+	var cancelClient context.CancelFunc
+	cancelAndWait := func(r *http.Request) {
+		cancelClient()
+		<-r.Context().Done()
+	}
 
 	reg, counter := setupRegistry(t, nil, func(w http.ResponseWriter, r *http.Request) bool {
 		if strings.Contains(r.URL.Path, "/manifests/") {
 			if blockHead.Load() && r.Method == http.MethodHead {
 				headAttempts.Add(1)
-				time.Sleep(100 * time.Millisecond)
+				cancelAndWait(r)
 			}
 			if blockGet.Load() && r.Method == http.MethodGet {
 				getAttempts.Add(1)
-				time.Sleep(100 * time.Millisecond)
+				cancelAndWait(r)
 			}
 		}
 		if blockBlob.Load() && strings.Contains(r.URL.Path, "/blobs/") {
 			blobAttempts.Add(1)
-			time.Sleep(100 * time.Millisecond)
+			cancelAndWait(r)
 		}
 		return true
 	})
@@ -1363,14 +1367,15 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedDigest, resp.GetDigest())
 
-	// FetchManifestMetadata: times out, should NOT retry
-	blockHead.Store(true)
+	// FetchManifestMetadata: canceled, should NOT retry
 	headAttempts.Store(0)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	var ctx context.Context
+	ctx, cancelClient = context.WithCancel(context.Background())
+	blockHead.Store(true)
 	_, err = server.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
-	cancel()
+	cancelClient()
 	require.Error(t, err)
-	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
+	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, int32(1), headAttempts.Load(), "should not retry on context error")
 
 	// FetchManifestMetadata: Puller should still be cached
@@ -1385,14 +1390,14 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 		http.MethodHead + " /v2/test-image/manifests/latest": 1,
 	})
 
-	// FetchManifest: times out, should NOT retry
-	blockGet.Store(true)
+	// FetchManifest: canceled, should NOT retry
 	getAttempts.Store(0)
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancelClient = context.WithCancel(context.Background())
+	blockGet.Store(true)
 	_, err = server.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageName})
-	cancel()
+	cancelClient()
 	require.Error(t, err)
-	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
+	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, int32(1), getAttempts.Load(), "should not retry on context error")
 
 	// FetchManifest: Puller should still be cached (but HEAD and GET both happen for tag refs)
@@ -1414,14 +1419,14 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerSize, blobMetaResp.GetSize())
 
-	// FetchBlobMetadata: times out, should NOT retry
-	blockBlob.Store(true)
+	// FetchBlobMetadata: canceled, should NOT retry
 	blobAttempts.Store(0)
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancelClient = context.WithCancel(context.Background())
+	blockBlob.Store(true)
 	_, err = server.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: imageName + "@" + layerDigest.String()})
-	cancel()
+	cancelClient()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "deadline exceeded", "expected deadline exceeded error, got: %v", err)
+	require.Contains(t, err.Error(), "context canceled")
 	require.Equal(t, int32(1), blobAttempts.Load(), "should not retry on context error")
 
 	// FetchBlobMetadata: Puller should still be cached
@@ -1440,12 +1445,10 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 
 	// FetchBlob: second fetch serves entirely from cache. Access to this repo
 	// was already proven (by the earlier FetchManifest), so no registry calls
-	// are made even with a short timeout.
+	// are made.
 	counter.Reset()
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
-	stream = &mockFetchBlobServer{ctx: ctx}
+	stream = &mockFetchBlobServer{ctx: context.Background()}
 	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + layerDigest.String()}, stream)
-	cancel()
 	require.NoError(t, err, "cached blob should serve without network calls")
 	require.Equal(t, expectedLayerData, stream.collectData())
 	assertRequests(t, counter, map[string]int{})
