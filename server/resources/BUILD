@@ -15,6 +15,7 @@ go_library(
         "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/status",
         "@com_github_aws_aws_sdk_go_v2_feature_ec2_imds//:imds",
         "@com_github_elastic_gosigar//:gosigar",
