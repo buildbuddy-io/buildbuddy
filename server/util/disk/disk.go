@@ -245,18 +245,49 @@ type readCloser struct {
 	io.Closer
 }
 
+var fileReaderFadviseSizeThreshold = flag.Int64(
+	"file_reader_fadvise_size_threshold", 0,
+	"If > 0, call fadvise(DONTNEED) after reading files larger than this "+
+		"many bytes, to reduce page cache pressure. 0 disables (default). "+
+		"Recommended value: 1048576 (1 MiB) for cache-proxy deployments "+
+		"where page cache accumulation causes cgroup direct reclaim stalls.")
+
+// fadviseReadCloser wraps a file and optionally calls fadvise(DONTNEED) on
+// Close for files exceeding the size threshold. This prevents the kernel page
+// cache from growing to the cgroup memory.max and triggering synchronous
+// direct reclaim that stalls the request path. Small files are left cached
+// since they have higher reuse and lower page cache cost.
+type fadviseReadCloser struct {
+	io.Reader
+	f    *os.File
+	size int64
+}
+
+func (r *fadviseReadCloser) Close() error {
+	if threshold := *fileReaderFadviseSizeThreshold; threshold > 0 && r.size >= threshold {
+		syscall.Fadvise(int(r.f.Fd()), 0, 0, syscall.FADV_DONTNEED)
+	}
+	return r.f.Close()
+}
+
 func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.ReadCloser, error) {
 	f, err := os.Open(fullPath)
 	if err != nil {
 		return nil, err
 	}
+	var size int64
+	if *fileReaderFadviseSizeThreshold > 0 {
+		if fi, err := f.Stat(); err == nil {
+			size = fi.Size()
+		}
+	}
 	if offset == 0 && length == 0 {
-		return f, nil
+		return &fadviseReadCloser{f, f, size}, nil
 	}
 	if length == 0 {
 		length = math.MaxInt64
 	}
-	return &readCloser{io.NewSectionReader(f, offset, length), f}, nil
+	return &fadviseReadCloser{io.NewSectionReader(f, offset, length), f, size}, nil
 }
 
 // A buffered channel used for reservations.
