@@ -1,18 +1,29 @@
 package usagetracker
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	pebble "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebblev2"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -149,6 +160,9 @@ func testMetricSet() metricSet {
 		cacheLastEvictionAgeUsec: prometheus.NewGauge(prometheus.GaugeOpts{Name: "last_age"}),
 		cacheNumEvictions:        prometheus.NewCounter(prometheus.CounterOpts{Name: "num"}),
 		cacheBytesEvicted:        prometheus.NewCounter(prometheus.CounterOpts{Name: "bytes"}),
+		atimeIndexBuilt:          prometheus.NewGauge(prometheus.GaugeOpts{Name: "built"}),
+		atimeIndexRepairs:        prometheus.NewCounter(prometheus.CounterOpts{Name: "repairs"}),
+		atimeIndexSizeBytes:      prometheus.NewGauge(prometheus.GaugeOpts{Name: "index_size"}),
 	}
 }
 
@@ -174,5 +188,130 @@ func TestUpdateEvictionMetricsScalesRemoteSizes(t *testing.T) {
 			require.NoError(t, pu.updateEvictionMetrics(candidates))
 			require.Equal(t, tc.wantRemote, pu.nodes["remote"].sizeBytes)
 		})
+	}
+}
+
+const testPartition = "FOO"
+
+// newAtimeIndexTestPU's passes scan one record per chunk.
+func newAtimeIndexTestPU(t *testing.T) (*partitionUsage, pebble.IPebbleDB) {
+	db, err := pebble.Open(testfs.MakeTempDir(t), "test", &pebble.Options{})
+	require.NoError(t, err)
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+	return &partitionUsage{
+		part:                      disk.Partition{ID: testPartition},
+		dbGetter:                  leaser,
+		clock:                     clockwork.NewRealClock(),
+		atimeIndexBuildRateLimit:  1_000_000,
+		atimeIndexVerifyRateLimit: 1_000_000,
+		metrics:                   testMetricSet(),
+	}, db
+}
+
+// writeRecord writes a file record and returns the key of its index entry.
+func writeRecord(t *testing.T, db pebble.IPebbleDB, atimeUsec int64, withEntry bool) []byte {
+	rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+	pk, err := filestore.New().PebbleKey(&sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   rspb.CacheType_CAS,
+			PartitionId: testPartition,
+		},
+		Digest:         rn.GetDigest(),
+		DigestFunction: rn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	fileKey, err := pk.Bytes(filestore.Version5)
+	require.NoError(t, err)
+
+	val, err := (&sgpb.FileMetadata{LastAccessUsec: atimeUsec}).MarshalVT()
+	require.NoError(t, err)
+	require.NoError(t, db.Set(fileKey, val, pebble.NoSync))
+	entryKey := keys.AtimeIndexKey(testPartition, atimeUsec, fileKey)
+	if withEntry {
+		require.NoError(t, db.Set(entryKey, nil, pebble.NoSync))
+	}
+	return entryKey
+}
+
+// atimeIndexEntries returns the keys of the partition's index entries.
+func atimeIndexEntries(t *testing.T, db pebble.IPebbleDB) [][]byte {
+	start, end := keys.AtimeIndexPartitionRange(testPartition)
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
+	require.NoError(t, err)
+	defer iter.Close()
+	var entries [][]byte
+	for valid := iter.First(); valid; valid = iter.Next() {
+		entries = append(entries, bytes.Clone(iter.Key()))
+	}
+	return entries
+}
+
+func backfillMarkerValue(t *testing.T, db pebble.IPebbleDB) []byte {
+	val, closer, err := db.Get(keys.AtimeIndexBuiltKey(testPartition))
+	if err == pebble.ErrNotFound {
+		return nil
+	}
+	require.NoError(t, err)
+	defer closer.Close()
+	return bytes.Clone(val)
+}
+
+// A build adds entries without counting repairs, and writes the marker only
+// if it completes.
+func TestAtimeIndexBuild(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		marker []byte
+	}{
+		{name: "no marker"},
+		{name: "marker from another version", marker: []byte{atimeIndexVersion + 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pu, db := newAtimeIndexTestPU(t)
+			if tc.marker != nil {
+				require.NoError(t, db.Set(keys.AtimeIndexBuiltKey(testPartition), tc.marker, pebble.NoSync))
+			}
+			var want [][]byte
+			for i := range 5 {
+				want = append(want, writeRecord(t, db, int64(1_000_000+i), i == 0 /*=withEntry*/))
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			require.Error(t, pu.atimeIndexPass(ctx))
+			require.Equal(t, tc.marker, backfillMarkerValue(t, db))
+
+			require.NoError(t, pu.atimeIndexPass(context.Background()))
+			require.ElementsMatch(t, want, atimeIndexEntries(t, db))
+			require.Equal(t, []byte{atimeIndexVersion}, backfillMarkerValue(t, db))
+			require.Equal(t, 1.0, testutil.ToFloat64(pu.metrics.atimeIndexBuilt))
+			require.Equal(t, 0.0, testutil.ToFloat64(pu.metrics.atimeIndexRepairs))
+		})
+	}
+}
+
+// On a built partition, each added entry counts as a repair.
+func TestAtimeIndexVerify(t *testing.T) {
+	pu, db := newAtimeIndexTestPU(t)
+	require.NoError(t, db.Set(keys.AtimeIndexBuiltKey(testPartition), []byte{atimeIndexVersion}, pebble.NoSync))
+	want := [][]byte{
+		writeRecord(t, db, 1_000_000, true /*=withEntry*/),
+		writeRecord(t, db, 2_000_000, false /*=withEntry*/),
+		writeRecord(t, db, 3_000_000, true /*=withEntry*/),
+	}
+	// Orphans are left alone.
+	orphan := keys.AtimeIndexKey(testPartition, 500_000, []byte("gone"))
+	require.NoError(t, db.Set(orphan, nil, pebble.NoSync))
+	want = append(want, orphan)
+
+	// The second pass finds nothing to repair.
+	for range 2 {
+		require.NoError(t, pu.atimeIndexPass(context.Background()))
+		require.ElementsMatch(t, want, atimeIndexEntries(t, db))
+		require.Equal(t, 1.0, testutil.ToFloat64(pu.metrics.atimeIndexRepairs))
 	}
 }

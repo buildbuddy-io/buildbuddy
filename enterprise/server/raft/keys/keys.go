@@ -95,6 +95,12 @@ func AtimeIndexPartitionRange(partitionID string) ([]byte, []byte) {
 	return Range(MakeKey(AtimeIndexPrefix, []byte(partitionID), []byte{'/'}))
 }
 
+// AtimeIndexBuiltKey is where a node records that it has built a partition's
+// atime index. It sorts before every index entry.
+func AtimeIndexBuiltKey(partitionID string) []byte {
+	return MakeKey([]byte("\x01atidx-built/"), []byte(partitionID))
+}
+
 // PartitionIDFromRangeStart parses the partition ID out of a range descriptor's
 // start key. Range data is keyed under "PT<partition_id>/..."; returns "" for
 // keys without that prefix (e.g., the meta range).
