@@ -1898,7 +1898,6 @@ func TestGetTreeSkipCachedSubtreeFetch_MissingBlobFallsBackToWalk(t *testing.T) 
 }
 
 func TestGetTreeSkipCachedSubtreeFetch_MissingSplitChildFallsBackToWalk(t *testing.T) {
-	flags.Set(t, "cache.tree_cache_splitting", true)
 	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
 	f := setupSplitSkipFetch(t)
 
@@ -1913,18 +1912,6 @@ func TestGetTreeSkipCachedSubtreeFetch_MissingSplitChildFallsBackToWalk(t *testi
 
 	require.NoError(t, f.cache.Delete(f.ctx, f.splitChildBlob))
 	got = getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
-	assert.NotContains(t, got.subtrees, f.splitRootBlob.GetDigest().GetHash())
-	f.assertCompleteTree(t, f.rootDigest2, got)
-}
-
-func TestGetTreeSkipCachedSubtreeFetch_SplitPointerIsAMissWhenSplittingDisabled(t *testing.T) {
-	flags.Set(t, "cache.tree_cache_splitting", true)
-	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
-	f := setupSplitSkipFetch(t)
-
-	flags.Set(t, "cache.tree_cache_splitting", false)
-	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
-	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
 	assert.NotContains(t, got.subtrees, f.splitRootBlob.GetDigest().GetHash())
 	f.assertCompleteTree(t, f.rootDigest2, got)
 }
@@ -2104,7 +2091,6 @@ func TestGetTreeSkipCachedSubtreeFetch_BackfillsOldFormatPointer(t *testing.T) {
 func setupSharedSplitTree(t *testing.T, stripPointerMetadata bool) (ctx context.Context, spy *treeCacheSpy, casClient repb.ContentAddressableStorageClient, root, top *repb.Digest, seed string) {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	flags.Set(t, "cache.tree_cache_min_descendents", 3000)
-	flags.Set(t, "cache.tree_cache_splitting", true)
 	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
 	flags.Set(t, "cache.get_tree_subtree_support", true)
 	seed = "shared-split-test"
