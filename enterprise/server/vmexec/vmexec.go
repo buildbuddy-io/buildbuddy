@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -205,11 +206,10 @@ func maintainVMExecReadySignal(ctx context.Context) {
 // in the background.
 func StartDockerd(ctx context.Context, daemonJSON []byte, enableTCP bool) error {
 	// Make sure we can locate both docker and dockerd.
-	if _, err := exec.LookPath("docker"); err != nil {
-		return err
-	}
-	if _, err := exec.LookPath("dockerd"); err != nil {
-		return err
+	for _, bin := range []string{"docker", "dockerd"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			return status.FailedPreconditionErrorf("init-dockerd enabled, but %q was not found in PATH: %s", bin, err)
+		}
 	}
 	if len(daemonJSON) > 0 {
 		if err := os.MkdirAll("/etc/docker", 0755); err != nil {
@@ -238,7 +238,17 @@ func StartDockerd(ctx context.Context, daemonJSON []byte, enableTCP bool) error 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Errorf("dockerd exited with error: %s", err)
+		} else {
+			log.Infof("dockerd exited")
+		}
+	}()
+	return nil
 }
 
 func waitForDockerd(ctx context.Context, enableDockerdTCP bool) error {
@@ -396,7 +406,7 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 			}
 		}
 		x.rootMountAttempted = true
-		if err := mountContainerRoot(req.GetOverlayContainerRoot()); err != nil {
+		if err := mountContainerRoot(req.GetOverlayContainerRoot(), req.GetDockerd() != nil); err != nil {
 			return nil, status.WrapError(err, "mount container root")
 		}
 	}
@@ -1032,7 +1042,7 @@ func detectFormat(device string) (diskimage.Format, error) {
 
 // mountOverlayRoot mounts the container image read-only at lower, under an
 // overlay at root whose writes go to the scratch disk.
-func mountOverlayRoot(format diskimage.Format, root string) error {
+func mountOverlayRoot(format diskimage.Format, root string, initDockerd bool) error {
 	if mounted, err := isMounted(scratchMountPath); err != nil {
 		return err
 	} else if !mounted {
@@ -1056,6 +1066,9 @@ func mountOverlayRoot(format diskimage.Format, root string) error {
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,volatile", lower, upper, work)
 	if err := syscall.Mount("overlay", root, "overlay", syscall.MS_NOATIME, opts); err != nil {
 		return err
+	}
+	if !initDockerd {
+		return nil
 	}
 	// Container storage drivers refuse to run on overlayfs, so give them
 	// directories on the scratch disk, copying any pre-existing image content
@@ -1093,7 +1106,11 @@ func mountOverlayRoot(format diskimage.Format, root string) error {
 			return err
 		}
 		if targetInfo != nil {
-			if err := CopyDirContents(p, src, targetInfo); err != nil {
+			// Copy from lower (the raw container image), not the merged
+			// overlay view, so overlay2 whiteouts and opaque xattrs are
+			// preserved.
+			lowerSrc := filepath.Join(lower, "var", "lib", name)
+			if err := CopyDirContents(lowerSrc, src, targetInfo); err != nil {
 				return err
 			}
 		}
@@ -1132,7 +1149,7 @@ func copyDirTree(src, dst string, srcInfo os.FileInfo, hardlinks map[copyFileID]
 			return err
 		}
 	}
-	return applyFileMetadata(dst, srcInfo)
+	return applyFileMetadata(src, dst, srcInfo)
 }
 
 func copyEntry(src, dst string, info os.FileInfo, hardlinks map[copyFileID]string) error {
@@ -1151,14 +1168,17 @@ func copyEntry(src, dst string, info os.FileInfo, hardlinks map[copyFileID]strin
 		if err := os.Symlink(target, dst); err != nil {
 			return err
 		}
-		return applyOwnership(dst, info)
+		if err := applyOwnership(dst, info); err != nil {
+			return err
+		}
+		return copyXattrs(src, dst)
 	case mode&os.ModeSocket != 0:
 		return nil
 	case mode&os.ModeNamedPipe != 0:
 		if err := unix.Mkfifo(dst, 0600); err != nil {
 			return err
 		}
-		return applyFileMetadata(dst, info)
+		return applyFileMetadata(src, dst, info)
 	case mode&os.ModeDevice != 0:
 		st, ok := info.Sys().(*syscall.Stat_t)
 		if !ok {
@@ -1167,7 +1187,7 @@ func copyEntry(src, dst string, info os.FileInfo, hardlinks map[copyFileID]strin
 		if err := unix.Mknod(dst, uint32(st.Mode), int(st.Rdev)); err != nil {
 			return err
 		}
-		return applyFileMetadata(dst, info)
+		return applyFileMetadata(src, dst, info)
 	case mode.IsRegular():
 		if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Nlink > 1 {
 			id := copyFileID{dev: uint64(st.Dev), ino: st.Ino}
@@ -1179,7 +1199,7 @@ func copyEntry(src, dst string, info os.FileInfo, hardlinks map[copyFileID]strin
 		if err := copyRegularFile(src, dst); err != nil {
 			return err
 		}
-		return applyFileMetadata(dst, info)
+		return applyFileMetadata(src, dst, info)
 	default:
 		return nil
 	}
@@ -1212,14 +1232,64 @@ func applyOwnership(dst string, info os.FileInfo) error {
 	return os.Lchown(dst, int(st.Uid), int(st.Gid))
 }
 
-func applyFileMetadata(dst string, info os.FileInfo) error {
+func applyFileMetadata(src, dst string, info os.FileInfo) error {
 	if err := applyOwnership(dst, info); err != nil {
+		return err
+	}
+	if err := copyXattrs(src, dst); err != nil {
 		return err
 	}
 	return os.Chmod(dst, info.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky))
 }
 
-func mountContainerRoot(overlay bool) error {
+func copyXattrs(src, dst string) error {
+	size, err := unix.Llistxattr(src, nil)
+	if err != nil {
+		if errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.ENODATA) {
+			return nil
+		}
+		return err
+	}
+	if size == 0 {
+		return nil
+	}
+	buf := make([]byte, size)
+	size, err = unix.Llistxattr(src, buf)
+	if err != nil {
+		return err
+	}
+	var valBuf []byte
+	for rawName := range bytes.SplitSeq(buf[:size], []byte{0}) {
+		if len(rawName) == 0 {
+			continue
+		}
+		name := string(rawName)
+		valSize, err := unix.Lgetxattr(src, name, nil)
+		if err != nil {
+			if errors.Is(err, unix.ENODATA) {
+				continue
+			}
+			return err
+		}
+		if cap(valBuf) < valSize {
+			valBuf = make([]byte, valSize)
+		} else {
+			valBuf = valBuf[:valSize]
+		}
+		if valSize > 0 {
+			valSize, err = unix.Lgetxattr(src, name, valBuf)
+			if err != nil {
+				return err
+			}
+		}
+		if err := unix.Lsetxattr(dst, name, valBuf[:valSize], 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mountContainerRoot(overlay, initDockerd bool) error {
 	const root = "/mnt"
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
@@ -1230,7 +1300,7 @@ func mountContainerRoot(overlay bool) error {
 	}
 	switch {
 	case overlay:
-		if err := mountOverlayRoot(format, root); err != nil {
+		if err := mountOverlayRoot(format, root, initDockerd); err != nil {
 			return status.WrapError(err, "mount overlay root")
 		}
 	case format == diskimage.Ext4:

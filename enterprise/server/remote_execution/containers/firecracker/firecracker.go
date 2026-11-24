@@ -2139,11 +2139,13 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration, genericSnapshot bool) string {
 	if networkingEnabled(vmConfig.NetworkMode) {
 		initArgs = append(initArgs, "-set_default_route")
 	}
-	if vmConfig.InitDockerd {
-		initArgs = append(initArgs, "-init_dockerd")
-	}
-	if vmConfig.EnableDockerdTcp {
-		initArgs = append(initArgs, "-enable_dockerd_tcp")
+	if !genericSnapshot {
+		if vmConfig.InitDockerd {
+			initArgs = append(initArgs, "-init_dockerd")
+		}
+		if vmConfig.EnableDockerdTcp {
+			initArgs = append(initArgs, "-enable_dockerd_tcp")
+		}
 	}
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		initArgs = append(initArgs, "-enable_rootfs")
@@ -2893,10 +2895,10 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 		Dockerd:                  dockerd,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "docker") {
-			return status.UnavailableErrorf("init dockerd: %s", err)
-		}
 		if status.IsDeadlineExceededError(err) && ctx.Err() == nil {
+			if strings.Contains(err.Error(), "docker") {
+				return status.UnavailableErrorf("init dockerd: %s", err)
+			}
 			return status.UnavailableErrorf("mount container root: %s", err)
 		}
 		return err
@@ -3018,7 +3020,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// configuration. goinit will fall back to default nameservers if unavailable.
 	metadata["resolv_conf"] = c.hostResolvConf
 
-	if c.vmConfig.InitDockerd {
+	if c.vmConfig.InitDockerd && !c.genericSnapshot {
 		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
 			return status.UnavailableErrorf("get Docker daemon config: %s", err)

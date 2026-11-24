@@ -5378,18 +5378,14 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoo
 	t.Run("external networking", func(t *testing.T) {
 		assert.Equal(t, genericSnapshotID, run(t, ctx, busyboxImage, "", 1, fcpb.NetworkMode_NETWORK_MODE_EXTERNAL).GetVMMetadata().GetSnapshotId())
 	})
-	t.Run("dockerd", func(t *testing.T) {
+	runDockerd := func(t *testing.T, cpus int64, expectSnapshot bool) {
 		skipUnsupportedImage(t, imageWithDockerInstalled)
+		dockerVMConfig := vmConfig(cpus, fcpb.NetworkMode_NETWORK_MODE_EXTERNAL)
+		dockerVMConfig.InitDockerd = true
 		opts := firecracker.ContainerOpts{
-			ContainerImage: imageWithDockerInstalled,
-			ExecutorConfig: cfg,
-			VMConfiguration: &fcpb.VMConfiguration{
-				NumCpus:           1,
-				MemSizeMb:         2500,
-				ScratchDiskSizeMb: 100,
-				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
-				InitDockerd:       true,
-			},
+			ContainerImage:        imageWithDockerInstalled,
+			ExecutorConfig:        cfg,
+			VMConfiguration:       dockerVMConfig,
 			GenericSnapshot:       true,
 			GuestMemoryLimitBytes: 1 << 30,
 		}
@@ -5406,9 +5402,16 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoo
 		result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 		require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
 		require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
-		assert.Equal(t, genericSnapshotID, result.VMMetadata.GetSnapshotId())
+		if expectSnapshot {
+			assert.Equal(t, genericSnapshotID, result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+		} else {
+			assert.NotEqual(t, genericSnapshotID, result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+		}
 		assert.Regexp(t, `Storage Driver: (overlay2|overlayfs)`, string(result.Stdout))
 		assert.Contains(t, string(result.Stdout), "hello")
+	}
+	t.Run("dockerd", func(t *testing.T) {
+		runDockerd(t, 1, true)
 	})
 	t.Run("two CPUs", func(t *testing.T) {
 		assert.NotEqual(t, genericSnapshotID, run(t, ctx, busyboxImage, "", 2, off).GetVMMetadata().GetSnapshotId())
@@ -5441,6 +5444,9 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoo
 	}
 	t.Run("not built", func(t *testing.T) {
 		runFromScratch(t, 3)
+	})
+	t.Run("dockerd from scratch", func(t *testing.T) {
+		runDockerd(t, 3, false)
 	})
 	t.Run("evicted memory", func(t *testing.T) {
 		var memory *fcpb.ChunkedFile

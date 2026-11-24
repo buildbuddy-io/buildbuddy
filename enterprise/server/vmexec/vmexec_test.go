@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -219,7 +220,12 @@ func TestCopyDirContents(t *testing.T) {
 	// Nested read-only subdir with a file inside (verifies post-order chmod).
 	roDir := filepath.Join(src, "ro")
 	require.NoError(t, os.Mkdir(roDir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(roDir, "data.txt"), []byte("hello"), 0640))
+	dataFile := filepath.Join(roDir, "data.txt")
+	require.NoError(t, os.WriteFile(dataFile, []byte("hello"), 0640))
+	xattrsSupported := unix.Lsetxattr(dataFile, "user.test", []byte("val"), 0) == nil
+	if xattrsSupported {
+		require.NoError(t, unix.Lsetxattr(roDir, "user.dir", []byte("opaque"), 0))
+	}
 	require.NoError(t, os.Chmod(roDir, 0555))
 	t.Cleanup(func() { _ = os.Chmod(roDir, 0755) })
 
@@ -269,4 +275,15 @@ func TestCopyDirContents(t *testing.T) {
 	linkTarget, err := os.Readlink(filepath.Join(dst, "link"))
 	require.NoError(t, err)
 	assert.Equal(t, "/nonexistent/target", linkTarget)
+
+	if xattrsSupported {
+		buf := make([]byte, 32)
+		n, err := unix.Lgetxattr(filepath.Join(dst, "ro", "data.txt"), "user.test", buf)
+		require.NoError(t, err)
+		assert.Equal(t, "val", string(buf[:n]))
+
+		n, err = unix.Lgetxattr(filepath.Join(dst, "ro"), "user.dir", buf)
+		require.NoError(t, err)
+		assert.Equal(t, "opaque", string(buf[:n]))
+	}
 }
