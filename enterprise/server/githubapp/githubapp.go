@@ -1242,7 +1242,9 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir, destDir st
 	}
 	// Replace any template variables
 	if len(templateVariables) > 0 {
-		replace(path, templateVariables)
+		if err := replace(path, templateVariables); err != nil {
+			return err
+		}
 	}
 	// Make a temporary directory for the new repo
 	repoTmpDir, err := scratchspace.MkdirTemp(tmpDirName + "-repo")
@@ -1342,6 +1344,9 @@ func replace(dir string, replacements map[string]string) error {
 	return filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return status.InvalidArgumentError("template cannot contain symlinks")
 		}
 		if info.IsDir() {
 			return nil
