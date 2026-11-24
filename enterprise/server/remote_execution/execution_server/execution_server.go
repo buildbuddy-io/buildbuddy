@@ -540,6 +540,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.RunnerTaskNumber = auxMeta.GetRunnerMetadata().GetTaskNumber()
 			executionProto.PlatformHash = auxMeta.GetRunnerMetadata().GetPlatformHash()
 			executionProto.PersistentWorkerKey = auxMeta.GetRunnerMetadata().GetPersistentWorkerKey()
+			executionProto.EffectiveContainerImage = auxMeta.GetRunnerMetadata().GetContainerImage()
 
 			executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
 			executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
