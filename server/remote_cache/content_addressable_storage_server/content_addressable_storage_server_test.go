@@ -2148,3 +2148,210 @@ func TestTreeCachePointerDirCount_BackfillMatchesRead(t *testing.T) {
 	assert.Equal(t, read, int(meta.GetDirCount()))
 	require.Len(t, meta.GetTreeCacheChildren(), 1)
 }
+
+// replayHookTree uploads deterministic directories, so that the same tree can
+// be rebuilt in a fresh cache.
+type replayHookTree struct {
+	ctx context.Context
+	t   *testing.T
+	bs  bspb.ByteStreamClient
+}
+
+func (b *replayHookTree) dir(d *repb.Directory) *repb.Digest {
+	rn, err := cachetools.UploadProto(b.ctx, b.bs, "", repb.DigestFunction_SHA256, d)
+	require.NoError(b.t, err)
+	return rn
+}
+
+// mid returns a directory holding two files-only leaves.
+func (b *replayHookTree) mid(tag string) *repb.Digest {
+	leaf := func(name string) *repb.DirectoryNode {
+		d := b.dir(&repb.Directory{Files: []*repb.FileNode{{Name: name, Digest: &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}}}})
+		return dirNode(name, d)
+	}
+	return b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{leaf(tag + "-0"), leaf(tag + "-1")}})
+}
+
+func dirNode(name string, d *repb.Digest) *repb.DirectoryNode {
+	return &repb.DirectoryNode{Name: name, Digest: d}
+}
+
+func setupReplayHookTest(t *testing.T, configure func(*content_addressable_storage_server.ContentAddressableStorageServer)) (*replayHookTree, *treeCacheSpy, repb.ContentAddressableStorageClient) {
+	flags.Set(t, "cache.tree_cache_seed", "replay-hooks-test")
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+	c, err := memory_cache.NewMemoryCache(1000000000)
+	require.NoError(t, err)
+	spy := &treeCacheSpy{Cache: c}
+	te.SetCache(spy)
+
+	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(te)
+	require.NoError(t, err)
+	configure(casServer)
+	byteStreamServer, err := byte_stream_server.NewByteStreamServer(te)
+	require.NoError(t, err)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, te)
+	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
+	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+	go runFunc()
+	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
+	require.NoError(t, err)
+	return &replayHookTree{ctx: ctx, t: t, bs: bspb.NewByteStreamClient(conn)}, spy, repb.NewContentAddressableStorageClient(conn)
+}
+
+// treeCacheKeys returns the key of every tree cache Set, sorted, one entry per
+// call.
+func (c *treeCacheSpy) treeCacheKeys() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var keys []string
+	for _, rn := range c.pointerRNs {
+		keys = append(keys, "ac/"+rn.GetDigest().GetHash())
+	}
+	for _, rn := range c.blobWriteRNs {
+		keys = append(keys, "cas/"+rn.GetDigest().GetHash())
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func (c *treeCacheSpy) pointerKeys() []string {
+	return slices.DeleteFunc(c.treeCacheKeys(), func(k string) bool { return !strings.HasPrefix(k, "ac/") })
+}
+
+func replayHookPointerKey(t *testing.T, dirHash string) string {
+	d, err := digest.Compute(strings.NewReader(dirHash+"replay-hooks-test"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	return "ac/" + d.GetHash()
+}
+
+// replayHookFixture builds root -> top -> {x, y}, where x and y each have two
+// leaf directories. top, x and y are cacheable.
+func replayHookFixture(b *replayHookTree) (root, top, midX, midY *repb.Digest) {
+	midX, midY = b.mid("x"), b.mid("y")
+	top = b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{dirNode("x", midX), dirNode("y", midY)}})
+	root = b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{dirNode("top", top)}})
+	return
+}
+
+func TestGetTreeReplayHooks_RollDecidesWrites(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 0.5)
+	var midX *repb.Digest
+	b, spy, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
+		s.SetSynchronousTreeCacheWritesForTesting(true)
+		s.SetTreeCacheWriteRollForTesting(func(ctx context.Context, dir *rspb.ResourceName) float64 {
+			if dir.GetDigest().GetHash() == midX.GetHash() {
+				return 0
+			}
+			return 1
+		})
+	})
+	var root *repb.Digest
+	root, _, midX, _ = replayHookFixture(b)
+
+	getTree(b.ctx, t, casClient, root, false)
+
+	require.Equal(t, []string{replayHookPointerKey(t, midX.GetHash())}, spy.pointerKeys())
+}
+
+func TestGetTreeReplayHooks_RollIsCalledOncePerCacheableDirectory(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 0.5)
+	var mu sync.Mutex
+	var rolled []string
+	b, _, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
+		s.SetTreeCacheWriteRollForTesting(func(ctx context.Context, dir *rspb.ResourceName) float64 {
+			mu.Lock()
+			defer mu.Unlock()
+			rolled = append(rolled, dir.GetDigest().GetHash())
+			return 1
+		})
+	})
+	root, top, midX, midY := replayHookFixture(b)
+
+	getTree(b.ctx, t, casClient, root, false)
+
+	// The root is below the min level, and leaves have no subdirectories.
+	mu.Lock()
+	defer mu.Unlock()
+	require.ElementsMatch(t, []string{top.GetHash(), midX.GetHash(), midY.GetHash()}, rolled)
+}
+
+func TestGetTreeReplayHooks_SynchronousWritesAreDoneWhenGetTreeReturns(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	b, spy, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
+		s.SetSynchronousTreeCacheWritesForTesting(true)
+	})
+	root, top, midX, midY := replayHookFixture(b)
+
+	getTree(b.ctx, t, casClient, root, false)
+
+	want := []string{
+		replayHookPointerKey(t, top.GetHash()),
+		replayHookPointerKey(t, midX.GetHash()),
+		replayHookPointerKey(t, midY.GetHash()),
+	}
+	require.ElementsMatch(t, want, spy.pointerKeys())
+}
+
+func TestGetTreeReplayHooks_RequestDoesNotHitItsOwnWrites(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	var top *repb.Digest
+	b, spy, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
+		s.SetSynchronousTreeCacheWritesForTesting(true)
+		// Leave top uncached so that the second request looks up d.
+		s.SetTreeCacheWriteRollForTesting(func(ctx context.Context, dir *rspb.ResourceName) float64 {
+			if dir.GetDigest().GetHash() == top.GetHash() {
+				return 2
+			}
+			return 0
+		})
+	})
+	d := b.mid("d")
+	top = b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{dirNode("a", d), dirNode("b", d)}})
+	root := b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{dirNode("top", top)}})
+
+	getTree(b.ctx, t, casClient, root, false)
+	gets, _ := spy.counts()
+	require.Zero(t, gets, "first request must not read tree cache blobs")
+
+	getTree(b.ctx, t, casClient, root, false)
+	gets, _ = spy.counts()
+	require.Equal(t, 2, gets, "second request hits d under both paths")
+}
+
+func TestGetTreeReplayHooks_SynchronousWritesAreDeterministic(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	flags.Set(t, "cache.tree_cache_splitting_min_size", 2)
+
+	run := func(t *testing.T) []string {
+		var top *repb.Digest
+		b, spy, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
+			s.SetSynchronousTreeCacheWritesForTesting(true)
+			// A split child shared by two paths of one cached directory is
+			// written racily, so keep top out of the cache.
+			s.SetTreeCacheWriteRollForTesting(func(ctx context.Context, dir *rspb.ResourceName) float64 {
+				if dir.GetDigest().GetHash() == top.GetHash() {
+					return 2
+				}
+				return 0
+			})
+		})
+		nodeModules := b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{
+			dirNode("m0", b.mid("m0")), dirNode("m1", b.mid("m1")), dirNode("m2", b.mid("m2")),
+		}})
+		a := b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{dirNode("node_modules", nodeModules), dirNode("c", b.mid("c"))}})
+		bb := b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{dirNode("node_modules", nodeModules), dirNode("d", b.mid("d"))}})
+		top = b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{dirNode("a", a), dirNode("b", bb)}})
+		root := b.dir(&repb.Directory{Directories: []*repb.DirectoryNode{dirNode("top", top)}})
+
+		getTree(b.ctx, t, casClient, root, false)
+		return spy.treeCacheKeys()
+	}
+
+	first := run(t)
+	require.NotEmpty(t, first)
+	for range 5 {
+		require.Equal(t, first, run(t))
+	}
+}

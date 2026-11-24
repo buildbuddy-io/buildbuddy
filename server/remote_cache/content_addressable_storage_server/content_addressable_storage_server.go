@@ -72,6 +72,36 @@ var (
 type ContentAddressableStorageServer struct {
 	env   environment.Env
 	cache interfaces.Cache
+
+	// Hooks for deterministic offline replay of GetTree. Set before serving.
+	treeCacheWriteRoll         func(ctx context.Context, dir *rspb.ResourceName) float64
+	synchronousTreeCacheWrites bool
+}
+
+// SetTreeCacheWriteRollForTesting replaces the random roll that is compared
+// against cache.tree_cache_write_probability. The roll is called concurrently
+// and must be goroutine-safe.
+func (s *ContentAddressableStorageServer) SetTreeCacheWriteRollForTesting(roll func(ctx context.Context, dir *rspb.ResourceName) float64) {
+	s.treeCacheWriteRoll = roll
+}
+
+// SetSynchronousTreeCacheWritesForTesting makes GetTree run its tree cache
+// writes serially, in pointer digest order, after the walk and before
+// returning, instead of in the background during the walk.
+func (s *ContentAddressableStorageServer) SetSynchronousTreeCacheWritesForTesting(synchronous bool) {
+	s.synchronousTreeCacheWrites = synchronous
+}
+
+func (s *ContentAddressableStorageServer) rollTreeCacheWrite(ctx context.Context, dir *rspb.ResourceName) float64 {
+	if s.treeCacheWriteRoll != nil {
+		return s.treeCacheWriteRoll(ctx, dir)
+	}
+	return rand.Float64()
+}
+
+type queuedTreeCacheWrite struct {
+	pointerHash string
+	write       func(ctx context.Context) error
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -1053,6 +1083,33 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}()
 	}()
 
+	// With synchronous writes, tree cache writes are queued here (guarded by
+	// mu) and run after the walk.
+	var queuedWrites []queuedTreeCacheWrite
+	startCacheWrite := func(treeCachePointer *digest.ResourceName, write func(ctx context.Context) error) {
+		if !s.synchronousTreeCacheWrites {
+			cacheEG.Go(func() error { return write(cacheEGCtx) })
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		queuedWrites = append(queuedWrites, queuedTreeCacheWrite{treeCachePointer.GetDigest().GetHash(), write})
+	}
+	if s.synchronousTreeCacheWrites {
+		defer func() {
+			slices.SortStableFunc(queuedWrites, func(a, b queuedTreeCacheWrite) int {
+				return strings.Compare(a.pointerHash, b.pointerHash)
+			})
+			for i, w := range queuedWrites {
+				// A directory seen twice queues identical writes.
+				if i > 0 && w.pointerHash == queuedWrites[i-1].pointerHash {
+					continue
+				}
+				w.write(ctx)
+			}
+		}()
+	}
+
 	type fetchResult struct {
 		// If the root node of the tree was found in the TreeCache, this value
 		// will be non-nil and contain the CAS RN of the whole tree.
@@ -1095,10 +1152,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			skipReadAllowed := digestAllowed && skipSubtreeFetch && !contentsNeeded
 			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, digestAllowed, skipReadAllowed, backfillProbability); err == nil {
 				if hit.backfillMeta != nil {
-					cacheEG.Go(func() error {
+					startCacheWrite(treeCachePointer, func(ctx context.Context) error {
 						// Don't fail the group: that would cancel the other tree
 						// cache writes. Failures are counted in the backfill metric.
-						s.backfillTreeCachePointer(cacheEGCtx, treeCachePointer, hit.rn, hit.backfillMeta)
+						s.backfillTreeCachePointer(ctx, treeCachePointer, hit.rn, hit.backfillMeta)
 						return nil
 					})
 				}
@@ -1110,7 +1167,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			}
 		}
 
-		writeTreeCache := *enableTreeCaching && level >= *minTreeCacheLevel && rand.Float64() <= *treeCacheWriteProbability
+		writeTreeCache := *enableTreeCaching && level >= *minTreeCacheLevel && s.rollTreeCacheWrite(ctx, dirWithDigest.GetResourceName()) <= *treeCacheWriteProbability
 		childContentsNeeded := contentsNeeded || writeTreeCache
 
 		start := time.Now()
@@ -1181,8 +1238,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			}
 			copy(treeCache.Children, allDescendents)
 			treeCache.Children = append(treeCache.Children, allCachedSubtreeContents...)
-			cacheEG.Go(func() error {
-				return s.cacheTreeNode(cacheEGCtx, dirWithDigest, treeCachePointer, treeCache)
+			startCacheWrite(treeCachePointer, func(ctx context.Context) error {
+				return s.cacheTreeNode(ctx, dirWithDigest, treeCachePointer, treeCache)
 			})
 		}
 		return &fetchResult{
