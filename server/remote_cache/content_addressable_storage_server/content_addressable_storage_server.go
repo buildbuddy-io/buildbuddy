@@ -863,8 +863,9 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 	hit := &treeCacheHit{rn: treeCacheRN}
 	bytesRead := 0
 	contentsStatus := "skipped"
-	// Older pointers have no metadata; for those the size is only known after
-	// reading the contents.
+
+	// Fast path: metadata exists, we can skip reading, and the dir is big enough to send as a digest.
+	// In this case, ensure all the children exist, but don't read anything.
 	if meta != nil && skipReadAllowed && worthSendingAsDigest(int(meta.GetDirCount())) {
 		if err := s.checkTreeCacheBlobsExist(ctx, treeCacheRN, meta); err != nil {
 			return miss()
@@ -877,6 +878,9 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 		}
 		hit.sendAsDigest = digestAllowed && worthSendingAsDigest(len(hit.dirs))
 		contentsStatus = "read"
+
+		// Migration case, where older AC entries lack metadata. We backfill here, but only
+		// in a percentage of cases, to avoid a write storm when this initially rolls out.
 		if meta == nil {
 			if skipReadAllowed && hit.sendAsDigest {
 				contentsStatus = "read_no_metadata"
@@ -889,10 +893,10 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 			}
 		}
 	}
+
 	metrics.TreeCacheHitContentsCount.With(prometheus.Labels{
 		metrics.TreeCacheContentsStatus: contentsStatus,
 	}).Inc()
-
 	metrics.TreeCacheLookupCount.With(prometheus.Labels{
 		metrics.TreeCacheLookupStatus: "hit",
 		metrics.TreeCacheLookupLevel:  levelLabel,
@@ -1106,8 +1110,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			}
 		}
 
-		// Decided before recursing so that descendants know whether to keep
-		// their cached subtrees' contents.
 		writeTreeCache := *enableTreeCaching && level >= *minTreeCacheLevel && rand.Float64() <= *treeCacheWriteProbability
 		childContentsNeeded := contentsNeeded || writeTreeCache
 
