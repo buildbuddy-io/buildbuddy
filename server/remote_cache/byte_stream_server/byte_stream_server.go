@@ -41,6 +41,7 @@ import (
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/bytestream"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -830,6 +831,20 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
 			}
+			if req.GetReference() != nil {
+				resp, err := s.writeReference(ctx, req)
+				if status.IsAlreadyExistsError(err) {
+					hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+					return s.handleAlreadyExists(ctx, hitTracker, stream, req)
+				}
+				if err != nil {
+					return err
+				}
+				if err := s.warner.Warn(ctx); err != nil {
+					return err
+				}
+				return stream.SendAndClose(resp)
+			}
 			streamState, err = s.beginWrite(ctx, req)
 			if status.IsAlreadyExistsError(err) {
 				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -852,6 +867,112 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			return stream.SendAndClose(resp)
 		}
 	}
+}
+
+// canWriteReferences returns true if the caller may write references.
+func (s *ByteStreamServer) canWriteReferences(ctx context.Context) bool {
+	cis := s.env.GetClientIdentityService()
+	if cis == nil {
+		return false
+	}
+	identity, err := cis.IdentityFromContext(ctx)
+	if err != nil || identity == nil {
+		return false
+	}
+	return identity.Client == interfaces.ClientIdentityCacheProxy
+}
+
+func (s *ByteStreamServer) writeReference(ctx context.Context, req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
+	refCache, ok := s.cache.(interfaces.ReferenceCache)
+	if !ok {
+		return nil, status.UnimplementedError("the cache does not support references")
+	}
+	if !s.canWriteReferences(ctx) {
+		return nil, status.PermissionDeniedError("client may not write references")
+	}
+	if err := checkInitialPreconditions(req); err != nil {
+		return nil, err
+	}
+	if len(req.GetData()) != 0 || !req.GetFinishWrite() {
+		return nil, status.InvalidArgumentError("a reference must be the only request of a write, with no data and finish_write set")
+	}
+	r, err := digest.ParseUploadResourceName(req.GetResourceName())
+	if err != nil {
+		return nil, err
+	}
+	ref, err := sanitizeReference(req.GetReference(), r)
+	if err != nil {
+		return nil, err
+	}
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes(), false /* force */); err != nil {
+			return nil, err
+		}
+	}
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		return nil, status.AlreadyExistsError("The provided API Key does not have permission to write to the cache")
+	}
+
+	// Don't overwrite blobs that already exist in the cache.
+	exists, err := s.cache.Contains(ctx, ref.GetResource())
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, status.AlreadyExistsError("Already exists")
+	}
+
+	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	uploadTracker := hitTracker.TrackUpload(r.GetDigest())
+	if err := refCache.WriteReference(ctx, ref, ref.GetResource(), false /*=mustClone*/); err != nil {
+		return nil, err
+	}
+	// The client stored the bytes itself, so count those as uploaded.
+	if err := uploadTracker.CloseWithBytesTransferred(ref.GetStoredSizeBytes(), ref.GetStoredSizeBytes(), ref.GetResource().GetCompressor(), "byte_stream_server"); err != nil {
+		log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
+	}
+	return &bspb.WriteResponse{CommittedSize: ref.GetStoredSizeBytes()}, nil
+}
+
+// sanitizeReference validates a client-provided reference for a write of r and
+// returns a copy holding only the fields the server accepts from clients.
+func sanitizeReference(ref *refpb.Reference, r *digest.CASResourceName) (*refpb.Reference, error) {
+	rn := ref.GetResource()
+	if rn.GetDigest().GetHash() != r.GetDigest().GetHash() || rn.GetDigest().GetSizeBytes() != r.GetDigest().GetSizeBytes() {
+		return nil, status.InvalidArgumentErrorf("reference digest %s does not match written resource digest %s", digest.String(rn.GetDigest()), digest.String(r.GetDigest()))
+	}
+	if rn.GetCompressor() != repb.Compressor_IDENTITY && rn.GetCompressor() != repb.Compressor_ZSTD {
+		return nil, status.UnimplementedErrorf("Unsupported compressor %s", rn.GetCompressor())
+	}
+	if ref.GetEncryption() != nil || ref.GetMetadata().GetEncryptionMetadata() != nil {
+		return nil, status.InvalidArgumentError("references to encrypted blobs are not supported")
+	}
+	gcs := ref.GetGcs()
+	if gcs.GetBucket() == "" || gcs.GetBlobName() == "" {
+		return nil, status.InvalidArgumentError("reference does not name a GCS object")
+	}
+	if ref.GetStoredSizeBytes() <= 0 {
+		return nil, status.InvalidArgumentError("reference has no stored size")
+	}
+	stored := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+	stored.SetCompressor(rn.GetCompressor())
+	return &refpb.Reference{
+		Resource:        stored.ToProto(),
+		StoredSizeBytes: ref.GetStoredSizeBytes(),
+		Gcs: &refpb.GCSLocation{
+			Bucket:             gcs.GetBucket(),
+			BlobName:           gcs.GetBlobName(),
+			LastCustomTimeUsec: gcs.GetLastCustomTimeUsec(),
+		},
+	}, nil
 }
 
 func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value) bool {

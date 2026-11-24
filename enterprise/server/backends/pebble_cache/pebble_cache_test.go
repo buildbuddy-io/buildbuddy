@@ -3436,6 +3436,12 @@ func TestCreateReference(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, gcsBuf, got)
 
+	// References to another bucket are rejected.
+	otherBucketRef := ref.CloneVT()
+	otherBucketRef.Gcs.Bucket = "other-bucket"
+	err = pc.WriteReference(ctx, otherBucketRef, gcsRN, false /*=mustClone*/)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %v", err)
+
 	// A cache that stores the reference takes ownership of the staged blob,
 	// and the blob becomes readable from it.
 	require.NoError(t, pc.WriteReference(ctx, ref, gcsRN, false /*=mustClone*/))
