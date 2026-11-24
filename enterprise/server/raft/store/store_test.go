@@ -269,7 +269,12 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
+	const numRecords = 10
+	writeNRecords(ctx, t, s1, numRecords)
+
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
+	start, end := rd.GetStart(), rd.GetEnd()
 
 	addNode(t, s, ctx, 2, 4, s4.NHID())
 
@@ -297,17 +302,27 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
+	now = time.Now()
+	for len(scanKeys(t, s4, start, end)) < numRecords {
+		require.Less(t, time.Since(now), 30*time.Second, "timeout waiting for c2n4 to get the range data")
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	log.Info("====test setup complete====")
 
+	// The janitor removes the replica and its range data, and leaves nothing
+	// in the range descriptor.
 	now = time.Now()
 	for {
 		clock.Advance(11 * time.Second)
-		list := s4.ListAllReplicasInHistoryForTest()
-		if len(list) == 0 {
+		numReplicas := len(s4.ListAllReplicasInHistoryForTest())
+		numKeys := len(scanKeys(t, s4, start, end))
+		numRemoved := len(s1.GetRange(2).GetRemoved())
+		if numReplicas == 0 && numKeys == 0 && numRemoved == 0 {
 			break
 		}
 		if time.Since(now) > 30*time.Second {
-			require.FailNow(t, "timeout waiting for zombie janitor clean up")
+			require.FailNowf(t, "timeout waiting for zombie janitor clean up", "s4 has %d replicas and %d keys of range 2; the range descriptor has %d removed replicas", numReplicas, numKeys, numRemoved)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
