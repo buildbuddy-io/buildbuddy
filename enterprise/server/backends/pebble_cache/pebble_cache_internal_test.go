@@ -207,9 +207,9 @@ func newTestEvictor(tb testing.TB, fileStorer filestore.Store, db pebble.IPebble
 	return evictor
 }
 
-// TestEvictorDeleteFileGCSBlob asserts that evicting a record that owns its
-// GCS blob deletes the blob, while evicting a record for a shared blob leaves
-// the blob in place for the other records that refer to it.
+// TestEvictorDeleteFileGCSBlob asserts that evicting a record backed by a GCS
+// blob leaves the blob in place, whether or not the record is marked as
+// shared, since other records may refer to it.
 func TestEvictorDeleteFileGCSBlob(t *testing.T) {
 	for _, shared := range []bool{false, true} {
 		t.Run(fmt.Sprintf("shared=%v", shared), func(t *testing.T) {
@@ -242,13 +242,11 @@ func TestEvictorDeleteFileGCSBlob(t *testing.T) {
 				closer.Close()
 			}
 
-			// The blob is only deleted if the record owned it.
-			_, err = gcs.Reader(ctx, blobName, 0, 0)
-			if shared {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err)
-			}
+			// The blob is never deleted; GCS lifecycle management cleans
+			// it up.
+			rc, err := gcs.Reader(ctx, blobName, 0, 0)
+			require.NoError(t, err)
+			require.NoError(t, rc.Close())
 		})
 	}
 }

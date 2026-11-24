@@ -4510,7 +4510,7 @@ func TestWriteReference(t *testing.T) {
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
 	})
 
-	t.Run("take ownership deletes the blob", func(t *testing.T) {
+	t.Run("unshared blob survives delete", func(t *testing.T) {
 		te := testenv.GetTestEnv(t)
 		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 		ctx := getAnonContext(t, te)
@@ -4522,11 +4522,14 @@ func TestWriteReference(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
 
-		// The accepting cache owns the blob, so deleting its record deletes
-		// the blob out from under the source cache.
+		// Even though the accepting cache's record is not marked as shared,
+		// deleting it leaves the blob in place for the source cache.
 		require.NoError(t, dst.Delete(ctx, rn))
-		_, err = src.Get(ctx, rn)
+		_, err = dst.Get(ctx, rn)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+		got, err := src.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
 	})
 
 	t.Run("shared blob survives delete", func(t *testing.T) {
