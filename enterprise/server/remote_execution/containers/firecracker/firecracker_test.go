@@ -172,10 +172,10 @@ func TestGuestAPIVersion(t *testing.T) {
 	//
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
-	// Compatible change: only VMs with an EROFS root pass -scratch_ext4 or
-	// set overlay_container_root.
+	// Compatible change: only generic VMs (which are keyed by InitrdVersion)
+	// set InitializeRequest.dockerd or mount overlay container roots.
 	const (
-		expectedHash    = "e9a0f7d90a3f5473f4f339105d35833a334572e67595aaeae4260c95aa3739b4"
+		expectedHash    = "b230a4d06a2862d708b13a3a3e9401667a2eff1304caa3a2237e0c0ac7c70bfb"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
