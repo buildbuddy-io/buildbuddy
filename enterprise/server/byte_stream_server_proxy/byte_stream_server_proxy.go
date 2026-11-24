@@ -51,6 +51,11 @@ import (
 
 const (
 	defaultChunkTransferConcurrency = 32
+
+	// Chunks a chunked read fetches ahead of the client, each holding a
+	// buffer. Remote fetches need the wide window to overlap round trips.
+	remoteChunkReadWindow = defaultChunkTransferConcurrency
+	localChunkReadWindow  = 4
 )
 
 var (
@@ -324,7 +329,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		return m, err
 	}
 
-	chunkDigests, err := s.chunkDigests(ctx, rn, remoteOnly)
+	chunkDigests, allLocal, err := s.chunkDigests(ctx, rn, remoteOnly)
 	if err != nil {
 		return m, err
 	}
@@ -343,7 +348,11 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 	defer s.drainPendingChunkReadsAsync(resultChans)
 	defer cancel()
 
-	nextStart := s.fillChunkReadWindow(ctx, resultChans, chunkRequests, 0, 0, remoteOnly)
+	window := remoteChunkReadWindow
+	if allLocal {
+		window = localChunkReadWindow
+	}
+	nextStart := s.fillChunkReadWindow(ctx, resultChans, chunkRequests, 0, 0, window, remoteOnly)
 
 	for nextRead, chunkRequest := range chunkRequests {
 		resultCh := resultChans[nextRead]
@@ -363,7 +372,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 				return m, err
 			}
 		}
-		nextStart = s.fillChunkReadWindow(ctx, resultChans, chunkRequests, nextStart, nextRead+1, remoteOnly)
+		nextStart = s.fillChunkReadWindow(ctx, resultChans, chunkRequests, nextStart, nextRead+1, window, remoteOnly)
 		if !result.remote {
 			m.chunksLocal++
 			m.bytesLocal += int64(len(result.data))
@@ -422,10 +431,12 @@ func sendChunkFrames(stream bspb.ByteStream_ReadServer, data []byte) error {
 	return nil
 }
 
-func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) ([]*repb.Digest, error) {
+// chunkDigests returns the blob's chunk digests and whether all the chunks
+// are in the local cache.
+func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) (_ []*repb.Digest, allLocal bool, _ error) {
 	if !remoteOnly && cdcReadFastPath.Get(ctx) {
 		if chunkDigests, ok := s.localChunkDigests(ctx, rn); ok {
-			return chunkDigests, nil
+			return chunkDigests, true, nil
 		}
 	}
 	splitResp, err := s.remoteCAS.SplitBlob(ctx, &repb.SplitBlobRequest{
@@ -438,13 +449,13 @@ func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CAS
 			metrics.ChunkedFailureReasonLabel: "split_blob_error",
 			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
 		}).Inc()
-		return nil, err
+		return nil, false, err
 	}
 	chunkDigests := splitResp.GetChunkDigests()
 	if !remoteOnly {
 		s.storeLocalChunkedManifest(ctx, rn, chunkDigests)
 	}
-	return chunkDigests, nil
+	return chunkDigests, false, nil
 }
 
 func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *digest.CASResourceName) ([]*repb.Digest, bool) {
@@ -517,8 +528,8 @@ func makeChunkReadRequests(rn *digest.CASResourceName, chunkDigests []*repb.Dige
 	return chunkRequests
 }
 
-func (s *ByteStreamServerProxy) fillChunkReadWindow(ctx context.Context, resultChans []chan chunkReadResult, chunkRequests []chunkReadRequest, nextStart, nextRead int, remoteOnly bool) int {
-	for nextStart < len(chunkRequests) && nextStart-nextRead < defaultChunkTransferConcurrency {
+func (s *ByteStreamServerProxy) fillChunkReadWindow(ctx context.Context, resultChans []chan chunkReadResult, chunkRequests []chunkReadRequest, nextStart, nextRead, window int, remoteOnly bool) int {
+	for nextStart < len(chunkRequests) && nextStart-nextRead < window {
 		req := chunkRequests[nextStart]
 		resultCh := make(chan chunkReadResult, 1)
 		resultChans[nextStart] = resultCh
