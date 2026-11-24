@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -685,36 +686,78 @@ func TestGetTreeCaching(t *testing.T) {
 	assert.Less(t, fetch2Time, fetch1Time/2)
 }
 
-// The TreeCaches in this test are too small to be read into pooled buffers.
-func TestGetTreeCachingSmallTree(t *testing.T) {
-	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
-	instanceName := ""
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
-	require.NoError(t, err)
+// Reads cached trees whose TreeCaches are too small for the buffer pool, fit
+// in it, and are bigger than its biggest buffers.
+func TestGetTreeCachingTreeCacheSizes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// The TreeCache is about numDirs * fileNameLen bytes.
+		numDirs, fileNameLen int
+	}{
+		{name: "too_small_for_pool", numDirs: 3, fileNameLen: 100},
+		{name: "pooled", numDirs: 3, fileNameLen: 1 << 20},
+		{name: "bigger_than_pool_max", numDirs: 70, fileNameLen: 1 << 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+			instanceName := ""
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
 
-	clientConn := runCASServer(ctx, t, te)
-	bsClient := bspb.NewByteStreamClient(clientConn)
-	casClient := repb.NewContentAddressableStorageClient(clientConn)
+			clientConn := runCASServer(ctx, t, te)
+			bsClient := bspb.NewByteStreamClient(clientConn)
+			casClient := repb.NewContentAddressableStorageClient(clientConn)
 
-	rootDigest, uploadedFiles := cas.MakeTree(ctx, t, bsClient, instanceName, 3, 2)
-	treeCacheHits := func() float64 {
-		return testmetrics.CounterValueForLabels(t, metrics.TreeCacheLookupCount, prometheus.Labels{
-			metrics.TreeCacheLookupStatus: "hit",
-			metrics.TreeCacheLookupLevel:  "1",
+			upload := func(dir *repb.Directory) *repb.Digest {
+				d, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, dir)
+				require.NoError(t, err)
+				return d
+			}
+			// The root isn't cached, so the tree is root/child/dir-N. Long
+			// file names make the TreeCache big without many uploads.
+			fileRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+			child := &repb.Directory{}
+			wantNames := []string{"child"}
+			for i := range tc.numDirs {
+				dirName := fmt.Sprintf("dir-%d", i)
+				fileName := fmt.Sprintf("%d-%s", i, strings.Repeat("a", tc.fileNameLen))
+				dirDigest := upload(&repb.Directory{
+					Files: []*repb.FileNode{{Name: fileName, Digest: fileRN.GetDigest()}},
+				})
+				child.Directories = append(child.Directories, &repb.DirectoryNode{Name: dirName, Digest: dirDigest})
+				wantNames = append(wantNames, dirName, fileName)
+			}
+			rootDigest := upload(&repb.Directory{
+				Directories: []*repb.DirectoryNode{{Name: "child", Digest: upload(child)}},
+			})
+			slices.Sort(wantNames)
+
+			readTree := func() {
+				names := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest)
+				slices.Sort(names)
+				// ElementsMatch would print the long names if it failed.
+				require.True(t, slices.Equal(wantNames, names), "GetTree returned the wrong names")
+			}
+			treeCacheHits := func() float64 {
+				return testmetrics.CounterValueForLabels(t, metrics.TreeCacheLookupCount, prometheus.Labels{
+					metrics.TreeCacheLookupStatus: "hit",
+					metrics.TreeCacheLookupLevel:  "1",
+				})
+			}
+
+			// Fill the tree cache.
+			readTree()
+
+			// Tree cache writes are asynchronous, so retry until there's a hit.
+			hitsBefore := treeCacheHits()
+			for i := 0; i < 100 && treeCacheHits() == hitsBefore; i++ {
+				readTree()
+			}
+			require.Greater(t, treeCacheHits(), hitsBefore)
 		})
 	}
-
-	// Fill the tree cache.
-	require.ElementsMatch(t, uploadedFiles, cas.ReadTree(ctx, t, casClient, instanceName, rootDigest))
-
-	// Tree cache writes are asynchronous, so retry until there's a hit.
-	hitsBefore := treeCacheHits()
-	for i := 0; i < 100 && treeCacheHits() == hitsBefore; i++ {
-		require.ElementsMatch(t, uploadedFiles, cas.ReadTree(ctx, t, casClient, instanceName, rootDigest))
-	}
-	require.Greater(t, treeCacheHits(), hitsBefore)
 }
 
 func NestForTest(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, dirToNest *repb.Directory, prefix string, levels int) (*repb.Digest, []string) {
