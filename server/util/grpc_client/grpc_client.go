@@ -5,11 +5,13 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"weak"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -56,7 +58,40 @@ var (
 
 	idsMu sync.Mutex
 	ids   = map[string]int{}
+
+	// Weak so that pools that are never closed can still be collected.
+	livePools sync.Map // weak.Pointer[ClientConnPool] -> struct{}
 )
+
+func init() {
+	prometheus.MustRegister(poolCollector{})
+}
+
+type poolCollector struct{}
+
+func (poolCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- metrics.GRPCClientPoolRPCsPerConnection
+}
+
+func (poolCollector) Collect(ch chan<- prometheus.Metric) {
+	livePools.Range(func(k, _ any) bool {
+		p := k.(weak.Pointer[ClientConnPool]).Value()
+		if p == nil {
+			return true
+		}
+		var pending, used int64
+		for _, c := range p.conns {
+			if c.used.Load() {
+				used++
+				pending += c.pending.Load()
+			}
+		}
+		if used > 0 {
+			ch <- prometheus.MustNewConstMetric(metrics.GRPCClientPoolRPCsPerConnection, prometheus.GaugeValue, float64(pending)/float64(used), p.targetForLogging, p.id)
+		}
+		return true
+	})
+}
 
 type clientConn struct {
 	*grpc.ClientConn
@@ -66,6 +101,7 @@ type clientConn struct {
 	// the pool's Invoke and NewStream methods. getConn uses it to steer new
 	// RPCs toward less-loaded connections.
 	pending atomic.Int64
+	used    atomic.Bool
 }
 
 type ClientConnPool struct {
@@ -120,6 +156,7 @@ func (p *ClientConnPool) Close() error {
 			log.Warningf("could not close connection: %s", err)
 		}
 	}
+	livePools.Delete(weak.Make(p))
 	metrics.PendingClientRPCsPerConnection.DeletePartialMatch(prometheus.Labels{
 		metrics.GRPCTargetLabel: p.targetForLogging,
 		metrics.GRPCPoolIDLabel: p.id,
@@ -191,10 +228,12 @@ func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, re
 	conn := p.getConn()
 	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
 	gauge.Inc()
+	conn.used.Store(true)
 	conn.pending.Add(1)
 	defer func() {
 		gauge.Dec()
 		conn.pending.Add(-1)
+		runtime.KeepAlive(p)
 	}()
 	return conn.Invoke(ctx, method, args, reply, opts...)
 }
@@ -215,9 +254,11 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 	decFn := sync.OnceFunc(func() {
 		gauge.Dec()
 		conn.pending.Add(-1)
+		runtime.KeepAlive(p)
 	})
 	opts = append(opts, grpc.OnFinish(func(_ error) { decFn() }))
 	gauge.Inc()
+	conn.used.Store(true)
 	conn.pending.Add(1)
 	stream, err := conn.NewStream(ctx, desc, method, opts...)
 	if err != nil {
@@ -335,7 +376,11 @@ func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.Di
 	ids[target] = id + 1
 	idsMu.Unlock()
 
-	return &ClientConnPool{targetForLogging: target, id: strconv.Itoa(id), conns: conns}, nil
+	pool := &ClientConnPool{targetForLogging: target, id: strconv.Itoa(id), conns: conns}
+	wp := weak.Make(pool)
+	livePools.Store(wp, struct{}{})
+	runtime.AddCleanup(pool, func(wp weak.Pointer[ClientConnPool]) { livePools.Delete(wp) }, wp)
+	return pool, nil
 }
 
 // DialSimpleWithoutPooling is a variant of DialSimple that disables connection

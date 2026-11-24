@@ -4857,6 +4857,13 @@ var (
 		ConnectionIndexLabel,
 	})
 
+	// Collected at scrape time by server/util/grpc_client.
+	GRPCClientPoolRPCsPerConnection = prometheus.NewDesc(
+		prometheus.BuildFQName(bbNamespace, "grpc", "client_pool_rpcs_per_connection"),
+		"Mean number of pending RPCs per used connection in a gRPC client connection pool: pending RPCs across the pool divided by the number of its connections that have carried at least one RPC. Pools with no used connections are omitted.",
+		[]string{GRPCTargetLabel, GRPCPoolIDLabel}, nil,
+	)
+
 	GRPCClientConnectionCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "grpc",

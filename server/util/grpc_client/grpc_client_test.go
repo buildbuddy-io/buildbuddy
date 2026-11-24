@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -192,6 +193,115 @@ func TestClose_DeletesPendingRPCMetricSeries(t *testing.T) {
 
 	require.NoError(t, pool.Close())
 	require.Zero(t, pendingRPCSeriesCount(t, target))
+}
+
+type blockingService struct {
+	ctx     context.Context
+	arrived chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingService) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingResponse, error) {
+	select {
+	case s.arrived <- struct{}{}:
+	case <-s.ctx.Done():
+		return nil, s.ctx.Err()
+	}
+	select {
+	case <-s.release:
+		return &pspb.PingResponse{}, nil
+	case <-s.ctx.Done():
+		return nil, s.ctx.Err()
+	}
+}
+
+func poolRPCsPerConnection(t *testing.T, target string) []float64 {
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	var values []float64
+	for _, f := range families {
+		if f.GetName() != "buildbuddy_grpc_client_pool_rpcs_per_connection" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == metrics.GRPCTargetLabel && lp.GetValue() == target {
+					values = append(values, m.GetGauge().GetValue())
+				}
+			}
+		}
+	}
+	return values
+}
+
+func TestPoolRPCsPerConnection(t *testing.T) {
+	ctx := t.Context()
+	te := testenv.GetTestEnv(t)
+	port := testport.FindFree(t)
+	server, err := grpc_server.New(te, port, false /*=ssl*/, grpc_server.GRPCServerConfig{})
+	require.NoError(t, err)
+	svc := &blockingService{ctx: ctx, arrived: make(chan struct{}), release: make(chan struct{})}
+	pspb.RegisterApiServer(server.GetServer(), svc)
+	require.NoError(t, server.Start())
+
+	target := fmt.Sprintf("grpc://localhost:%d", port)
+	pool, err := grpc_client.DialInternalWithPoolSize(te, target, 3)
+	require.NoError(t, err)
+	require.Empty(t, poolRPCsPerConnection(t, target))
+
+	client := pspb.NewApiClient(pool)
+	done := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := client.Ping(ctx, &pspb.PingRequest{})
+			done <- err
+		}()
+		select {
+		case <-svc.arrived:
+		case err := <-done:
+			require.FailNow(t, "Ping returned before reaching the handler", "err: %v", err)
+		case <-time.After(10 * time.Second):
+			require.FailNow(t, "timed out waiting for Ping to reach the handler")
+		}
+	}
+	require.Equal(t, []float64{1}, poolRPCsPerConnection(t, target))
+
+	close(svc.release)
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
+	require.Equal(t, []float64{0}, poolRPCsPerConnection(t, target))
+
+	require.NoError(t, pool.Close())
+	require.Empty(t, poolRPCsPerConnection(t, target))
+}
+
+// usePoolAndDropIt dials a pool, sends one RPC on it and returns without
+// keeping a reference to the pool.
+func usePoolAndDropIt(t *testing.T, te environment.Env, target string) {
+	pool, err := grpc_client.DialInternalWithPoolSize(te, target, 1)
+	require.NoError(t, err)
+	conn := pool.WaitForConn()
+	t.Cleanup(func() { _ = conn.Close() })
+	_, err = pspb.NewApiClient(pool).Ping(context.Background(), &pspb.PingRequest{})
+	require.NoError(t, err)
+	require.NotEmpty(t, poolRPCsPerConnection(t, target))
+	runtime.KeepAlive(pool)
+}
+
+func TestPoolRPCsPerConnection_UnreachablePoolIsDropped(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	port := testport.FindFree(t)
+	server, err := grpc_server.New(te, port, false /*=ssl*/, grpc_server.GRPCServerConfig{})
+	require.NoError(t, err)
+	pspb.RegisterApiServer(server.GetServer(), &TestService{})
+	require.NoError(t, server.Start())
+
+	target := fmt.Sprintf("grpc://localhost:%d", port)
+	usePoolAndDropIt(t, te, target)
+	require.Eventually(t, func() bool {
+		runtime.GC()
+		return len(poolRPCsPerConnection(t, target)) == 0
+	}, 10*time.Second, 10*time.Millisecond)
 }
 
 const (
