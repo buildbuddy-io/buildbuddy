@@ -3328,7 +3328,7 @@ message StoredExecution {
   string persistent_worker_key = 76;
   // The container image that the runner was created with, after executor
   // defaults and digest resolution.
-  string effective_container_image = 98;
+  string effective_container_image = 99;
 
   string output_path = 31;
   string status_message = 32;
