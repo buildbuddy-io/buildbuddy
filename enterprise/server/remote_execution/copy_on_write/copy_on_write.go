@@ -860,6 +860,17 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 	}
 }
 
+// FetchAll fetches every chunk without mapping it, so the store no longer
+// depends on the cache.
+func (s *COWStore) FetchAll() error {
+	for _, c := range s.SortedChunks() {
+		if err := s.fetchChunk(c.Offset); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *COWStore) fetchChunk(offset int64) error {
 	chunkUnlockFn := s.chunkLock.Lock(offset)
 	defer chunkUnlockFn()
