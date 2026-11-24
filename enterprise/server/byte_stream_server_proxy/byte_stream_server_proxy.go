@@ -366,6 +366,10 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		if result.err != nil {
 			return m, result.err
 		}
+		if result.remote {
+			// The fast path was wrong about this chunk; others may be missing too.
+			window = remoteChunkReadWindow
+		}
 		if len(result.data) > 0 {
 			if err := sendChunkFrames(stream, result.data); err != nil {
 				s.bufPool.Put(result.data)
@@ -432,7 +436,7 @@ func sendChunkFrames(stream bspb.ByteStream_ReadServer, data []byte) error {
 }
 
 // chunkDigests returns the blob's chunk digests and whether all the chunks
-// are in the local cache.
+// are known to be in the local cache.
 func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) (_ []*repb.Digest, allLocal bool, _ error) {
 	if !remoteOnly && cdcReadFastPath.Get(ctx) {
 		if chunkDigests, ok := s.localChunkDigests(ctx, rn); ok {
