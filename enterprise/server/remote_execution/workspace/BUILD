@@ -25,6 +25,7 @@ go_library(
         "//server/cache/dirtools",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/resources",
@@ -39,6 +40,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_gobwas_glob//:glob",
+        "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_x_sync//errgroup",
     ] + select({
