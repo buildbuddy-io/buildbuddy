@@ -2337,10 +2337,20 @@ func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
 	require.LessOrEqual(t, counter.Snapshot()[blobPath], 1, "subsequent fetch should be served from cache or a single upstream retry")
 }
 
-// TestFetchBlobSingleflightCacheSetupFailure validates that when caching setup fails,
-// the leader streams data but followers miss the cache and return NotFound after waiting.
+type singleflightWaitContext struct {
+	context.Context
+	once    sync.Once
+	waiting *atomic.Int32
+}
+
+func (c *singleflightWaitContext) Done() <-chan struct{} {
+	c.once.Do(func() { c.waiting.Add(1) })
+	return c.Context.Done()
+}
+
 func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
-	reg, counter := setupRegistry(t, nil, nil)
+	blocker := newBlockingInterceptor()
+	reg, counter := setupRegistry(t, nil, blocker.intercept)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
 
 	layers, err := img.Layers()
@@ -2361,25 +2371,36 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	}
 
 	const numRequests = 4
-	results := runConcurrentFetchBlob(t, server, req, numRequests,
-		func(idx int) *concurrentMockFetchBlobServer {
-			return &concurrentMockFetchBlobServer{ctx: context.Background()}
-		},
-	)
+	var waiting atomic.Int32
+	blocker.enable()
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(blocker.release) }
+	defer release()
+	resultsCh := make(chan []*fetchResult, 1)
+	go func() {
+		resultsCh <- runConcurrentFetchBlob(t, server, req, numRequests,
+			func(idx int) *concurrentMockFetchBlobServer {
+				return &concurrentMockFetchBlobServer{ctx: &singleflightWaitContext{
+					Context: context.Background(),
+					waiting: &waiting,
+				}}
+			},
+		)
+	}()
+	require.Eventually(t, func() bool {
+		return waiting.Load() == numRequests && blocker.requestCount.Load() > 0
+	}, 5*time.Second, time.Millisecond)
+	require.EqualValues(t, 1, blocker.requestCount.Load(), "all callers joined the same flight before the upstream response")
+	release()
+	results := <-resultsCh
 
 	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
-	require.Equal(t, 1, counter.Snapshot()[blobPath], "requests should be deduped even when caching fails")
+	require.Equal(t, numRequests, counter.Snapshot()[blobPath], "each request should fetch from the registry when caching fails")
 
-	successes := 0
 	for i, r := range results {
-		if r.err == nil {
-			successes++
-			require.Equal(t, expectedData, r.data, "request %d should stream data", i)
-		} else {
-			require.True(t, status.IsNotFoundError(r.err) || status.IsFailedPreconditionError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
-		}
+		require.NoError(t, r.err, "request %d should succeed", i)
+		require.Equal(t, expectedData, r.data, "request %d should stream data", i)
 	}
-	require.Equal(t, 1, successes, "only the leader should succeed when caching fails")
 }
 
 // TestFetchBlobSingleflightDifferentCredentials validates requests with different
