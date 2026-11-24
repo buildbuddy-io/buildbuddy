@@ -315,3 +315,51 @@ func TestAtimeIndexVerify(t *testing.T) {
 		require.Equal(t, 1.0, testutil.ToFloat64(pu.metrics.atimeIndexRepairs))
 	}
 }
+
+// Only unconfigured partitions lose their atime index.
+func TestDeleteStaleAtimeIndexes(t *testing.T) {
+	pu, db := newAtimeIndexTestPU(t)
+	set := func(key []byte) []byte {
+		require.NoError(t, db.Set(key, nil, pebble.NoSync))
+		return key
+	}
+	kept := [][]byte{
+		set(keys.AtimeIndexBuiltKey(testPartition)),
+		set(keys.AtimeIndexKey(testPartition, 1, []byte("a"))),
+		set(keys.AtimeIndexKey(testPartition, 2, []byte("b"))),
+		set(keys.AtimeIndexBuiltKey("SOFT")),
+		set(keys.AtimeIndexKey("SOFT", 1, []byte("a"))),
+		// Records are kept.
+		set([]byte("PTBAR/a")),
+	}
+	// These sort before, between and after the kept partitions.
+	deleted := [][]byte{
+		set(keys.AtimeIndexBuiltKey("BAR")),
+		set(keys.AtimeIndexKey("BAR", 1, []byte("a"))),
+		set(keys.AtimeIndexKey("BAR", 2, []byte("b"))),
+		// Marker only.
+		set(keys.AtimeIndexBuiltKey("FOO-OLD")),
+		// Entries only.
+		set(keys.AtimeIndexKey("FOOD", 1, []byte("a"))),
+		set(keys.AtimeIndexKey("ZZZ", 1, []byte("a"))),
+	}
+
+	partitions := []disk.Partition{{ID: testPartition}, {ID: "SOFT", SoftDeleted: true}}
+	require.NoError(t, deleteStaleAtimeIndexes(pu.dbGetter, partitions))
+
+	has := func(key []byte) bool {
+		_, closer, err := db.Get(key)
+		if err == pebble.ErrNotFound {
+			return false
+		}
+		require.NoError(t, err)
+		closer.Close()
+		return true
+	}
+	for _, key := range kept {
+		require.True(t, has(key), "%q was deleted", key)
+	}
+	for _, key := range deleted {
+		require.False(t, has(key), "%q was kept", key)
+	}
+}

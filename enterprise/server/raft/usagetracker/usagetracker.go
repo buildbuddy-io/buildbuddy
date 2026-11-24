@@ -97,6 +97,7 @@ type Tracker struct {
 	gossipManager interfaces.GossipService
 	node          *rfpb.NodeDescriptor
 	partitions    []disk.Partition
+	dbGetter      pebble.Leaser
 	sender        *sender.Sender
 	clock         clockwork.Clock
 
@@ -811,11 +812,67 @@ func (pu *partitionUsage) atimeIndexChunk(ctx context.Context, db pebble.IPebble
 	return nil, scanned, added, iter.Error()
 }
 
+// deleteStaleAtimeIndexes deletes the atime index of every partition that is
+// not in the configured partitions.
+func deleteStaleAtimeIndexes(dbGetter pebble.Leaser, partitions []disk.Partition) error {
+	db, err := dbGetter.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	iter, err := db.NewIter(nil)
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	// One batch, so a marker never outlives its entries.
+	wb := db.NewBatch()
+	defer wb.Close()
+	isStale := func(partID string) bool {
+		return !slices.ContainsFunc(partitions, func(p disk.Partition) bool { return p.ID == partID })
+	}
+
+	markerPrefix := keys.AtimeIndexBuiltKey("")
+	for valid := iter.SeekGE(markerPrefix); valid && bytes.HasPrefix(iter.Key(), markerPrefix); valid = iter.Next() {
+		partID := string(iter.Key()[len(markerPrefix):])
+		if !isStale(partID) {
+			continue
+		}
+		log.Infof("Deleting the atime index marker of partition %q, which is not configured", partID)
+		if err := wb.Delete(iter.Key(), nil /*ignored write options*/); err != nil {
+			return err
+		}
+	}
+	for valid := iter.SeekGE(keys.AtimeIndexPrefix); valid && bytes.HasPrefix(iter.Key(), keys.AtimeIndexPrefix); {
+		partID, _, _, err := keys.ParseAtimeIndexKey(iter.Key())
+		if err != nil {
+			return err
+		}
+		if isStale(partID) {
+			log.Infof("Deleting the atime index entries of partition %q, which is not configured", partID)
+			start, end := keys.AtimeIndexPartitionRange(partID)
+			if err := wb.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
+				return err
+			}
+		}
+		// Skip to the next partition.
+		valid = iter.SeekGE(keys.MakeKey(keys.AtimeIndexPrefix, []byte(partID), []byte{'/' + 1}))
+	}
+	if err := iter.Error(); err != nil {
+		return err
+	}
+	if wb.Empty() {
+		return nil
+	}
+	return wb.Commit(pebble.NoSync)
+}
+
 func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock, fileStorer filestore.Store) (*Tracker, error) {
 	ut := &Tracker{
 		gossipManager: gossipManager,
 		node:          node,
 		partitions:    partitions,
+		dbGetter:      dbGetter,
 		byPartition:   make(map[string]*partitionUsage),
 		clock:         clock,
 		lastBroadcast: make(map[string]*sgpb.PartitionMetadata),
@@ -897,6 +954,10 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 }
 
 func (ut *Tracker) Start() {
+	if err := deleteStaleAtimeIndexes(ut.dbGetter, ut.partitions); err != nil {
+		// Harmless: the next start retries.
+		log.Warningf("Failed to delete the atime indexes of removed partitions: %s", err)
+	}
 	for _, pu := range ut.byPartition {
 		ctx, cancelFunc := context.WithCancel(context.Background())
 		pu.egCancel = cancelFunc
