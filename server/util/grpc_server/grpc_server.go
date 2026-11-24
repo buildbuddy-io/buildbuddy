@@ -48,7 +48,7 @@ var (
 	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 
-	disableReflection = flag.Bool("grpc_disable_reflection", false, "Disable gRPC server reflection on all listeners in this process.")
+	enableReflection = flag.Bool("grpc_enable_reflection", true, "Enable gRPC server reflection on all listeners in this process.")
 
 	maxConnectionAge      = flag.Duration("grpc_max_connection_age", 0, "Age after which native gRPC server connections begin draining, with +/-10% jitter. Existing RPCs may continue during the grace period. 0 (the default) disables connection aging. Does not apply to gRPC served over the HTTP port.")
 	maxConnectionAgeGrace = flag.Duration("grpc_max_connection_age_grace", 0, "Additional time after connection aging begins before forcibly closing active RPCs. 0 allows existing RPCs to finish without a time limit. Requires grpc_max_connection_age to be positive when nonzero.")
@@ -80,7 +80,7 @@ func InternalGRPCSPort() int {
 }
 
 func ReflectionEnabled() bool {
-	return !*disableReflection
+	return *enableReflection
 }
 
 func MaxRecvMsgSizeBytes() int {

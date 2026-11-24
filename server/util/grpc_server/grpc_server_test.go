@@ -49,9 +49,9 @@ type traceCounts struct {
 
 func TestReflection(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	for _, disabled := range []bool{false, true} {
-		if disabled {
-			flags.Set(t, "grpc_disable_reflection", true)
+	for _, enabled := range []bool{true, false} {
+		if !enabled {
+			flags.Set(t, "grpc_enable_reflection", false)
 		}
 		s, err := grpc_server.New(env, 0, false, grpc_server.GRPCServerConfig{})
 		require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestReflection(t *testing.T) {
 		require.Contains(t, services, "grpc.health.v1.Health")
 		for _, version := range []string{"v1", "v1alpha"} {
 			_, registered := services["grpc.reflection."+version+".ServerReflection"]
-			require.Equal(t, !disabled, registered, version)
+			require.Equal(t, enabled, registered, version)
 		}
 	}
 }
