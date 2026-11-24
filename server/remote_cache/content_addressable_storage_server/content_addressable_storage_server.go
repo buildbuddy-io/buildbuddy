@@ -847,9 +847,9 @@ func (s *ContentAddressableStorageServer) backfillTreeCachePointer(ctx context.C
 // lookupCachedTreeNode returns the cached tree that a tree cache pointer refers
 // to, or a NotFoundError. The hit is sent to the client as a digest only if
 // digestAllowed, and its contents are left unread only if it is sent as a
-// digest and readSkipAllowed (which implies digestAllowed). If the pointer has
+// digest and skipReadAllowed (which implies digestAllowed). If the pointer has
 // no metadata, the hit asks for a backfill with backfillProbability.
-func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, digestAllowed, readSkipAllowed bool, backfillProbability float64) (*treeCacheHit, error) {
+func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, digestAllowed, skipReadAllowed bool, backfillProbability float64) (*treeCacheHit, error) {
 	levelLabel := fmt.Sprintf("%d", min(level, 12))
 	miss := func() (*treeCacheHit, error) {
 		metrics.TreeCacheLookupCount.With(prometheus.Labels{
@@ -868,7 +868,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 	contentsStatus := "skipped"
 	// Older pointers have no metadata; for those the size is only known after
 	// reading the contents.
-	if meta != nil && readSkipAllowed && worthSendingAsDigest(int(meta.GetDirCount())) {
+	if meta != nil && skipReadAllowed && worthSendingAsDigest(int(meta.GetDirCount())) {
 		if err := s.checkTreeCacheBlobsExist(ctx, treeCacheRN, meta); err != nil {
 			return miss()
 		}
@@ -881,7 +881,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 		hit.sendAsDigest = digestAllowed && worthSendingAsDigest(len(hit.dirs))
 		contentsStatus = "read"
 		if meta == nil {
-			if readSkipAllowed && hit.sendAsDigest {
+			if skipReadAllowed && hit.sendAsDigest {
 				contentsStatus = "read_no_metadata"
 			}
 			if backfillProbability > 0 && rand.Float64() < backfillProbability {
@@ -1093,8 +1093,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if *enableTreeCaching && level >= *minTreeCacheLevel {
 			// The root is never sent as a digest.
 			digestAllowed := subtreesRequested && level > 0
-			readSkipAllowed := digestAllowed && skipSubtreeFetch && !contentsNeeded
-			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, digestAllowed, readSkipAllowed, backfillProbability); err == nil {
+			skipReadAllowed := digestAllowed && skipSubtreeFetch && !contentsNeeded
+			if hit, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer, digestAllowed, skipReadAllowed, backfillProbability); err == nil {
 				if hit.backfillMeta != nil {
 					cacheEG.Go(func() error {
 						// Don't fail the group: that would cancel the other tree
