@@ -47,6 +47,24 @@ type traceCounts struct {
 	taskBegins, taskEnds, regionBegins, regionEnds int
 }
 
+func TestReflection(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	for _, enabled := range []bool{true, false} {
+		if !enabled {
+			flags.Set(t, "grpc_enable_reflection", false)
+		}
+		s, err := grpc_server.New(env, 0, false, grpc_server.GRPCServerConfig{})
+		require.NoError(t, err)
+		t.Cleanup(s.GetServer().Stop)
+		services := s.GetServer().GetServiceInfo()
+		require.Contains(t, services, "grpc.health.v1.Health")
+		for _, version := range []string{"v1", "v1alpha"} {
+			_, registered := services["grpc.reflection."+version+".ServerReflection"]
+			require.Equal(t, enabled, registered, version)
+		}
+	}
+}
+
 // The server is built with the flag flipped, to check it applies without a
 // restart.
 func traceRPCs(t *testing.T, enabled bool) map[string]traceCounts {

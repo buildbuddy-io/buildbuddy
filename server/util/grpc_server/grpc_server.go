@@ -48,6 +48,8 @@ var (
 	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 
+	enableReflection = flag.Bool("grpc_enable_reflection", true, "Enable gRPC server reflection on all listeners in this process.")
+
 	maxConnectionAge      = flag.Duration("grpc_max_connection_age", 0, "Age after which native gRPC server connections begin draining, with +/-10% jitter. Existing RPCs may continue during the grace period. 0 (the default) disables connection aging. Does not apply to gRPC served over the HTTP port.")
 	maxConnectionAgeGrace = flag.Duration("grpc_max_connection_age_grace", 0, "Additional time after connection aging begins before forcibly closing active RPCs. 0 allows existing RPCs to finish without a time limit. Requires grpc_max_connection_age to be positive when nonzero.")
 
@@ -75,6 +77,10 @@ func InternalGRPCPort() int {
 
 func InternalGRPCSPort() int {
 	return *internalGRPCSPort
+}
+
+func ReflectionEnabled() bool {
+	return *enableReflection
 }
 
 func MaxRecvMsgSizeBytes() int {
@@ -145,9 +151,9 @@ func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRP
 	}
 	b.server = grpc.NewServer(grpcOptions...)
 
-	// Support reflection so that tools like grpc-cli (aka stubby) can
-	// enumerate our services and call them.
-	reflection.Register(b.server)
+	if ReflectionEnabled() {
+		reflection.Register(b.server)
+	}
 
 	// Initialize timeseries for all known grpc methods.
 	Metrics().InitializeMetrics(b.server)

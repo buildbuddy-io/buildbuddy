@@ -442,7 +442,9 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 
 	grpcOptions := grpc_server.CommonGRPCServerOptionsWithConfig(s.env, o.grpcServerConfig)
 	s.grpcServer = grpc.NewServer(grpcOptions...)
-	reflection.Register(s.grpcServer)
+	if grpc_server.ReflectionEnabled() {
+		reflection.Register(s.grpcServer)
+	}
 	grpc_server.Metrics().InitializeMetrics(s.grpcServer)
 	rfspb.RegisterApiServer(s.grpcServer, s)
 

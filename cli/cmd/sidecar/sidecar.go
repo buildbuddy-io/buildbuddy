@@ -147,7 +147,9 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 		grpc_server.KeepaliveEnforcementPolicy(),
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
-	reflection.Register(grpcServer)
+	if grpc_server.ReflectionEnabled() {
+		reflection.Register(grpcServer)
+	}
 	return grpcServer, lis
 }
 

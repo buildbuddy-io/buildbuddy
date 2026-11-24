@@ -122,7 +122,9 @@ func (c *Proxy) StartListening() error {
 	grpcOptions = append(grpcOptions, grpc.StaticConnWindowSize(int32(*connWindowSize)))
 	grpcOptions = append(grpcOptions, grpc.StaticStreamWindowSize(int32(*streamWindowSize)))
 	grpcServer := grpc.NewServer(grpcOptions...)
-	reflection.Register(grpcServer)
+	if grpc_server.ReflectionEnabled() {
+		reflection.Register(grpcServer)
+	}
 	dcpb.RegisterDistributedCacheServer(grpcServer, c)
 	c.server = grpcServer
 	c.listener = lis
