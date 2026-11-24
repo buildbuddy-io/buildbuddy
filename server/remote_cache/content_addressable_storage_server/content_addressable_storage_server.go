@@ -719,52 +719,49 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 // returns all of their directories, the root's tree_cache_children and the
 // number of bytes read.
 func (s *ContentAddressableStorageServer) readTreeCacheContents(ctx context.Context, treeCacheRN *digest.ResourceName) ([]*capb.DirectoryWithDigest, []*rspb.ResourceName, int, error) {
-	buf, err := s.cache.Get(ctx, treeCacheRN.ToProto())
-	if err != nil {
-		return nil, nil, 0, status.NotFoundErrorf("tree-cache-not-found")
-	}
-	treeCache := &capb.TreeCache{}
-	if err := proto.Unmarshal(buf, treeCache); err != nil {
-		return nil, nil, 0, status.NotFoundErrorf("tree-cache-not-found")
-	}
-	bytesRead := len(buf)
-	if len(treeCache.GetTreeCacheChildren()) == 0 {
-		return treeCache.GetChildren(), nil, bytesRead, nil
-	}
-	// If we split out any directories, we need to also fetch all of those.
-	mu := &sync.Mutex{}
-	eg, egCtx := errgroup.WithContext(ctx)
-	for _, childTreeCache := range treeCache.GetTreeCacheChildren() {
-		childRN := digest.ResourceNameFromProto(childTreeCache)
-		eg.Go(func() error {
-			extraKids, _, extraBytes, err := s.readTreeCacheContents(egCtx, childRN)
-			if err != nil {
-				if status.IsNotFoundError(err) {
-					metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
-						metrics.TreeCacheSplitLookupStatus: "miss",
-					}).Inc()
-				} else {
-					metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
-						metrics.TreeCacheSplitLookupStatus: "failure",
-					}).Inc()
-				}
+	if buf, err := s.cache.Get(ctx, treeCacheRN.ToProto()); err == nil {
+		treeCache := &capb.TreeCache{}
+		if err := proto.Unmarshal(buf, treeCache); err == nil {
+			// If we split out any directories, we need to also fetch all of those.
+			bytesRead := len(buf)
+			if len(treeCache.GetTreeCacheChildren()) > 0 {
+				mu := &sync.Mutex{}
+				eg, egCtx := errgroup.WithContext(ctx)
+				for _, childTreeCache := range treeCache.GetTreeCacheChildren() {
+					childRN := digest.ResourceNameFromProto(childTreeCache)
+					eg.Go(func() error {
+						extraKids, _, extraBytes, err := s.readTreeCacheContents(egCtx, childRN)
+						if err != nil {
+							if status.IsNotFoundError(err) {
+								metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
+									metrics.TreeCacheSplitLookupStatus: "miss",
+								}).Inc()
+							} else {
+								metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
+									metrics.TreeCacheSplitLookupStatus: "failure",
+								}).Inc()
+							}
 
-				return err
+							return err
+						}
+						metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
+							metrics.TreeCacheSplitLookupStatus: "hit",
+						}).Inc()
+						mu.Lock()
+						defer mu.Unlock()
+						treeCache.Children = append(treeCache.Children, extraKids...)
+						bytesRead += extraBytes
+						return nil
+					})
+				}
+				if err := eg.Wait(); err != nil {
+					return nil, nil, 0, err
+				}
 			}
-			metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
-				metrics.TreeCacheSplitLookupStatus: "hit",
-			}).Inc()
-			mu.Lock()
-			defer mu.Unlock()
-			treeCache.Children = append(treeCache.Children, extraKids...)
-			bytesRead += extraBytes
-			return nil
-		})
+			return treeCache.GetChildren(), treeCache.GetTreeCacheChildren(), bytesRead, nil
+		}
 	}
-	if err := eg.Wait(); err != nil {
-		return nil, nil, 0, err
-	}
-	return treeCache.GetChildren(), treeCache.GetTreeCacheChildren(), bytesRead, nil
+	return nil, nil, 0, status.NotFoundErrorf("tree-cache-not-found")
 }
 
 // treeCacheHit is a tree cache hit. dirs is nil if the contents weren't read,
@@ -1076,8 +1073,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	skipSubtreeFetch := subtreesRequested && getTreeSkipCachedSubtreeFetch.Get(ctx)
 	backfillProbability := treeCachePointerBackfillProbability.Get(ctx)
 
-	// contentsNeeded is set if an ancestor will write a tree cache entry that
-	// includes the contents of this directory's cached subtrees.
 	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int, contentsNeeded bool) (*fetchResult, error)
 	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int, contentsNeeded bool) (*fetchResult, error) {
 		if len(dirWithDigest.GetDirectory().GetDirectories()) == 0 {
