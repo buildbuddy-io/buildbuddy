@@ -55,10 +55,13 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func runCASServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
+func runCASServer(ctx context.Context, t *testing.T, env *testenv.TestEnv, configure ...func(*content_addressable_storage_server.ContentAddressableStorageServer)) *grpc.ClientConn {
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
 		t.Error(err)
+	}
+	for _, f := range configure {
+		f(casServer)
 	}
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
 	if err != nil {
@@ -1615,6 +1618,8 @@ func TestStreamingChunkMappingRPCsUnimplemented(t *testing.T) {
 type treeCacheSpy struct {
 	interfaces.Cache
 	stripPointerMetadata bool
+	// If set, tree cache writes block until it is closed.
+	gate chan struct{}
 
 	mu           sync.Mutex
 	blobGets     int
@@ -1648,6 +1653,9 @@ func (c *treeCacheSpy) FindMissing(ctx context.Context, rns []*rspb.ResourceName
 func (c *treeCacheSpy) Set(ctx context.Context, rn *rspb.ResourceName, data []byte) error {
 	if !isTreeCacheRN(rn) {
 		return c.Cache.Set(ctx, rn, data)
+	}
+	if c.gate != nil {
+		<-c.gate
 	}
 	ar := &repb.ActionResult{}
 	tc := &capb.TreeCache{}
@@ -1982,11 +1990,10 @@ func setupSplitSkipFetch(t *testing.T) *skipFetchFixture {
 
 	f := &skipFetchFixture{ctx: ctx, spy: spy, cache: c, casClient: casClient, rootDigest2: y}
 	// The split entry is w's: it is the one reached from y as a cached subtree.
-	wPointer, err := digest.Compute(strings.NewReader(w.GetHash()+seed), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
+	wPointer := treeCachePointerHash(t, w.GetHash(), seed)
 	spy.mu.Lock()
 	idx := slices.IndexFunc(spy.pointerRNs, func(rn *rspb.ResourceName) bool {
-		return rn.GetCacheType() == rspb.CacheType_AC && rn.GetDigest().GetHash() == wPointer.GetHash()
+		return rn.GetCacheType() == rspb.CacheType_AC && rn.GetDigest().GetHash() == wPointer
 	})
 	var wAR *repb.ActionResult
 	if idx >= 0 {
@@ -2002,6 +2009,14 @@ func setupSplitSkipFetch(t *testing.T) *skipFetchFixture {
 	return f
 }
 
+// treeCachePointerHash returns the hash of the tree cache pointer key for a
+// directory.
+func treeCachePointerHash(t *testing.T, dirHash, seed string) string {
+	d, err := digest.Compute(strings.NewReader(dirHash+seed), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	return d.GetHash()
+}
+
 func (c *treeCacheSpy) setStripPointerMetadata(strip bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -2011,12 +2026,11 @@ func (c *treeCacheSpy) setStripPointerMetadata(strip bool) {
 // lastPointerMetadata returns the metadata of the latest pointer written for
 // the directory with the given digest.
 func (c *treeCacheSpy) lastPointerMetadata(t *testing.T, dirHash, seed string) *capb.TreeCachePointerMetadata {
-	ptr, err := digest.Compute(strings.NewReader(dirHash+seed), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
+	ptr := treeCachePointerHash(t, dirHash, seed)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for i, ar := range slices.Backward(c.pointers) {
-		if c.pointerRNs[i].GetDigest().GetHash() != ptr.GetHash() {
+		if c.pointerRNs[i].GetDigest().GetHash() != ptr {
 			continue
 		}
 		meta := &capb.TreeCachePointerMetadata{}
@@ -2031,14 +2045,13 @@ func (c *treeCacheSpy) lastPointerMetadata(t *testing.T, dirHash, seed string) *
 // waitForPointerWrites waits until at least n pointers have been written for
 // the directory with the given digest.
 func (c *treeCacheSpy) waitForPointerWrites(t *testing.T, dirHash, seed string, n int) {
-	ptr, err := digest.Compute(strings.NewReader(dirHash+seed), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
+	ptr := treeCachePointerHash(t, dirHash, seed)
 	require.Eventually(t, func() bool {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		writes := 0
 		for _, rn := range c.pointerRNs {
-			if rn.GetDigest().GetHash() == ptr.GetHash() {
+			if rn.GetDigest().GetHash() == ptr {
 				writes++
 			}
 		}
@@ -2186,17 +2199,7 @@ func setupReplayHookTest(t *testing.T, configure func(*content_addressable_stora
 	spy := &treeCacheSpy{Cache: c}
 	te.SetCache(spy)
 
-	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(te)
-	require.NoError(t, err)
-	configure(casServer)
-	byteStreamServer, err := byte_stream_server.NewByteStreamServer(te)
-	require.NoError(t, err)
-	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, te)
-	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
-	go runFunc()
-	conn, err := testenv.LocalGRPCConn(t, ctx, lis)
-	require.NoError(t, err)
+	conn := runCASServer(ctx, t, te, configure)
 	return &replayHookTree{ctx: ctx, t: t, bs: bspb.NewByteStreamClient(conn)}, spy, repb.NewContentAddressableStorageClient(conn)
 }
 
@@ -2221,9 +2224,7 @@ func (c *treeCacheSpy) pointerKeys() []string {
 }
 
 func replayHookPointerKey(t *testing.T, dirHash string) string {
-	d, err := digest.Compute(strings.NewReader(dirHash+"replay-hooks-test"), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-	return "ac/" + d.GetHash()
+	return "ac/" + treeCachePointerHash(t, dirHash, "replay-hooks-test")
 }
 
 // replayHookFixture builds root -> top -> {x, y}, where x and y each have two
@@ -2239,8 +2240,8 @@ func TestGetTreeReplayHooks_RollDecidesWrites(t *testing.T) {
 	flags.Set(t, "cache.tree_cache_write_probability", 0.5)
 	var midX *repb.Digest
 	b, spy, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
-		s.SetSynchronousTreeCacheWritesForTesting(true)
-		s.SetTreeCacheWriteRollForTesting(func(ctx context.Context, dir *rspb.ResourceName) float64 {
+		s.SetSynchronousTreeCacheWrites(true)
+		s.SetTreeCacheWriteRoll(func(ctx context.Context, dir *rspb.ResourceName) float64 {
 			if dir.GetDigest().GetHash() == midX.GetHash() {
 				return 0
 			}
@@ -2260,7 +2261,7 @@ func TestGetTreeReplayHooks_RollIsCalledOncePerCacheableDirectory(t *testing.T) 
 	var mu sync.Mutex
 	var rolled []string
 	b, _, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
-		s.SetTreeCacheWriteRollForTesting(func(ctx context.Context, dir *rspb.ResourceName) float64 {
+		s.SetTreeCacheWriteRoll(func(ctx context.Context, dir *rspb.ResourceName) float64 {
 			mu.Lock()
 			defer mu.Unlock()
 			rolled = append(rolled, dir.GetDigest().GetHash())
@@ -2280,11 +2281,28 @@ func TestGetTreeReplayHooks_RollIsCalledOncePerCacheableDirectory(t *testing.T) 
 func TestGetTreeReplayHooks_SynchronousWritesAreDoneWhenGetTreeReturns(t *testing.T) {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	b, spy, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
-		s.SetSynchronousTreeCacheWritesForTesting(true)
+		s.SetSynchronousTreeCacheWrites(true)
 	})
 	root, top, midX, midY := replayHookFixture(b)
+	gate := make(chan struct{})
+	spy.gate = gate
+	var closeGate sync.Once
+	t.Cleanup(func() { closeGate.Do(func() { close(gate) }) })
 
-	getTree(b.ctx, t, casClient, root, false)
+	stream, err := casClient.GetTree(b.ctx, &repb.GetTreeRequest{RootDigest: root})
+	require.NoError(t, err)
+	// root, top, x, y and their four leaves.
+	for n := 0; n < 8; {
+		rsp, err := stream.Recv()
+		require.NoError(t, err)
+		n += len(rsp.GetDirectories())
+	}
+	// Synchronous writes only start after the last Send, so they hold up the
+	// end of the stream, not the directories. Background writes would still be
+	// held by the gate here and complete after the walk.
+	closeGate.Do(func() { close(gate) })
+	_, err = stream.Recv()
+	require.Equal(t, io.EOF, err)
 
 	want := []string{
 		replayHookPointerKey(t, top.GetHash()),
@@ -2298,9 +2316,9 @@ func TestGetTreeReplayHooks_RequestDoesNotHitItsOwnWrites(t *testing.T) {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	var top *repb.Digest
 	b, spy, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
-		s.SetSynchronousTreeCacheWritesForTesting(true)
+		s.SetSynchronousTreeCacheWrites(true)
 		// Leave top uncached so that the second request looks up d.
-		s.SetTreeCacheWriteRollForTesting(func(ctx context.Context, dir *rspb.ResourceName) float64 {
+		s.SetTreeCacheWriteRoll(func(ctx context.Context, dir *rspb.ResourceName) float64 {
 			if dir.GetDigest().GetHash() == top.GetHash() {
 				return 2
 			}
@@ -2314,6 +2332,7 @@ func TestGetTreeReplayHooks_RequestDoesNotHitItsOwnWrites(t *testing.T) {
 	getTree(b.ctx, t, casClient, root, false)
 	gets, _ := spy.counts()
 	require.Zero(t, gets, "first request must not read tree cache blobs")
+	require.Equal(t, []string{replayHookPointerKey(t, d.GetHash())}, spy.pointerKeys(), "d is written once although it is seen twice, and top is not written")
 
 	getTree(b.ctx, t, casClient, root, false)
 	gets, _ = spy.counts()
@@ -2327,10 +2346,10 @@ func TestGetTreeReplayHooks_SynchronousWritesAreDeterministic(t *testing.T) {
 	run := func(t *testing.T) []string {
 		var top *repb.Digest
 		b, spy, casClient := setupReplayHookTest(t, func(s *content_addressable_storage_server.ContentAddressableStorageServer) {
-			s.SetSynchronousTreeCacheWritesForTesting(true)
+			s.SetSynchronousTreeCacheWrites(true)
 			// A split child shared by two paths of one cached directory is
 			// written racily, so keep top out of the cache.
-			s.SetTreeCacheWriteRollForTesting(func(ctx context.Context, dir *rspb.ResourceName) float64 {
+			s.SetTreeCacheWriteRoll(func(ctx context.Context, dir *rspb.ResourceName) float64 {
 				if dir.GetDigest().GetHash() == top.GetHash() {
 					return 2
 				}
@@ -2351,6 +2370,14 @@ func TestGetTreeReplayHooks_SynchronousWritesAreDeterministic(t *testing.T) {
 
 	first := run(t)
 	require.NotEmpty(t, first)
+	// Split children are blobs without a pointer.
+	pointers := 0
+	for _, k := range first {
+		if strings.HasPrefix(k, "ac/") {
+			pointers++
+		}
+	}
+	require.Greater(t, len(first)-pointers, pointers, "expected a split child blob")
 	for range 5 {
 		require.Equal(t, first, run(t))
 	}

@@ -78,17 +78,18 @@ type ContentAddressableStorageServer struct {
 	synchronousTreeCacheWrites bool
 }
 
-// SetTreeCacheWriteRollForTesting replaces the random roll that is compared
-// against cache.tree_cache_write_probability. The roll is called concurrently
-// and must be goroutine-safe.
-func (s *ContentAddressableStorageServer) SetTreeCacheWriteRollForTesting(roll func(ctx context.Context, dir *rspb.ResourceName) float64) {
+// SetTreeCacheWriteRoll replaces the random roll that is compared against
+// cache.tree_cache_write_probability. The roll is called concurrently and must
+// be goroutine-safe. For deterministic offline replay; not for production use.
+func (s *ContentAddressableStorageServer) SetTreeCacheWriteRoll(roll func(ctx context.Context, dir *rspb.ResourceName) float64) {
 	s.treeCacheWriteRoll = roll
 }
 
-// SetSynchronousTreeCacheWritesForTesting makes GetTree run its tree cache
-// writes serially, in pointer digest order, after the walk and before
-// returning, instead of in the background during the walk.
-func (s *ContentAddressableStorageServer) SetSynchronousTreeCacheWritesForTesting(synchronous bool) {
+// SetSynchronousTreeCacheWrites makes GetTree run its tree cache writes
+// serially, in pointer digest order, after the walk and before returning,
+// instead of in the background during the walk. For deterministic offline
+// replay; not for production use.
+func (s *ContentAddressableStorageServer) SetSynchronousTreeCacheWrites(synchronous bool) {
 	s.synchronousTreeCacheWrites = synchronous
 }
 
@@ -97,11 +98,6 @@ func (s *ContentAddressableStorageServer) rollTreeCacheWrite(ctx context.Context
 		return s.treeCacheWriteRoll(ctx, dir)
 	}
 	return rand.Float64()
-}
-
-type queuedTreeCacheWrite struct {
-	pointerHash string
-	write       func(ctx context.Context) error
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -915,6 +911,8 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 			if skipReadAllowed && hit.sendAsDigest {
 				contentsStatus = "read_no_metadata"
 			}
+			// Not routed through the write roll hook: only pointers without
+			// metadata are backfilled, which a cold-start replay never creates.
 			if backfillProbability > 0 && rand.Float64() < backfillProbability {
 				hit.backfillMeta = &capb.TreeCachePointerMetadata{
 					DirCount:          int64(len(hit.dirs)),
@@ -1083,6 +1081,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}()
 	}()
 
+	type queuedTreeCacheWrite struct {
+		pointerHash string
+		write       func(ctx context.Context) error
+	}
 	// With synchronous writes, tree cache writes are queued here (guarded by
 	// mu) and run after the walk.
 	var queuedWrites []queuedTreeCacheWrite
