@@ -134,6 +134,22 @@ func isPythonTestFile(rel string) bool {
 }
 
 func extractPython(ctx context.Context, filename string, content []byte, rctx *RepoContext) (*Result, error) {
+	symQ, err := pythonSymbolQuery()
+	if err != nil {
+		return nil, err
+	}
+	impQ, err := pyImportQuery()
+	if err != nil {
+		return nil, err
+	}
+	fromModQ, err := pyFromModuleQuery()
+	if err != nil {
+		return nil, err
+	}
+	fromPairQ, err := pyFromPairQuery()
+	if err != nil {
+		return nil, err
+	}
 	parser := sitter.NewParser()
 	// Close the parser only after the tree: the binding keeps the parser
 	// alive for the tree's lifetime, so freeing it first is a use-after-free.
@@ -145,7 +161,7 @@ func extractPython(ctx context.Context, filename string, content []byte, rctx *R
 	}
 	defer tree.Close()
 
-	ann := &Result{Symbols: captureAll(pythonSymbolQuery(), tree, content)}
+	ann := &Result{Symbols: captureAll(symQ, tree, content)}
 
 	rel := rctx.relPath(filename)
 	if rel == "" {
@@ -171,18 +187,18 @@ func extractPython(ctx context.Context, filename string, content []byte, rctx *R
 		ann.Imports = append(ann.Imports, term)
 	}
 
-	for _, mod := range captureAllRaw(pyImportQuery(), tree, content) {
+	for _, mod := range captureAllRaw(impQ, tree, content) {
 		add(mod)
 	}
 	// Wildcard / bare from-module.
-	for _, from := range captureAllRaw(pyFromModuleQuery(), tree, content) {
+	for _, from := range captureAllRaw(fromModQ, tree, content) {
 		add(pyResolveFrom(from, selfModule, isInit))
 	}
 	// (from-module, imported-name) pairs: record the parent module and the
 	// submodule candidate the name might be.
 	qc := sitter.NewQueryCursor()
 	defer qc.Close()
-	qc.Exec(pyFromPairQuery(), tree.RootNode())
+	qc.Exec(fromPairQ, tree.RootNode())
 	for {
 		m, ok := qc.NextMatch()
 		if !ok {
@@ -190,7 +206,7 @@ func extractPython(ctx context.Context, filename string, content []byte, rctx *R
 		}
 		var from, name string
 		for _, c := range m.Captures {
-			switch pyFromPairQuery().CaptureNameForId(c.Index) {
+			switch fromPairQ.CaptureNameForId(c.Index) {
 			case "from":
 				from = c.Node.Content(content)
 			case "name":

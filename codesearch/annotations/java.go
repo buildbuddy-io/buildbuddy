@@ -84,6 +84,18 @@ func isJavaTestFile(relPath string) bool {
 }
 
 func extractJava(ctx context.Context, filename string, content []byte, rctx *RepoContext) (*Result, error) {
+	symQ, err := javaSymbolQuery()
+	if err != nil {
+		return nil, err
+	}
+	pkgQ, err := javaPackageQuery()
+	if err != nil {
+		return nil, err
+	}
+	impQ, err := javaImportQuery()
+	if err != nil {
+		return nil, err
+	}
 	parser := sitter.NewParser()
 	// Close the parser only after the tree: the binding keeps the parser
 	// alive for the tree's lifetime, so freeing it first is a use-after-free.
@@ -97,7 +109,7 @@ func extractJava(ctx context.Context, filename string, content []byte, rctx *Rep
 	}
 	defer tree.Close()
 
-	ann := &Result{Symbols: captureAll(javaSymbolQuery(), tree, content)}
+	ann := &Result{Symbols: captureAll(symQ, tree, content)}
 
 	// Identity (imports/import_id) is only meaningful for files inside the
 	// repo; symbols are extracted regardless.
@@ -110,13 +122,13 @@ func extractJava(ctx context.Context, filename string, content []byte, rctx *Rep
 	// on the lowercase-package / Capitalized-class convention to find the
 	// package boundary. javaTerm lowercases at the end.
 	selfPkg := ""
-	if pkgs := captureAllRaw(javaPackageQuery(), tree, content); len(pkgs) > 0 {
+	if pkgs := captureAllRaw(pkgQ, tree, content); len(pkgs) > 0 {
 		selfPkg = pkgs[0]
 	}
 
 	seen := make(map[string]struct{})
 	var imports []string
-	for _, imp := range captureAllRaw(javaImportQuery(), tree, content) {
+	for _, imp := range captureAllRaw(impQ, tree, content) {
 		pkg := javaPackageOf(imp)
 		if pkg == "" || pkg == selfPkg {
 			continue

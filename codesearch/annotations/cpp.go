@@ -97,6 +97,14 @@ func extractCpp(ctx context.Context, lang, filename string, content []byte, rctx
 	if lang == "c++" {
 		symQuery, incQuery, grammar = cppSymbolQuery, cppIncludeQuery, cpp.GetLanguage()
 	}
+	symQ, err := symQuery()
+	if err != nil {
+		return nil, err
+	}
+	incQ, err := incQuery()
+	if err != nil {
+		return nil, err
+	}
 
 	parser := sitter.NewParser()
 	// Close the parser only after the tree: the binding keeps the parser
@@ -111,7 +119,7 @@ func extractCpp(ctx context.Context, lang, filename string, content []byte, rctx
 	}
 	defer tree.Close()
 
-	ann := &Result{Symbols: captureAll(symQuery(), tree, content)}
+	ann := &Result{Symbols: captureAll(symQ, tree, content)}
 
 	// Identity (imports/import_id) is only meaningful for files inside the
 	// repo; symbols are extracted regardless.
@@ -128,7 +136,7 @@ func extractCpp(ctx context.Context, lang, filename string, content []byte, rctx
 
 	seen := make(map[string]struct{})
 	var imports []string
-	for _, raw := range captureAllRaw(incQuery(), tree, content) {
+	for _, raw := range captureAllRaw(incQ, tree, content) {
 		spec := stripIncludeQuotes(raw)
 		if spec == "" {
 			continue

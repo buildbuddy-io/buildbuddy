@@ -38,6 +38,7 @@ go_test(
         "nav_test.go",
         "nav_ts_test.go",
         "python_test.go",
+        "queries_test.go",
         "rust_test.go",
         "typescript_test.go",
     ],

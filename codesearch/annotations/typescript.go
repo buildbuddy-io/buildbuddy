@@ -80,14 +80,14 @@ var (
 
 // tsGrammar returns the tree-sitter language and the matching symbol/import
 // queries for the enry language name.
-func tsGrammar(lang string) (*sitter.Language, *sitter.Query, *sitter.Query) {
+func tsGrammar(lang string) (*sitter.Language, lazyQueryFunc, lazyQueryFunc) {
 	switch lang {
 	case "tsx":
-		return tsx.GetLanguage(), tsxSymbolQuery(), tsxImportQuery()
+		return tsx.GetLanguage(), tsxSymbolQuery, tsxImportQuery
 	case "typescript":
-		return typescript.GetLanguage(), tsSymbolQuery(), tsImportQuery()
+		return typescript.GetLanguage(), tsSymbolQuery, tsImportQuery
 	default: // "javascript", "jsx"
-		return javascript.GetLanguage(), jsSymbolQuery(), jsImportQuery()
+		return javascript.GetLanguage(), jsSymbolQuery, jsImportQuery
 	}
 }
 
@@ -190,7 +190,15 @@ func tsImportSpecs(q *sitter.Query, tree *sitter.Tree, content []byte) []string 
 }
 
 func extractTypeScript(ctx context.Context, lang, filename string, content []byte, rctx *RepoContext) (*Result, error) {
-	grammar, symbolQuery, importQuery := tsGrammar(lang)
+	grammar, lazySymbolQuery, lazyImportQuery := tsGrammar(lang)
+	symbolQuery, err := lazySymbolQuery()
+	if err != nil {
+		return nil, err
+	}
+	importQuery, err := lazyImportQuery()
+	if err != nil {
+		return nil, err
+	}
 
 	parser := sitter.NewParser()
 	// Close the parser only after the tree: the binding keeps the parser
@@ -296,14 +304,14 @@ var (
 )
 
 // tsNavGrammar returns the grammar and definition query for the enry language.
-func tsNavGrammar(lang string) (*sitter.Language, *sitter.Query) {
+func tsNavGrammar(lang string) (*sitter.Language, lazyQueryFunc) {
 	switch lang {
 	case "tsx":
-		return tsx.GetLanguage(), tsxDefQuery()
+		return tsx.GetLanguage(), tsxDefQuery
 	case "typescript":
-		return typescript.GetLanguage(), tsDefQuery()
+		return typescript.GetLanguage(), tsDefQuery
 	default: // "javascript", "jsx"
-		return javascript.GetLanguage(), jsDefQuery()
+		return javascript.GetLanguage(), jsDefQuery
 	}
 }
 
@@ -476,7 +484,11 @@ func decorateTS(ctx context.Context, lang string, content []byte, opts NavOption
 // tsDefinitions returns the top-level declarations in a TS/JS file, each with
 // its name, name-token span, and documentation metadata.
 func tsDefinitions(ctx context.Context, lang string, content []byte) ([]Def, error) {
-	grammar, defQuery := tsNavGrammar(lang)
+	grammar, lazyDefQuery := tsNavGrammar(lang)
+	defQuery, err := lazyDefQuery()
+	if err != nil {
+		return nil, err
+	}
 	parser := sitter.NewParser()
 	defer parser.Close()
 	parser.SetLanguage(grammar)

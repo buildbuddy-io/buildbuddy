@@ -102,7 +102,7 @@ type Result struct {
 // (tree-sitter is error-tolerant, marking unparseable regions with ERROR
 // nodes rather than failing), so it returns non-nil annotations that may
 // simply be empty. A non-nil error is reserved for the genuinely unexpected:
-// a parse interrupted via ctx cancellation. Callers should not fail indexing
+// a parse interrupted via ctx cancellation or a query that fails to compile. Callers should not fail indexing
 // on that error, but they should surface it rather than silently dropping the
 // file.
 func Extract(ctx context.Context, lang, filename string, content []byte, rctx *RepoContext) (*Result, error) {
@@ -155,15 +155,22 @@ func dropWhitespaceTerms(terms []string) []string {
 	return kept
 }
 
-// lazyQuery compiles a constant query on first use. Invalid patterns panic.
-func lazyQuery(pattern string, lang *sitter.Language) func() *sitter.Query {
-	return sync.OnceValue(func() *sitter.Query {
+type lazyQueryFunc func() (*sitter.Query, error)
+
+// allQueries holds every lazyQuery so tests can check that all patterns compile.
+var allQueries []lazyQueryFunc
+
+// lazyQuery compiles a constant query on first use.
+func lazyQuery(pattern string, lang *sitter.Language) lazyQueryFunc {
+	f := lazyQueryFunc(sync.OnceValues(func() (*sitter.Query, error) {
 		q, err := sitter.NewQuery([]byte(pattern), lang)
 		if err != nil {
-			panic(fmt.Sprintf("compiling tree-sitter query: %s", err))
+			return nil, fmt.Errorf("compiling tree-sitter query: %w", err)
 		}
-		return q
-	})
+		return q, nil
+	}))
+	allQueries = append(allQueries, f)
+	return f
 }
 
 // captureAllRaw returns the text of every capture of q in the parsed tree,

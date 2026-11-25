@@ -238,6 +238,10 @@ func rustParentModule(module string) string {
 }
 
 func extractRust(ctx context.Context, filename string, content []byte, rctx *RepoContext) (*Result, error) {
+	symQ, err := rustSymbolQuery()
+	if err != nil {
+		return nil, err
+	}
 	parser := sitter.NewParser()
 	// Close the parser only after the tree: the binding keeps the parser
 	// alive for the tree's lifetime, so freeing it first is a use-after-free.
@@ -251,7 +255,7 @@ func extractRust(ctx context.Context, filename string, content []byte, rctx *Rep
 	}
 	defer tree.Close()
 
-	ann := &Result{Symbols: captureAll(rustSymbolQuery(), tree, content)}
+	ann := &Result{Symbols: captureAll(symQ, tree, content)}
 
 	// Identity (imports/import_id) is only meaningful for files inside the
 	// repo; symbols are extracted regardless.
