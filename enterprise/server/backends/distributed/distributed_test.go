@@ -5160,7 +5160,8 @@ func TestMaxReadReplicas(t *testing.T) {
 		dc.heartbeatMu.Unlock()
 		var rn *rspb.ResourceName
 		var buf []byte
-		for {
+		for i := 0; ; i++ {
+			require.Less(t, i, 1000, "no digest without self as a replica")
 			rn, buf = newPointer(t)
 			replicas := dc.consistentHash.GetAllReplicas(rn.GetDigest().GetHash())[:dc.opts.ReplicationFactor]
 			if !slices.Contains(replicas, dc.opts.ListenAddr) {

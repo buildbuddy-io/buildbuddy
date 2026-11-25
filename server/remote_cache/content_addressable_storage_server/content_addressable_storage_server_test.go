@@ -691,9 +691,11 @@ func TestGetTreeCaching(t *testing.T) {
 // maxReplicasCache records the max read replicas option on each read.
 type maxReplicasCache struct {
 	interfaces.Cache
-	mu       sync.Mutex
-	pointer  []int
-	otherCAS []int
+	mu      sync.Mutex
+	pointer []int
+	// Reads of cached TreeCache blobs.
+	treeCacheCAS []int
+	otherCAS     []int
 }
 
 func (c *maxReplicasCache) record(ctx context.Context, r *rspb.ResourceName) {
@@ -701,6 +703,8 @@ func (c *maxReplicasCache) record(ctx context.Context, r *rspb.ResourceName) {
 	defer c.mu.Unlock()
 	if r.GetCacheType() == rspb.CacheType_AC {
 		c.pointer = append(c.pointer, cacheopts.MaxReadReplicas(ctx))
+	} else if strings.HasPrefix(r.GetInstanceName(), digest.TreeCacheRemoteInstanceName) {
+		c.treeCacheCAS = append(c.treeCacheCAS, cacheopts.MaxReadReplicas(ctx))
 	} else {
 		c.otherCAS = append(c.otherCAS, cacheopts.MaxReadReplicas(ctx))
 	}
@@ -747,18 +751,18 @@ func TestGetTreeTreeCachePointerMaxReadReplicas(t *testing.T) {
 			// the cached nodes from the CAS.
 			cas.ReadTree(ctx, t, casClient, instanceName, rootDigest)
 			rc.mu.Lock()
-			rc.pointer, rc.otherCAS = nil, nil
+			rc.pointer, rc.treeCacheCAS, rc.otherCAS = nil, nil, nil
 			rc.mu.Unlock()
 			cas.ReadTree(ctx, t, casClient, instanceName, rootDigest)
 
 			rc.mu.Lock()
 			defer rc.mu.Unlock()
 			require.NotEmpty(t, rc.pointer)
-			require.NotEmpty(t, rc.otherCAS)
+			require.NotEmpty(t, rc.treeCacheCAS)
 			for _, n := range rc.pointer {
 				require.Equal(t, tc.wantPointer, n)
 			}
-			for _, n := range rc.otherCAS {
+			for _, n := range append(rc.treeCacheCAS, rc.otherCAS...) {
 				require.Zero(t, n)
 			}
 		})

@@ -1340,9 +1340,9 @@ func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metri
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(r), peer)
 			// Read-through promotes same-zone non-replicas to the front; only a
 			// canonical replica's NotFound is authoritative.
-			if !slices.Contains(ps.BlockBackfills, peer) {
+			if maxReplicas > 0 && !slices.Contains(ps.BlockBackfills, peer) {
 				replicaMisses++
-				if maxReplicas > 0 && replicaMisses >= maxReplicas {
+				if replicaMisses >= maxReplicas {
 					break
 				}
 			}

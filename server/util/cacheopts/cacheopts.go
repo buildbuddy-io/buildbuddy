@@ -6,8 +6,9 @@ import "context"
 
 type maxReadReplicasKey struct{}
 
-// WithMaxReadReplicas limits how many replicas a distributed cache read asks
-// before reporting NotFound. n <= 0 means no limit. A limit trades a possible
+// WithMaxReadReplicas limits how many replicas a distributed cache Get or
+// GetWithMetadata asks before reporting NotFound; other operations ignore it.
+// n <= 0 means no limit. A limit trades a possible
 // false miss for fewer peer calls, so use it only where a miss is cheap.
 func WithMaxReadReplicas(ctx context.Context, n int) context.Context {
 	return context.WithValue(ctx, maxReadReplicasKey{}, n)
