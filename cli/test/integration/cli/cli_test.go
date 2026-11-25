@@ -864,3 +864,34 @@ fi
 	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--test_output=errors", ":assert_single_workspace_rc_arg"))
 	require.NoErrorf(t, err, "output: %s", string(b))
 }
+
+func TestExecuteActionDigestWithCommandArgs(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	out, err := testcli.CombinedOutput(testcli.Command(t, ws, "execute", "--action_digest="+strings.Repeat("b", 64)+"/123", "--", "/bin/true"))
+	require.Error(t, err)
+	require.Contains(t, string(out), "cannot combine --action_digest with command arguments")
+}
+
+func TestExecuteActionDigestIgnoresActionFlags(t *testing.T) {
+	app := buildbuddy.Run(t)
+	for _, tc := range []struct {
+		name, arg, flag string
+	}{
+		{"input_root", "--input_root=inputs", "input_root"},
+		{"input_root_digest", "--input_root_digest=" + strings.Repeat("a", 64) + "/1", "input_root_digest"},
+		{"action_env", "--action_env=FOO=bar", "action_env"},
+		{"exec_properties", "--exec_properties=Pool=test", "exec_properties"},
+		{"output_path", "--output_path=output", "output_path"},
+		{"remote_timeout", "--remote_timeout=1m", "remote_timeout"},
+		{"cache_write", "--cache_write=false", "cache_write"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := testcli.NewWorkspace(t)
+			// The OSS app has no remote execution, so Execute itself fails.
+			out, err := testcli.CombinedOutput(testcli.Command(t, ws, "execute", "--remote_executor="+app.GRPCAddress(), "--action_digest="+strings.Repeat("b", 64)+"/123", tc.arg))
+			require.Error(t, err)
+			require.Contains(t, string(out), "Ignoring --"+tc.flag)
+			require.NotContains(t, string(out), "parse action digest")
+		})
+	}
+}

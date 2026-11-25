@@ -45,6 +45,7 @@ var (
 
 // Flags specific to `bb execute`.
 var (
+	actionDigest    = flags.String("action_digest", "", "Execute an Action already in CAS, as HASH/SIZE or a CAS resource name, without uploading. Command, inputs, platform, timeout, and cache-write policy come from the stored action.")
 	inputRoot       = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs. Incompatible with --input_root_digest.")
 	inputRootDigest = flags.String("input_root_digest", "", "Digest of the input root directory. This is useful to re-run an existing action. Users can also use `bb download` to fetch the input tree locally. Incompatible with --input_root.")
 	outputPaths     = flag.New(flags, "output_path", []string{}, "Path to an expected output file or directory. The path should be relative to the workspace root. This flag can be specified more than once.")
@@ -61,6 +62,7 @@ var (
 const (
 	usage = `
 usage: bb execute [ options ... ] -- <executable> [ args ... ]
+       bb execute [ options ... ] --action_digest=HASH/SIZE
 
 Runs a remote execution request against a remote execution service backend
 using a given command as input.
@@ -91,15 +93,27 @@ func HandleExecute(args []string) (int, error) {
 		}
 		return -1, err
 	}
-	if len(flag.Args()) > 0 {
+	if len(flags.Args()) > 0 {
 		log.Print("error: command executable and arguments must appear after arg separator '--'")
 		log.Print(usage)
 		return 1, nil
 	}
-	if len(cmdArgs) == 0 {
+	if len(cmdArgs) == 0 && *actionDigest == "" {
 		log.Print("error: must provide arg separator '--' followed by command")
 		log.Print(usage)
 		return 1, nil
+	}
+	if *actionDigest != "" {
+		if len(cmdArgs) > 0 {
+			return -1, fmt.Errorf("cannot combine --action_digest with command arguments")
+		}
+		// These may come from .bbrc, so warn instead of failing.
+		flags.Visit(func(f *flag.Flag) {
+			switch f.Name {
+			case "input_root", "input_root_digest", "action_env", "exec_properties", "output_path", "remote_timeout", "cache_write":
+				log.Warnf("Ignoring --%s: --action_digest uses the stored action's value.", f.Name)
+			}
+		})
 	}
 	*output = strings.ToLower(*output)
 	if *output == "md" {
@@ -142,24 +156,6 @@ func execute(cmdArgs []string) error {
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 
-	environ, err := rexec.MakeEnv(*actionEnv...)
-	if err != nil {
-		return err
-	}
-	platform, err := rexec.MakePlatform(*execProperties...)
-	if err != nil {
-		return err
-	}
-	cmd := &repb.Command{
-		Arguments:            cmdArgs,
-		EnvironmentVariables: environ,
-		Platform:             platform,
-		OutputPaths:          *outputPaths,
-	}
-	action := &repb.Action{DoNotCache: !*cacheWrite}
-	if *timeout > 0 {
-		action.Timeout = durationpb.New(*timeout)
-	}
 	// TODO: use capabilities client and respect remote digest function &
 	// compressor.
 	df, err := digest.ParseFunction(*digestFunction)
@@ -168,36 +164,61 @@ func execute(cmdArgs []string) error {
 	}
 	start := time.Now()
 	stageStart := start
-	log.Debugf("Preparing action for %s", cmd)
-	if *inputRootDigest != "" && *inputRoot != "" {
-		return fmt.Errorf("cannot set both --input_root and --input_root_digest; please use one or the other")
-	}
-	if *inputRootDigest != "" {
-		ird := *inputRootDigest
-		if !strings.HasPrefix(ird, "/blobs/") {
-			ird = fmt.Sprintf("/blobs/%s", ird)
-		}
-		rn, err := digest.ParseDownloadResourceName(ird)
+	var acrn *digest.CASResourceName
+	if *actionDigest != "" {
+		rn, err := digest.ParseUserInputDownloadResourceName(*actionDigest, df)
 		if err != nil {
-			return fmt.Errorf("parse input root digest: %w", err)
+			return fmt.Errorf("parse action digest: %w", err)
 		}
-		log.Debugf("Using input root digest %q", ird)
-		action.InputRootDigest = rn.GetDigest()
-	}
-	arn, err := rexec.Prepare(ctx, env, *instanceName, df, action, cmd, *inputRoot)
-	if err != nil {
-		return err
-	}
-	log.Debugf("Uploaded inputs in %s", time.Since(stageStart))
-	acrn, err := digest.CASResourceNameFromProto(arn)
-	if err == nil {
-		log.Debugf("Action resource name: %s", acrn.DownloadString())
+		if rn.GetInstanceName() == "" {
+			rn = digest.NewCASResourceName(rn.GetDigest(), *instanceName, rn.GetDigestFunction())
+		}
+		acrn = rn
 	} else {
-		log.Debugf("Failed to compute action resource name: %s", err)
+		environ, err := rexec.MakeEnv(*actionEnv...)
+		if err != nil {
+			return err
+		}
+		platform, err := rexec.MakePlatform(*execProperties...)
+		if err != nil {
+			return err
+		}
+		cmd := &repb.Command{
+			Arguments:            cmdArgs,
+			EnvironmentVariables: environ,
+			Platform:             platform,
+			OutputPaths:          *outputPaths,
+		}
+		action := &repb.Action{DoNotCache: !*cacheWrite}
+		if *timeout > 0 {
+			action.Timeout = durationpb.New(*timeout)
+		}
+		log.Debugf("Preparing action for %s", cmd)
+		if *inputRootDigest != "" && *inputRoot != "" {
+			return fmt.Errorf("cannot set both --input_root and --input_root_digest; please use one or the other")
+		}
+		if *inputRootDigest != "" {
+			rn, err := digest.ParseUserInputDownloadResourceName(*inputRootDigest, df)
+			if err != nil {
+				return fmt.Errorf("parse input root digest: %w", err)
+			}
+			log.Debugf("Using input root digest %q", rn.DownloadString())
+			action.InputRootDigest = rn.GetDigest()
+		}
+		arn, err := rexec.Prepare(ctx, env, *instanceName, df, action, cmd, *inputRoot)
+		if err != nil {
+			return err
+		}
+		log.Debugf("Uploaded inputs in %s", time.Since(stageStart))
+		acrn, err = digest.CASResourceNameFromProto(arn)
+		if err != nil {
+			return err
+		}
 	}
+	log.Debugf("Action resource name: %s", acrn.DownloadString())
 	stageStart = time.Now()
 	log.Debug("Starting /Execute request")
-	stream, err := rexec.Start(ctx, env, arn, rexec.WithSkipCacheLookup(!*cacheRead))
+	stream, err := rexec.Start(ctx, env, acrn.ToProto(), rexec.WithSkipCacheLookup(!*cacheRead))
 	if err != nil {
 		return err
 	}
@@ -243,7 +264,7 @@ func execute(cmdArgs []string) error {
 	}
 	var logs *rexec.ExecutionLogs
 	if *output == "json" || *output == "markdown" {
-		logs, err = rexec.GetExecutionLogs(ctx, env.GetByteStreamClient(), *instanceName, df, rsp.ExecuteResponse)
+		logs, err = rexec.GetExecutionLogs(ctx, env.GetByteStreamClient(), acrn.GetInstanceName(), acrn.GetDigestFunction(), rsp.ExecuteResponse)
 		if err != nil {
 			log.Warnf("Could not fetch all execution logs: %s", err)
 		}
@@ -265,7 +286,7 @@ func execute(cmdArgs []string) error {
 	case "stdio":
 		stageStart = time.Now()
 		log.Debugf("Downloading result")
-		res, err := rexec.GetResult(ctx, env, *instanceName, df, rsp.ExecuteResponse.GetResult())
+		res, err := rexec.GetResult(ctx, env, acrn.GetInstanceName(), acrn.GetDigestFunction(), rsp.ExecuteResponse.GetResult())
 		if err != nil {
 			return status.WrapError(err, "execution failed")
 		}

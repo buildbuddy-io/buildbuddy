@@ -652,6 +652,41 @@ func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
 	return rn.CheckCAS()
 }
 
+// ParseUserInputDownloadResourceName leniently parses a user-typed HASH/SIZE or
+// CAS download resource name; use ParseDownloadResourceName for RPC inputs.
+// A bare HASH/SIZE uses defaultDigestFunction, or infers it if UNKNOWN.
+func ParseUserInputDownloadResourceName(s string, defaultDigestFunction repb.DigestFunction_Value) (*CASResourceName, error) {
+	s = strings.TrimPrefix(s, "/")
+	if strings.Contains("/"+s, "/blobs/") || strings.Contains("/"+s, "/compressed-blobs/") {
+		return ParseDownloadResourceName(s)
+	}
+	hash, sizeStr, ok := strings.Cut(s, "/")
+	if !ok || strings.Contains(sizeStr, "/") {
+		// May be FUNCTION/HASH/SIZE.
+		return ParseDownloadResourceName("blobs/" + s)
+	}
+	size, err := strconv.ParseInt(sizeStr, 10, 64)
+	if err != nil || size < 0 {
+		return nil, status.InvalidArgumentErrorf("invalid size in digest %q", s)
+	}
+	if hash == "" || !isLowerHex(hash) {
+		return nil, status.InvalidArgumentErrorf("invalid hash in digest %q: must be lowercase hex", s)
+	}
+	d := &repb.Digest{Hash: hash, SizeBytes: size}
+	df := defaultDigestFunction
+	if df == repb.DigestFunction_UNKNOWN {
+		df = InferOldStyleDigestFunctionInDesperation(d)
+		if df == repb.DigestFunction_UNKNOWN {
+			return nil, status.InvalidArgumentErrorf("cannot infer digest function from hash length in %q", s)
+		}
+	}
+	// hashLength only knows some functions (e.g. not VSO or SHA256TREE).
+	if want := hashLength(df); want != -1 && len(hash) != want {
+		return nil, status.InvalidArgumentErrorf("invalid hash in digest %q: want length %d for %s, got %d", s, want, df, len(hash))
+	}
+	return NewCASResourceName(d, "", df), nil
+}
+
 func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) {
 	rn, _, err := parseResourceName(resourceName, rspb.CacheType_AC, downloadResourceName)
 	if err != nil {

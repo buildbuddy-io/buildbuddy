@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -71,27 +70,14 @@ func stdinIsPipe() bool {
 	return (info.Mode() & os.ModeNamedPipe) != 0
 }
 
-func parseDigestOrResourceName(s string) (*digest.CASResourceName, error) {
-	if s == "" {
-		return nil, nil
-	}
-	uri := s
-	if !strings.Contains(uri, "/blobs/") && !strings.Contains(uri, "/compressed-blobs/") {
-		// Interpret HASH/SIZE as a resource name using the default digest
-		// function (SHA256).
-		uri = "/blobs/" + uri
-	}
-	rn, err := digest.ParseDownloadResourceName(uri)
-	if err != nil {
-		return nil, fmt.Errorf("parse resource name: %w", err)
-	}
-	return rn, nil
-}
-
 func uploadFile(args []string) error {
-	providedRN, err := parseDigestOrResourceName(*digestFlag)
-	if err != nil {
-		return fmt.Errorf("parse digest: %w", err)
+	var providedRN *digest.CASResourceName
+	if *digestFlag != "" {
+		rn, err := digest.ParseUserInputDownloadResourceName(*digestFlag, repb.DigestFunction_UNKNOWN)
+		if err != nil {
+			return fmt.Errorf("parse digest: %w", err)
+		}
+		providedRN = rn
 	}
 
 	var inputReader io.Reader
