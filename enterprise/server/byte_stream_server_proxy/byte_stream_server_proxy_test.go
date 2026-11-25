@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -3188,6 +3189,9 @@ func publishChunkedReadBenchmarkBlob(b *testing.B, env *chunkedReadBenchmarkEnv,
 		require.NoError(b, env.remoteEnv.GetCache().Set(env.ctx, chunkRN.ToProto(), chunk.compressedData))
 		if _, ok := localSet[digest.NewKey(chunk.digest)]; ok {
 			require.NoError(b, env.proxyEnv.GetCache().Set(env.ctx, chunkRN.ToProto(), chunk.compressedData))
+		} else if err := env.proxyEnv.GetCache().Delete(env.ctx, chunkRN.ToProto()); err != nil && !status.IsNotFoundError(err) {
+			// Left by an earlier read: CAS keys ignore the instance name.
+			require.NoError(b, err)
 		}
 	}
 	_, err := env.casClient.SpliceBlob(env.ctx, &repb.SpliceBlobRequest{
@@ -3311,40 +3315,100 @@ func BenchmarkReadChunkedMixedLocalRemote(b *testing.B) {
 	ctx := testContext()
 
 	for _, size := range []int64{10_000_000, 50_000_000, 100_000_000, 500_000_000, 1_000_000_000} {
-		blobDigest, chunks := prepareChunkedReadBenchmarkData(b, ctx, size)
-		for _, localPercent := range []int{0, 25, 50, 75, 100} {
-			localSet := benchmarkLocalChunkSet(chunks, localPercent)
+		// Prepared on first use, so filtered-out sizes cost nothing.
+		var blobDigest *repb.Digest
+		var chunks []benchmarkChunk
+		prepare := func(b *testing.B) {
+			if chunks == nil {
+				blobDigest, chunks = prepareChunkedReadBenchmarkData(b, ctx, size)
+			}
+		}
 
+		// First read: the proxy gets the chunk list from the remote.
+		for _, localPercent := range []int{0, 25, 50, 75, 100} {
 			b.Run(fmt.Sprintf("size=%d/local=%d%%", size, localPercent), func(b *testing.B) {
-				env := setupChunkedReadBenchmarkEnv(b)
-				b.ReportAllocs()
 				b.StopTimer()
+				b.ReportAllocs()
+				prepare(b)
+				localSet := benchmarkLocalChunkSet(chunks, localPercent)
+				env := setupChunkedReadBenchmarkEnv(b)
+				remoteChunks := chunkedReadBenchmarkRemoteChunks()
 				for i := 0; i < b.N; i++ {
 					instanceName := fmt.Sprintf("bench/%d/%d/%d", size, localPercent, i)
 					downloadRN := publishChunkedReadBenchmarkBlob(b, env, instanceName, blobDigest, chunks, localSet)
+					emptyBufferPools()
 
 					b.StartTimer()
-
-					downloadStream, err := env.proxy.Read(env.ctx, &bspb.ReadRequest{ResourceName: downloadRN})
-					require.NoError(b, err)
-
-					downloadedSize := int64(0)
-					for {
-						res, err := downloadStream.Recv()
-						if err == io.EOF {
-							break
-						}
-						require.NoError(b, err)
-						downloadedSize += int64(len(res.Data))
-					}
-
+					readChunkedReadBenchmarkBlob(b, env, downloadRN)
 					b.StopTimer()
-
-					require.Greater(b, downloadedSize, int64(0))
 				}
+				require.Equal(b, b.N*(len(chunks)-len(localSet)), chunkedReadBenchmarkRemoteChunks()-remoteChunks,
+					"every read should fetch the chunks that are not local from the remote")
 			})
 		}
+
+		// Repeat read: the proxy has the chunk list and every chunk.
+		b.Run(fmt.Sprintf("size=%d/local=100%%_fastpath", size), func(b *testing.B) {
+			b.StopTimer()
+			b.ReportAllocs()
+			prepare(b)
+			env := setupChunkedReadBenchmarkEnv(b)
+			instanceName := fmt.Sprintf("bench/%d/fastpath", size)
+			downloadRN := publishChunkedReadBenchmarkBlob(b, env, instanceName, blobDigest, chunks, benchmarkLocalChunkSet(chunks, 100))
+			// Store the chunk list in the proxy's cache.
+			readChunkedReadBenchmarkBlob(b, env, downloadRN)
+			fastPathHits := chunkedReadBenchmarkFastPathHits()
+			for i := 0; i < b.N; i++ {
+				emptyBufferPools()
+
+				b.StartTimer()
+				readChunkedReadBenchmarkBlob(b, env, downloadRN)
+				b.StopTimer()
+			}
+
+			require.Equal(b, b.N, chunkedReadBenchmarkFastPathHits()-fastPathHits,
+				"every read should be served from the proxy's cache alone")
+		})
 	}
+}
+
+func readChunkedReadBenchmarkBlob(b *testing.B, env *chunkedReadBenchmarkEnv, downloadRN string) {
+	downloadStream, err := env.proxy.Read(env.ctx, &bspb.ReadRequest{ResourceName: downloadRN})
+	require.NoError(b, err)
+
+	downloadedSize := int64(0)
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(b, err)
+		downloadedSize += int64(len(res.Data))
+	}
+	require.Greater(b, downloadedSize, int64(0))
+}
+
+// emptyBufferPools empties every sync.Pool, so that B/op includes the buffers
+// the next read holds at once instead of reusing earlier ones.
+func emptyBufferPools() {
+	// A pool drops unused objects on the second GC.
+	runtime.GC()
+	runtime.GC()
+}
+
+// chunkedReadBenchmarkRemoteChunks counts chunks fetched from the remote.
+func chunkedReadBenchmarkRemoteChunks() int {
+	return int(testutil.ToFloat64(metrics.ByteStreamChunkedReadChunksRemote.With(prometheus.Labels{
+		metrics.StatusLabel:     "OK",
+		metrics.CompressionType: "ZSTD",
+	})))
+}
+
+// chunkedReadBenchmarkFastPathHits counts reads that took the fast path.
+func chunkedReadBenchmarkFastPathHits() int {
+	return int(testutil.ToFloat64(metrics.ByteStreamChunkedReadFastPathAttempts.With(prometheus.Labels{
+		metrics.FastPathOutcomeLabel: "hit",
+	})))
 }
 
 // readWholeBlob reads a CAS blob through client with no read limit, as Bazel
