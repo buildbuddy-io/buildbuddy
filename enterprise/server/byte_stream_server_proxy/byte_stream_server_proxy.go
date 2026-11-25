@@ -437,7 +437,7 @@ func sendChunkFrames(stream bspb.ByteStream_ReadServer, data []byte) error {
 
 // chunkDigests returns the blob's chunk digests and whether all the chunks
 // are known to be in the local cache.
-func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) (_ []*repb.Digest, allLocal bool, _ error) {
+func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) ([]*repb.Digest, bool, error) {
 	if !remoteOnly && cdcReadFastPath.Get(ctx) {
 		if chunkDigests, ok := s.localChunkDigests(ctx, rn); ok {
 			return chunkDigests, true, nil
