@@ -60,6 +60,7 @@ go_test(
         "//proto:resource_go_proto",
         "//server/backends/memory_cache",
         "//server/backends/memory_metrics_collector",
+        "//server/cache/dirtools",
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/byte_stream_server",
