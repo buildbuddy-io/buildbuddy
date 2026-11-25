@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
@@ -1681,4 +1683,140 @@ func TestStreamingChunkMappingRPCsUnimplemented(t *testing.T) {
 	require.NoError(t, err)
 	_, err = registerStream.CloseAndRecv()
 	require.Equal(t, gcodes.Unimplemented, gstatus.Code(err))
+}
+
+// treeCacheSpy records tree cache pointers and the blobs they refer to.
+type treeCacheSpy struct {
+	interfaces.Cache
+	mu       sync.Mutex
+	blobs    map[string][]byte
+	pointers []string // hashes of the tree cache blobs the pointers refer to
+}
+
+func (c *treeCacheSpy) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	c.mu.Lock()
+	if r.GetCacheType() == rspb.CacheType_CAS {
+		c.blobs[r.GetDigest().GetHash()] = slices.Clone(data)
+	} else {
+		ar := &repb.ActionResult{}
+		if err := proto.Unmarshal(data, ar); err == nil && len(ar.GetOutputFiles()) > 0 {
+			c.pointers = append(c.pointers, ar.GetOutputFiles()[0].GetDigest().GetHash())
+		}
+	}
+	c.mu.Unlock()
+	return c.Cache.Set(ctx, r, data)
+}
+
+// treeCaches waits for n tree cache pointers and returns the entries they refer to.
+func (c *treeCacheSpy) treeCaches(t *testing.T, n int) []*capb.TreeCache {
+	require.Eventually(t, func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return len(c.pointers) >= n
+	}, 30*time.Second, 10*time.Millisecond)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []*capb.TreeCache
+	for _, h := range c.pointers {
+		tc := &capb.TreeCache{}
+		require.NoError(t, proto.Unmarshal(c.blobs[h], tc))
+		out = append(out, tc)
+	}
+	return out
+}
+
+func newTreeCacheSpyServer(t *testing.T) (context.Context, *treeCacheSpy, bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	mc, err := memory_cache.NewMemoryCache(1000000000)
+	require.NoError(t, err)
+	spy := &treeCacheSpy{Cache: mc, blobs: map[string][]byte{}}
+	te.SetCache(spy)
+	clientConn := runCASServer(ctx, t, te)
+	return ctx, spy, bspb.NewByteStreamClient(clientConn), repb.NewContentAddressableStorageClient(clientConn)
+}
+
+func TestGetTreeCachingDedupeEntries(t *testing.T) {
+	for _, dedupe := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dedupe=%v", dedupe), func(t *testing.T) {
+			flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+			flags.Set(t, "cache.tree_cache_dedupe_entries", dedupe)
+			ctx, spy, bsClient, casClient := newTreeCacheSpyServer(t)
+
+			upload := func(dir *repb.Directory) *repb.Digest {
+				d, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, dir)
+				require.NoError(t, err)
+				return d
+			}
+			// top/n has the same directory (and its child) at two paths.
+			shared, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
+			n := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: shared}, {Name: "b", Digest: shared}}})
+			top := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "n", Digest: n}}})
+
+			want := cas.ReadTree(ctx, t, casClient, "", top)
+			entries := spy.treeCaches(t, 1)
+			// n, shared and shared's child; twice each without dedupe.
+			if dedupe {
+				assert.Len(t, entries[0].GetChildren(), 3)
+			} else {
+				assert.Len(t, entries[0].GetChildren(), 5)
+			}
+
+			// A cache hit returns the same tree as the original read.
+			flags.Set(t, "cache.tree_cache_write_probability", 0.0)
+			assert.ElementsMatch(t, distinctNames(want), distinctNames(cas.ReadTree(ctx, t, casClient, "", top)))
+		})
+	}
+}
+
+func TestGetTreeCachingDedupeEntriesCopiedIntoParent(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	flags.Set(t, "cache.tree_cache_dedupe_entries", true)
+	ctx, spy, bsClient, casClient := newTreeCacheSpyServer(t)
+
+	upload := func(dir *repb.Directory) *repb.Digest {
+		d, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, dir)
+		require.NoError(t, err)
+		return d
+	}
+	shared, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
+	n := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "a", Digest: shared}, {Name: "b", Digest: shared}}})
+	child := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "n", Digest: n}}})
+
+	// Caches the entry for child/n.
+	cas.ReadTree(ctx, t, casClient, "", child)
+	spy.treeCaches(t, 1)
+
+	// Now child's entry is built from n's cached entry, and a sibling holds
+	// the shared directory again.
+	other := upload(&repb.Directory{Directories: []*repb.DirectoryNode{{Name: "s", Digest: shared}}})
+	root := upload(&repb.Directory{Directories: []*repb.DirectoryNode{
+		{Name: "child", Digest: child},
+		{Name: "other", Digest: other},
+	}})
+	want := cas.ReadTree(ctx, t, casClient, "", root)
+	entries := spy.treeCaches(t, 3)
+
+	for _, e := range entries {
+		seen := map[string]bool{}
+		for _, d := range e.GetChildren() {
+			h := d.GetResourceName().GetDigest().GetHash()
+			assert.False(t, seen[h], "directory %s repeated in a tree cache entry", h)
+			seen[h] = true
+		}
+		assert.NotEmpty(t, e.GetChildren())
+	}
+
+	flags.Set(t, "cache.tree_cache_write_probability", 0.0)
+	assert.ElementsMatch(t, distinctNames(want), distinctNames(cas.ReadTree(ctx, t, casClient, "", root)))
+}
+
+// distinctNames dedupes names: a deduped tree cache hit returns a repeated
+// directory once, where an uncached read returns it at every path.
+func distinctNames(names []string) []string {
+	s := slices.Clone(names)
+	slices.Sort(s)
+	return slices.Compact(s)
 }

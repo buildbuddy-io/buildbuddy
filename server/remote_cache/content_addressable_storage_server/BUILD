@@ -78,6 +78,7 @@ go_test(
         "//server/util/cdc",
         "//server/util/compression",
         "//server/util/prefix",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_buildbuddy_io_fastcdc2020//fastcdc",

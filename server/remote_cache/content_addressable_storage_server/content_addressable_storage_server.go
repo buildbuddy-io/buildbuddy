@@ -64,6 +64,8 @@ var (
 	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
 	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 10, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
 
+	treeCacheDedupeEntries = expflag.Bool("cache.tree_cache_dedupe_entries", false, "If true, each tree cache entry stores a directory at most once, even if it appears at several paths.")
+
 	findMissingChunkFallbackConcurrency = expflag.Int64("cache.find_missing_chunk_fallback_concurrency", 8, "The maximum number of chunk manifest lookups that FindMissingBlobs performs in parallel, for missing blobs that may be stored as chunks. Values less than 1 are treated as 1.")
 )
 
@@ -607,6 +609,12 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 	if err != nil {
 		return nil
 	}
+	if treeCacheDedupeEntries.Get(ctx) {
+		rootCache.Children = dedupeDirectories(rootCache.Children)
+		for _, childCache := range childCaches {
+			childCache.Children = dedupeDirectories(childCache.Children)
+		}
+	}
 
 	allChildren := rootCache.GetChildren()
 	for _, childCache := range childCaches {
@@ -1149,6 +1157,20 @@ func isEligibleForSplitting(dir *capb.DirectoryWithDigest, name string, fch File
 		return false
 	}
 	return *enableTreeCacheSplitting && name == "node_modules" && fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()) > int64(*treeCacheSplittingMinSize)
+}
+
+// dedupeDirectories drops repeated digests in place, keeping the first
+// occurrence and the order.
+func dedupeDirectories(dirs []*capb.DirectoryWithDigest) []*capb.DirectoryWithDigest {
+	seen := make(map[string]struct{}, len(dirs))
+	return slices.DeleteFunc(dirs, func(d *capb.DirectoryWithDigest) bool {
+		h := d.GetResourceName().GetDigest().GetHash()
+		if _, ok := seen[h]; ok {
+			return true
+		}
+		seen[h] = struct{}{}
+		return false
+	})
 }
 
 func makeTreeCacheFromSubtree(root *capb.DirectoryWithDigest, allDigests map[string]*capb.DirectoryWithDigest) (*capb.TreeCache, error) {
