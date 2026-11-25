@@ -324,13 +324,7 @@ func HandleDownload(args []string) (int, error) {
 		return 0, nil
 	}
 
-	uri := flags.Args()[0]
-	if !strings.HasPrefix(uri, "/blobs") {
-		// Interpret HASH/SIZE as a resource name using the default digest
-		// function (SHA256).
-		uri = "/blobs/" + uri
-	}
-	rn, err := digest.ParseDownloadResourceName(uri)
+	rn, err := digest.ParseUserInputDownloadResourceName(flags.Args()[0], repb.DigestFunction_UNKNOWN)
 	if err != nil {
 		return -1, fmt.Errorf("parse resource name: %w", err)
 	}

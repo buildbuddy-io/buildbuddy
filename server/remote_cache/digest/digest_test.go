@@ -738,3 +738,32 @@ func BenchmarkDigestCompute(b *testing.B) {
 		}
 	}
 }
+
+func TestParseUserInputDownloadResourceName(t *testing.T) {
+	h := "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d"
+	d := &repb.Digest{Hash: h, SizeBytes: 1234}
+	for _, tc := range []struct {
+		name      string
+		input     string
+		defaultDF repb.DigestFunction_Value
+		want      *digest.CASResourceName
+	}{
+		{"bare_inferred", h + "/1234", repb.DigestFunction_UNKNOWN, digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)},
+		{"bare_default", h + "/1234", repb.DigestFunction_BLAKE3, digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)},
+		{"explicit_function", "blake3/" + h + "/1234", repb.DigestFunction_SHA256, digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)},
+		{"blobs", "/blobs/" + h + "/1234", repb.DigestFunction_BLAKE3, digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)},
+		{"blobs_no_slash", "blobs/blake3/" + h + "/1234", repb.DigestFunction_SHA256, digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)},
+		{"instance", "my/instance/blobs/" + h + "/1234", repb.DigestFunction_UNKNOWN, digest.NewCASResourceName(d, "my/instance", repb.DigestFunction_SHA256)},
+		{"leading_slash_instance", "/my/instance/blobs/" + h + "/1234", repb.DigestFunction_UNKNOWN, digest.NewCASResourceName(d, "my/instance", repb.DigestFunction_SHA256)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := digest.ParseUserInputDownloadResourceName(tc.input, tc.defaultDF)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want.ToProto().String(), got.ToProto().String())
+		})
+	}
+	for _, input := range []string{"", h, "foo/" + h + "/1234", h + "/abc"} {
+		_, err := digest.ParseUserInputDownloadResourceName(input, repb.DigestFunction_SHA256)
+		assert.Error(t, err, "input %q", input)
+	}
+}

@@ -652,6 +652,20 @@ func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
 	return rn.CheckCAS()
 }
 
+// ParseUserInputDownloadResourceName leniently parses a user-typed HASH/SIZE or
+// CAS download resource name; use ParseDownloadResourceName for RPC inputs.
+// A bare HASH/SIZE uses defaultDigestFunction, or infers it if UNKNOWN.
+func ParseUserInputDownloadResourceName(s string, defaultDigestFunction repb.DigestFunction_Value) (*CASResourceName, error) {
+	s = strings.TrimPrefix(s, "/")
+	if strings.Contains("/"+s, "/blobs/") || strings.Contains("/"+s, "/compressed-blobs/") {
+		return ParseDownloadResourceName(s)
+	}
+	if strings.Count(s, "/") == 1 && defaultDigestFunction != repb.DigestFunction_UNKNOWN {
+		s = strings.ToLower(defaultDigestFunction.String()) + "/" + s
+	}
+	return ParseDownloadResourceName("blobs/" + s)
+}
+
 func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) {
 	rn, _, err := parseResourceName(resourceName, rspb.CacheType_AC, downloadResourceName)
 	if err != nil {
