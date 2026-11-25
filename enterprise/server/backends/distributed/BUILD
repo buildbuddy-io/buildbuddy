@@ -25,6 +25,7 @@ go_library(
         "//server/util/background",
         "//server/util/claims",
         "//server/util/consistent_hash",
+        "//server/util/expflag",
         "//server/util/findmissing",
         "//server/util/flag",
         "//server/util/ioutil",

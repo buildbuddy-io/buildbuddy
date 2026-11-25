@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -68,6 +69,8 @@ var (
 	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "SHA256", "A consistent hash function to use when hashing data. CRC32 or SHA256")
 	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 10000, "The number of copies of each peer on the new consistent hash ring")
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
+
+	treeCachePointerNearestReplicaOnly = expflag.Bool("cache.distributed_cache.tree_cache_pointer_nearest_replica_only", false, "If true, tree cache pointer reads stop after the nearest replica reports NotFound, instead of trying every replica.")
 
 	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 1_000_000_000, "Maximum size in bytes of the in-memory lookaside cache, which avoids disk lookups for frequently accessed small objects. Set to 0 to disable.")
 	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 1*time.Minute, "The maximum TTL of items served from the lookaside cache. When this flag is set to a duration >0, items will only be served from the lookaside cache if they were added less than this long ago. If it is set to a duration <=0, no TTL check will occur before serving items from the lookaside cache. This value should be << atime_update_threshold when used in the authoritative cache.")
@@ -1197,20 +1200,11 @@ func (c *Cache) backfillByReference(ctx context.Context) bool {
 	return fp.Boolean(ctx, "distributed_cache.backfill_gcs_references", true)
 }
 
-// treeCachePointerNearestOnly reports whether a read of r should stop after
-// the nearest replica reports NotFound. Pointers are written to all replicas
-// and a false miss only costs a normal tree walk, so the extra lookups aren't
-// worth it. During a migration reads deliberately fall through new and old
-// owners, so keep the full fallback.
+// treeCachePointerNearestOnly reports whether a read of r should stop at the
+// first replica that reports NotFound. A false miss only costs a normal tree
+// walk. Migrations keep the full fallback.
 func (c *Cache) treeCachePointerNearestOnly(ctx context.Context, r *rspb.ResourceName) bool {
-	if !isTreeCacheResource(r) || len(c.opts.NewNodes) > 0 {
-		return false
-	}
-	fp := c.env.GetExperimentFlagProvider()
-	if fp == nil {
-		return false
-	}
-	return fp.Boolean(ctx, "distributed_cache.tree_cache_pointer_nearest_replica_only", false)
+	return isTreeCacheResource(r) && len(c.opts.NewNodes) == 0 && treeCachePointerNearestReplicaOnly.Get(ctx)
 }
 
 type backfillOrder struct {
@@ -1348,7 +1342,9 @@ func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metri
 		}
 		if status.IsNotFoundError(err) {
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(r), peer)
-			if nearestOnly {
+			// Read-through promotes same-zone non-replicas to the front; only a
+			// canonical replica's NotFound is authoritative.
+			if nearestOnly && !slices.Contains(ps.BlockBackfills, peer) {
 				break
 			}
 			continue

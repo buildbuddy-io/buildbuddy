@@ -5021,18 +5021,28 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 	caches[nonReplica].mu.Unlock()
 }
 
+// failingGetCache fails every read with a non-NotFound error.
+type failingGetCache struct {
+	interfaces.Cache
+}
+
+func (failingGetCache) Get(context.Context, *rspb.ResourceName) ([]byte, error) {
+	return nil, status.InternalError("injected read failure")
+}
+
+func (failingGetCache) GetWithMetadata(context.Context, *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	return nil, nil, status.InternalError("injected read failure")
+}
+
 func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
-	// The flag provider must be installed before any servers start.
-	fp, err := experiments.NewFlagProvider("")
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
+	flagName := "cache.distributed_cache.tree_cache_pointer_nearest_replica_only"
 
-	// Builds a 3 node cluster (R=3) where reads from node 0 try node 0 first.
-	// Returns node 0 and the base cache of the last node.
-	newCluster := func(t *testing.T, configure func(*Options)) (*Cache, interfaces.Cache) {
+	// Starts a cluster (R=3) with one node per cache in locals. Reads from node
+	// 0 try node 0 first, then the other replicas.
+	newCluster := func(t *testing.T, locals []interfaces.Cache, configure func(*Options)) []*Cache {
 		var peers []string
-		for range 3 {
+		for range locals {
 			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
 		}
 		baseConfig := Options{
@@ -5042,30 +5052,38 @@ func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 		}
 		configure(&baseConfig)
 		var dcs []*Cache
-		var locals []interfaces.Cache
-		for _, peer := range peers {
-			local := newMemoryCache(t, 1000000)
+		for i, peer := range peers {
 			config := baseConfig
 			config.ListenAddr = peer
-			dcs = append(dcs, startNewDCache(t, env, config, local))
-			locals = append(locals, local)
+			dcs = append(dcs, startNewDCache(t, env, config, locals[i]))
 		}
 		for _, peer := range peers {
 			waitForReady(t, peer)
 		}
-		return dcs[0], locals[2]
+		return dcs
+	}
+	memoryCaches := func(t *testing.T, n int) []interfaces.Cache {
+		var locals []interfaces.Cache
+		for range n {
+			locals = append(locals, newMemoryCache(t, 1000000))
+		}
+		return locals
 	}
 	noConfig := func(*Options) {}
-	flagName := "distributed_cache.tree_cache_pointer_nearest_replica_only"
-	// Reads a tree cache pointer that only the farthest replica holds.
-	pointerLookups := func(t *testing.T, flagOn bool, configure func(*Options)) (bool, []testmetrics.HistogramValues) {
-		setReferenceExperiments(t, map[string]bool{flagName: flagOn})
-		dc, last := newCluster(t, configure)
+	newPointer := func(t *testing.T) (*rspb.ResourceName, []byte) {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		rn.InstanceName = digest.TreeCacheRemoteInstanceName
-		require.NoError(t, last.Set(ctx, rn, buf))
+		return rn, buf
+	}
+	// Reads a tree cache pointer that only the farthest replica holds.
+	pointerLookups := func(t *testing.T, flagOn bool, configure func(*Options)) (bool, []testmetrics.HistogramValues) {
+		flags.Set(t, flagName, flagOn)
+		locals := memoryCaches(t, 3)
+		dcs := newCluster(t, locals, configure)
+		rn, buf := newPointer(t)
+		require.NoError(t, locals[2].Set(ctx, rn, buf))
 		metrics.DistributedCachePeerLookups.Reset()
-		_, err := dc.Get(ctx, rn)
+		_, err := dcs[0].Get(ctx, rn)
 		require.True(t, err == nil || status.IsNotFoundError(err), "%v", err)
 		return err == nil, testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
 	}
@@ -5084,20 +5102,82 @@ func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 		require.True(t, found)
 	})
 
+	// Only exercises the NewNodes gate; reads during a migration also reorder peers.
 	t.Run("flag on keeps full fallback during migration", func(t *testing.T) {
 		found, _ := pointerLookups(t, true, func(o *Options) { o.NewNodes = slices.Clone(o.Nodes) })
 		require.True(t, found)
 	})
 
+	t.Run("flag on finds a pointer on the nearest replica", func(t *testing.T) {
+		flags.Set(t, flagName, true)
+		locals := memoryCaches(t, 3)
+		dcs := newCluster(t, locals, noConfig)
+		rn, buf := newPointer(t)
+		require.NoError(t, locals[0].Set(ctx, rn, buf))
+		got, err := dcs[0].Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("flag on falls through when the nearest replica errors", func(t *testing.T) {
+		flags.Set(t, flagName, true)
+		locals := memoryCaches(t, 3)
+		locals[0] = failingGetCache{locals[0]}
+		dcs := newCluster(t, locals, noConfig)
+		rn, buf := newPointer(t)
+		require.NoError(t, locals[2].Set(ctx, rn, buf))
+		got, err := dcs[0].Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("flag on with read-through asks a canonical replica after a same-zone non-replica misses", func(t *testing.T) {
+		flags.Set(t, flagName, true)
+		locals := memoryCaches(t, 4)
+		dcs := newCluster(t, locals, func(o *Options) { o.ReadThroughLocalCache = true })
+		dc := dcs[0]
+		// The caller is alone in its zone, so it is promoted ahead of the
+		// replicas without being one.
+		dc.zone = "A"
+		for _, node := range dcs[1:] {
+			dc.peerZones[node.opts.ListenAddr] = "B"
+		}
+		dc.peerZones[dc.opts.ListenAddr] = "A"
+		var rn *rspb.ResourceName
+		var buf []byte
+		for {
+			rn, buf = newPointer(t)
+			replicas := dc.consistentHash.GetAllReplicas(rn.GetDigest().GetHash())[:dc.opts.ReplicationFactor]
+			if !slices.Contains(replicas, dc.opts.ListenAddr) {
+				break
+			}
+		}
+		ps := dc.readPeers(rn)
+		require.Contains(t, ps.BlockBackfills, dc.opts.ListenAddr)
+		require.Equal(t, dc.opts.ListenAddr, ps.PreferredPeers[0])
+		// The first canonical replica in read order.
+		var holder int
+		for i, d := range dcs {
+			if d.opts.ListenAddr == ps.PreferredPeers[1] {
+				holder = i
+			}
+		}
+		require.NoError(t, locals[holder].Set(ctx, rn, buf))
+		got, err := dc.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
 	t.Run("flag on does not affect non tree cache reads", func(t *testing.T) {
-		setReferenceExperiments(t, map[string]bool{flagName: true})
-		dc, last := newCluster(t, noConfig)
+		flags.Set(t, flagName, true)
+		locals := memoryCaches(t, 3)
+		dcs := newCluster(t, locals, noConfig)
 		casRN, _ := testdigest.RandomCASResourceBuf(t, 100)
 		acRN, _ := testdigest.RandomACResourceBuf(t, 100)
 		for _, rn := range []*rspb.ResourceName{casRN, acRN} {
 			buf := []byte("data")
-			require.NoError(t, last.Set(ctx, rn, buf))
-			got, err := dc.Get(ctx, rn)
+			require.NoError(t, locals[2].Set(ctx, rn, buf))
+			got, err := dcs[0].Get(ctx, rn)
 			require.NoError(t, err)
 			require.Equal(t, buf, got)
 		}
