@@ -2078,7 +2078,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "generic_vm_pool_takes",
-		Help:      "Number of tasks that looked for a pooled generic VM, by whether one was idle (`hit`) or not (`miss`).",
+		Help:      "Number of tasks that looked for a pooled generic VM, by whether they adopted one (`hit`) or not (`miss`).",
 	}, []string{
 		StatusHumanReadableLabel,
 	})

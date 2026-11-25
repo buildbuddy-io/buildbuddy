@@ -579,30 +579,27 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 	// Find the memory data in the store that should be used to handle the page fault
 	faultStoreOffset := guestMemoryAddrToStoreOffset(faultingAddress, *mapping)
 	chunkStartOffset := memoryStore.ChunkStartOffset(int64(faultStoreOffset))
+	chunkAddr, chunkSize, release, err := memoryStore.AcquireUFFDChunk(faultStoreOffset)
+	if err != nil {
+		return status.WrapError(err, "acquire backing chunk")
+	}
+	defer release()
 
 	var hostAddr, destAddr uintptr
 	var copySize int64
-	var err error
 	if *snaputil.EnableBalloon && memoryStore.PartiallyMapped(chunkStartOffset) {
 		// If the chunk is partially mapped (i.e. contains some removed
 		// pages), only page fault in 1 page at a time
 		// because holes and data must be handled differently and chunk-level
 		// operations don't provide enough granularity.
-		hostAddr, err = memoryStore.GetPageAddress(faultStoreOffset, false)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
+		hostAddr = chunkAddr + memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
 		destAddr = faultingAddress
 		copySize = int64(os.Getpagesize())
 	} else {
 		// To reduce the number of UFFD round trips, copy the aligned window of
 		// the chunk around the faulting address. Copying whole chunks makes
 		// each first touch slow.
-		var chunkAddr uintptr
-		chunkAddr, copySize, err = memoryStore.GetChunkStartAddressAndSize(faultStoreOffset, false /*=write*/)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
+		copySize = chunkSize
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
 		copyWindowBytes := h.copyWindowBytes.Load()
 		windowOffset := relOffset &^ uintptr(copyWindowBytes-1)
@@ -634,11 +631,6 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 		return err
 	}
 
-	// After memory has been copied to the VM, unmap the chunk to save memory
-	// usage on the executor
-	if err := memoryStore.UnmapChunk(chunkStartOffset); err != nil {
-		return err
-	}
 	return nil
 }
 
