@@ -82,6 +82,8 @@ const (
 var (
 	Runtime                   = flag.String("executor.oci.runtime", "", "OCI runtime")
 	runtimeRoot               = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	runscMemoryOverheadBytes  = flag.Int64("executor.oci.runsc_memory_overhead_bytes", 32<<20, "Added to the cgroup memory limit when using runsc, since gVisor's own memory is charged to the container's cgroup.")
+	runtimeFlags              = flag.Slice("executor.oci.runtime_flags", []string{}, "Additional global flags passed to the OCI runtime, e.g. '--platform=kvm' for runsc.")
 	dns                       = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
 	netPoolSize               = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	defaultNetworkMode        = flag.String("executor.oci.default_network_mode", "", "Default network mode: either 'bridge' or 'off'. Can be overridden per-action with the 'dockerNetwork' platform property.")
@@ -573,6 +575,10 @@ type ociContainer struct {
 	releaseCPUs            func()
 	isPersistentWorker     bool
 
+	runscLogMu sync.Mutex
+	// Bytes of each runsc log file already checked for fatal errors.
+	runscLogOffsets map[string]int64
+
 	imageRef         string
 	networkEnabled   bool
 	userspaceNetwork bool
@@ -784,6 +790,9 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	if err := c.createNetwork(ctx); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create network: %s", err))
 	}
+	if err := c.allowPing(ctx); err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("allow ping: %s", err))
+	}
 	if c.tiniEnabled {
 		cmd = cmd.CloneVT()
 		cmd.Arguments = append([]string{tiniMountPoint, "--"}, cmd.Arguments...)
@@ -799,7 +808,12 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 		// Use --keep to prevent the cgroup from being deleted when the
 		// container exits, since we still want to be able to look at stats,
 		// events, etc. after completion.
-		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--keep", "--bundle="+c.bundlePath(), c.cid)
+		args := []string{"run", "--keep", "--bundle=" + c.bundlePath(), c.cid}
+		if filepath.Base(c.runtime) == "runsc" {
+			// runsc doesn't support --keep. It leaves pre-existing cgroups in place.
+			args = slices.Delete(args, 1, 2)
+		}
+		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, args...)
 	})
 }
 
@@ -813,6 +827,9 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 
 	if err := c.createNetwork(ctx); err != nil {
 		return status.UnavailableErrorf("create network: %s", err)
+	}
+	if err := c.allowPing(ctx); err != nil {
+		return status.UnavailableErrorf("allow ping: %s", err)
 	}
 	pid1 := &repb.Command{Arguments: []string{"sleep", "999999999999"}}
 	if c.tiniEnabled {
@@ -947,6 +964,13 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	var firstErr error
 
+	// runsc delete talks to the sandbox, which hangs if Pause froze it.
+	if filepath.Base(c.runtime) == "runsc" {
+		if err := cgroup.WriteFreeze(c.cgroupPath(), false); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			firstErr = status.UnavailableErrorf("unfreeze cgroup: %s", err)
+		}
+	}
+
 	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil {
 		firstErr = status.UnavailableErrorf("delete container: %s", err)
 	}
@@ -1013,6 +1037,19 @@ func (c *ociContainer) createNetwork(ctx context.Context) error {
 	return nil
 }
 
+// allowPing sets ping_group_range in the host netns for runsc, which applies
+// spec sysctls only to its own kernel. The container is alone in the netns.
+func (c *ociContainer) allowPing(ctx context.Context) error {
+	if filepath.Base(c.runtime) != "runsc" {
+		return nil
+	}
+	out, err := exec.CommandContext(ctx, "ip", "netns", "exec", filepath.Base(c.network.NamespacePath()), "sysctl", "-w", "net.ipv4.ping_group_range=0 2147483647").CombinedOutput()
+	if err != nil {
+		return status.InternalErrorf("set ping_group_range: %s: %s", err, out)
+	}
+	return nil
+}
+
 func (c *ociContainer) cleanupNetwork(ctx context.Context) error {
 	n := c.network
 	c.network = nil
@@ -1042,6 +1079,8 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 // Also incorporates cgroup events into the command result - oom_kill events
 // in particular are translated to errors.
 func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+	// pids.events counts are cumulative over the container's lifetime.
+	pidsEventsBefore, _ := cgroup.ReadPidsEvents(c.cgroupPath())
 	stop := c.startStatsTracking(ctx)
 	res := invokeRuntimeFn(ctx)
 	stop()
@@ -1070,8 +1109,15 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 
 	// Check whether the pid limit was exceeded, and just log it for now so that
 	// it can be diagnosed.
-	if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
+	if err := c.checkPIDLimitExceeded(ctx, res, pidsEventsBefore["max"]); err != nil {
 		log.CtxWarning(ctx, status.Message(err))
+		// gVisor panics instead of failing fork when it can't create host
+		// threads, so the task's output doesn't explain the failure.
+		if filepath.Base(c.runtime) == "runsc" {
+			res.ExitCode = commandutil.KilledExitCode
+			res.Error = err
+			return res
+		}
 	}
 
 	if c.network != nil {
@@ -1117,13 +1163,13 @@ func (c *ociContainer) checkOOMKill(ctx context.Context, res *interfaces.Command
 
 // checkPIDLimitExceeded checks for pid limit exceeded events in the cgroup and
 // returns an Unavailable error if found.
-func (c *ociContainer) checkPIDLimitExceeded(ctx context.Context, res *interfaces.CommandResult) error {
+func (c *ociContainer) checkPIDLimitExceeded(ctx context.Context, res *interfaces.CommandResult, maxEventsBefore int64) error {
 	pidsEvents, err := cgroup.ReadPidsEvents(c.cgroupPath())
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to get pids events: %s", err)
 		return nil
 	}
-	if pidsEvents["max"] == 0 {
+	if pidsEvents["max"] <= maxEventsBefore {
 		return nil
 	}
 	if res.ExitCode == 0 {
@@ -1152,7 +1198,12 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
 	}
-	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
+	settings := c.cgroupSettings
+	if filepath.Base(c.runtime) == "runsc" && settings.GetMemoryLimitBytes() > 0 {
+		settings = settings.CloneVT()
+		settings.MemoryLimitBytes = proto.Int64(settings.GetMemoryLimitBytes() + *runscMemoryOverheadBytes)
+	}
+	if err := cgroup.Setup(ctx, path, settings, c.blockDevice); err != nil {
 		return fmt.Errorf("configure cgroup: %w", err)
 	}
 	return nil
@@ -1534,9 +1585,28 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	if runtimeName == "crun" {
 		globalArgs = append(globalArgs, "--cgroup-manager=cgroupfs")
 	}
+	if runtimeName == "runsc" {
+		// Send socket syscalls to the host kernel in the container's network
+		// namespace, which the executor sets up, instead of gVisor's netstack.
+		globalArgs = append(globalArgs, "--network=host")
+		// Match the host's cgroup v2 layout inside the sandbox.
+		globalArgs = append(globalArgs, "--in-sandbox-cgroup=v2")
+		// runsc enables every controller in all ancestor cgroups, so we start
+		// it in the container's cgroup ourselves (below) instead.
+		globalArgs = append(globalArgs, "--ignore-cgroups")
+		// Errors from the gofer and sandbox processes that these commands
+		// start only go to their logs, so keep them to report on failure.
+		if args[0] == "create" || args[0] == "run" {
+			if err := os.MkdirAll(c.runscLogDir(), 0755); err != nil {
+				return commandutil.ErrorResult(status.UnavailableErrorf("create runsc log dir: %s", err))
+			}
+			globalArgs = append(globalArgs, "--debug-log="+c.runscLogDir()+"/")
+		}
+	}
 	if *runtimeRoot != "" {
 		globalArgs = append(globalArgs, "--root="+*runtimeRoot)
 	}
+	globalArgs = append(globalArgs, *runtimeFlags...)
 
 	runtimeArgs := append(globalArgs, args...)
 	runtimeArgs = append(runtimeArgs, command.GetArguments()...)
@@ -1586,8 +1656,19 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	// when it is killed, the container process gets killed automatically
 	// instead of getting reparented and continuing to execute.
 	// TODO: figure out why this is only needed for run and not exec.
-	if args[0] == "run" {
+	// runsc re-execs /proc/self/exe, which doesn't resolve in a new pid
+	// namespace without its own /proc.
+	if args[0] == "run" && runtimeName != "runsc" {
 		cmd.SysProcAttr.Cloneflags = syscall.CLONE_NEWPID
+	}
+	if runtimeName == "runsc" && (args[0] == "run" || args[0] == "create") {
+		cg, err := os.Open(c.cgroupPath())
+		if err != nil {
+			return commandutil.ErrorResult(status.UnavailableErrorf("open cgroup: %s", err))
+		}
+		defer cg.Close()
+		cmd.SysProcAttr.UseCgroupFD = true
+		cmd.SysProcAttr.CgroupFD = int(cg.Fd())
 	}
 
 	cmd.WaitDelay = waitDelay
@@ -1616,9 +1697,58 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		result.Stdout = stdout.Bytes()
 	}
 	if stderr != nil {
+		if code != 0 && runtimeName == "runsc" {
+			stderr.Write(c.newRunscFatalErrors())
+		}
 		result.Stderr = stderr.Bytes()
 	}
 	return result
+}
+
+func (c *ociContainer) runscLogDir() string {
+	return filepath.Join(c.bundlePath(), "runsc-log")
+}
+
+// runscFatalErrors returns the "FATAL ERROR" lines from the container's runsc
+// logs. These are only written when a runsc process dies, which can happen in
+// an earlier command, e.g. the gofer started by "create" failing before "start".
+// Only lines written since the last call are returned.
+func (c *ociContainer) newRunscFatalErrors() []byte {
+	c.runscLogMu.Lock()
+	defer c.runscLogMu.Unlock()
+	if c.runscLogOffsets == nil {
+		c.runscLogOffsets = map[string]int64{}
+	}
+	var out []byte
+	entries, _ := os.ReadDir(c.runscLogDir())
+	for _, e := range entries {
+		path := filepath.Join(c.runscLogDir(), e.Name())
+		b, err := readFrom(path, c.runscLogOffsets[path])
+		if err != nil {
+			continue
+		}
+		// Leave a partially written last line for the next call.
+		b = b[:bytes.LastIndexByte(b, '\n')+1]
+		c.runscLogOffsets[path] += int64(len(b))
+		for line := range bytes.Lines(b) {
+			if _, msg, ok := bytes.Cut(line, []byte("FATAL ERROR: ")); ok {
+				out = append(out, msg...)
+			}
+		}
+	}
+	return out
+}
+
+func readFrom(path string, offset int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return io.ReadAll(f)
 }
 
 func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserProp string, dockerForceRootProp bool) (*specs.User, error) {

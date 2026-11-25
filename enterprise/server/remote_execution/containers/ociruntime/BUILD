@@ -96,7 +96,7 @@ go_test(
         "@platforms//cpu:x86_64",
     ],
     x_defs = {
-        "crunRlocationpath": "$(rlocationpath :crun)",
+        "runtimeRlocationpath": "$(rlocationpath :crun)",
         "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
         "netToolsImageRlocationpath": "$(rlocationpath @net_tools)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
@@ -180,9 +180,105 @@ alias(
 )
 
 alias(
+    name = "runsc",
+    actual = select({
+        "@platforms//cpu:x86_64": "@com_github_gvisor_gvisor-linux-amd64//:runsc",
+        "@platforms//cpu:aarch64": "@com_github_gvisor_gvisor-linux-arm64//:runsc",
+    }),
+)
+
+alias(
+    name = "runsc_sidecars",
+    actual = select({
+        "@platforms//cpu:x86_64": "@com_github_gvisor_gvisor-linux-amd64//:sidecars",
+        "@platforms//cpu:aarch64": "@com_github_gvisor_gvisor-linux-arm64//:sidecars",
+    }),
+)
+
+alias(
     name = "busybox",
     actual = select({
         "@platforms//cpu:x86_64": "@net_busybox_busybox-linux-amd64//file:busybox",
         "@platforms//cpu:aarch64": "@net_busybox_busybox-linux-arm64//file:busybox",
     }),
+)
+
+# Same tests as ociruntime_test, run with gVisor (runsc).
+go_test(
+    name = "ociruntime_runsc_test",
+    srcs = ["ociruntime_test.go"],
+    data = [
+        ":runsc",
+        ":runsc_sidecars",
+        "//enterprise/server/cmd/executor:tini",
+        "//enterprise/server/remote_execution/containers/ociruntime/testsyscall:testsyscall_no_cov",
+        "//enterprise/server/remote_execution/runner/testworker",
+        "@busybox",
+        "@net_tools",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.container-image": "docker://" + NET_TOOLS_IMAGE,
+        "test.EstimatedComputeUnits": "2",
+        "test.EstimatedFreeDiskBytes": "10GB",
+        "test.no-sandbox": "",
+    },
+    # NOTE: if testing locally, use --test_sharding_strategy=disabled to work
+    # around the networking package not supporting cross-process locks.
+    shard_count = 4,
+    tags = [
+        "docker",
+    ],
+    target_compatible_with = [
+        "@platforms//os:linux",
+        # TODO: GitHub Actions arm runners are running into cgroup-related issues;
+        # fix and re-enable on arm64.
+        "@platforms//cpu:x86_64",
+    ],
+    x_defs = {
+        "runtimeRlocationpath": "$(rlocationpath :runsc)",
+        "busyboxImageRlocationpath": "$(rlocationpath @busybox)",
+        "netToolsImageRlocationpath": "$(rlocationpath @net_tools)",
+        "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
+        "testsyscallRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime/testsyscall:testsyscall_no_cov)",
+    },
+    deps = [
+        ":ociruntime",
+        "//enterprise/server/remote_execution/cgroup",
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/persistentworker",
+        "//enterprise/server/remote_execution/workspace",
+        "//enterprise/server/testutil/testregistry",
+        "//enterprise/server/util/cpuset",
+        "//enterprise/server/util/oci",
+        "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
+        "//proto:worker_go_proto",
+        "//server/interfaces",
+        "//server/real_environment",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/testutil/testnetworking",
+        "//server/testutil/testshell",
+        "//server/testutil/testtar",
+        "//server/util/disk",
+        "//server/util/log",
+        "//server/util/networking",
+        "//server/util/platform",
+        "//server/util/proto",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "//server/util/uuid",
+        "@com_github_google_go_containerregistry//pkg/crane",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@com_github_google_go_containerregistry//pkg/v1/empty",
+        "@com_github_google_go_containerregistry//pkg/v1/mutate",
+        "@com_github_opencontainers_runtime_spec//specs-go",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/runfiles",
+        "@org_golang_x_sys//unix",
+    ],
 )
