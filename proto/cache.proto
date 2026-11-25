@@ -270,6 +270,23 @@ message TreeCache {
   repeated resource.ResourceName tree_cache_children = 2;
 }
 
+// Stored in the auxiliary_metadata of a tree cache AC pointer so that GetTree
+// can serve a cached subtree as a digest without reading its contents. Absent
+// on pointers written by older servers.
+message TreeCachePointerMetadata {
+  // The number of directories a read of this entry returns: the root
+  // TreeCache's children plus each distinct split child's children.
+  int64 dir_count = 1;
+
+  // The root TreeCache's tree_cache_children.
+  repeated resource.ResourceName tree_cache_children = 2;
+
+  // The format of this pointer and its TreeCache entry. Hits on older formats
+  // are backfilled (see cache.tree_cache_pointer_backfill_probability), so
+  // format changes reach entries that stay in the cache.
+  uint32 format_version = 3;
+}
+
 // Fetch a directory tree from the CAS.
 message GetTreeRequest {
   context.RequestContext request_context = 1;

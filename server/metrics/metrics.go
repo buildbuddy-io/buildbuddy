@@ -295,6 +295,10 @@ const (
 	// The TreeCache set status: success/deadline_exceeded/other_error
 	TreeCacheSetStatus = "status"
 
+	// What GetTree did with the contents of a TreeCache hit:
+	// skipped/read_no_metadata/read
+	TreeCacheContentsStatus = "status"
+
 	// The TreeCache split lookup status: hit/miss/failure
 	TreeCacheSplitLookupStatus = "status"
 
@@ -1319,6 +1323,15 @@ var (
 		TreeCacheLookupLevel,
 	})
 
+	TreeCacheHitContentsCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "tree_cache_hit_contents_count",
+		Help:      "Total number of TreeCache hits, by whether their contents were read.",
+	}, []string{
+		TreeCacheContentsStatus,
+	})
+
 	TreeCacheSplitLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -1340,6 +1353,15 @@ var (
 		Subsystem: "remote_cache",
 		Name:      "tree_cache_set_count",
 		Help:      "Total number of TreeCache sets.",
+	}, []string{
+		TreeCacheSetStatus,
+	})
+
+	TreeCachePointerBackfillCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "tree_cache_pointer_backfill_count",
+		Help:      "Total number of TreeCache pointers rewritten to add metadata, by status: success/error.",
 	}, []string{
 		TreeCacheSetStatus,
 	})
