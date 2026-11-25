@@ -753,6 +753,9 @@ func TestParseUserInputDownloadResourceName(t *testing.T) {
 		{"explicit_function", "blake3/" + h + "/1234", repb.DigestFunction_SHA256, digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)},
 		{"blobs", "/blobs/" + h + "/1234", repb.DigestFunction_BLAKE3, digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)},
 		{"blobs_no_slash", "blobs/blake3/" + h + "/1234", repb.DigestFunction_SHA256, digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)},
+		{"bare_md5", h[:32] + "/1234", repb.DigestFunction_MD5, digest.NewCASResourceName(&repb.Digest{Hash: h[:32], SizeBytes: 1234}, "", repb.DigestFunction_MD5)},
+		{"bare_vso", h + "00/1234", repb.DigestFunction_VSO, digest.NewCASResourceName(&repb.Digest{Hash: h + "00", SizeBytes: 1234}, "", repb.DigestFunction_VSO)},
+		{"bare_sha256tree", h + "/1234", repb.DigestFunction_SHA256TREE, digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256TREE)},
 		{"instance", "my/instance/blobs/" + h + "/1234", repb.DigestFunction_UNKNOWN, digest.NewCASResourceName(d, "my/instance", repb.DigestFunction_SHA256)},
 		{"leading_slash_instance", "/my/instance/blobs/" + h + "/1234", repb.DigestFunction_UNKNOWN, digest.NewCASResourceName(d, "my/instance", repb.DigestFunction_SHA256)},
 	} {
@@ -762,7 +765,7 @@ func TestParseUserInputDownloadResourceName(t *testing.T) {
 			assert.Equal(t, tc.want.ToProto().String(), got.ToProto().String())
 		})
 	}
-	for _, input := range []string{"", h, "foo/" + h + "/1234", h + "/abc"} {
+	for _, input := range []string{"", h, "foo/" + h + "/1234", h + "/abc", h + "/-1", strings.ToUpper(h) + "/1234", h[:32] + "/1234"} {
 		_, err := digest.ParseUserInputDownloadResourceName(input, repb.DigestFunction_SHA256)
 		assert.Error(t, err, "input %q", input)
 	}
