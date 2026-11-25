@@ -2164,6 +2164,22 @@ var (
 		FileName,
 	})
 
+	COWSnapshotUFFDMappingCacheRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_uffd_mapping_cache_requests",
+		Help:      "Number of shared UFFD mapping cache lookups, by hit or miss.",
+	}, []string{
+		CacheHitMissStatus,
+	})
+
+	COWSnapshotUFFDMappingCacheEvictions = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_uffd_mapping_cache_evictions",
+		Help:      "Number of idle shared UFFD mappings evicted from the cache.",
+	})
+
 	COWSnapshotPageFaultTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",

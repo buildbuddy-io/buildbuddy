@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -1098,4 +1099,244 @@ func concatBytes(chunks ...[]byte) []byte {
 		out = append(out, c...)
 	}
 	return out
+}
+
+func TestSharedUFFDMapping(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("reading /proc/self/mem is not supported on %q", runtime.GOOS)
+	}
+	copy_on_write.ResetUFFDMappingCacheForTest()
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
+	flags.Set(t, "executor.uffd_mapping_cache_bytes", int64(4096))
+	var releases []func()
+	t.Cleanup(func() {
+		for _, rel := range releases {
+			rel()
+		}
+		copy_on_write.ResetUFFDMappingCacheForTest()
+	})
+	track := func(rel func()) func() {
+		var once sync.Once
+		wrapped := func() { once.Do(rel) }
+		releases = append(releases, wrapped)
+		return wrapped
+	}
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 1_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, fc.Close()) })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+	data := bytes.Repeat([]byte{42}, 4096)
+	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	path := filepath.Join(testfs.MakeTempDir(t), "chunk")
+	require.NoError(t, os.WriteFile(path, data, 0644))
+	require.NoError(t, fc.AddFile(ctx, &repb.FileNode{Digest: d}, path))
+	var closedStore *copy_on_write.COWStore
+	newStore := func(d *repb.Digest) *copy_on_write.COWStore {
+		dir := filepath.Join(testfs.MakeTempDir(t), snaputil.MemoryFileName)
+		require.NoError(t, os.Mkdir(dir, 0755))
+		m, err := copy_on_write.NewLazyMmap(ctx, env, dir, 0, d, "", false, nil)
+		require.NoError(t, err)
+		s, err := copy_on_write.NewCOWStore(ctx, env, "memory", []*copy_on_write.Mmap{m}, copy_on_write.COWOptions{DataDir: dir, ChunkSizeBytes: 4096, TotalSizeBytes: 4096})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if s != closedStore {
+				require.NoError(t, s.Close())
+			}
+		})
+		return s
+	}
+	a, b := newStore(d), newStore(d)
+	addr, _, releaseA, err := a.AcquireUFFDChunk(0)
+	require.NoError(t, err)
+	releaseA = track(releaseA)
+	other, _, releaseB, err := b.AcquireUFFDChunk(0)
+	require.NoError(t, err)
+	releaseB = track(releaseB)
+	require.Equal(t, addr, other)
+	var eg errgroup.Group
+	for range 16 {
+		eg.Go(func() error {
+			got, _, release, err := b.AcquireUFFDChunk(0)
+			if err != nil {
+				return err
+			}
+			defer release()
+			if got != addr {
+				return fmt.Errorf("mapping was not shared: got %x, want %x", got, addr)
+			}
+			return nil
+		})
+	}
+	require.NoError(t, eg.Wait())
+	releaseA()
+	require.NoError(t, a.Close())
+	closedStore = a
+	// Closing the originating store must not invalidate another VM's pointer.
+	mem, err := os.Open("/proc/self/mem")
+	require.NoError(t, err)
+	defer mem.Close()
+	read := func(addr uintptr) []byte {
+		buf := make([]byte, 4096)
+		_, err := mem.ReadAt(buf, int64(addr))
+		require.NoError(t, err)
+		return buf
+	}
+	require.Equal(t, data, read(other))
+	// A second digest puts the cache over budget while the first is pinned.
+	d2, err := digest.Compute(bytes.NewReader(bytes.Repeat([]byte{43}, 4096)), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	path += "-second"
+	require.NoError(t, os.WriteFile(path, bytes.Repeat([]byte{43}, 4096), 0644))
+	require.NoError(t, fc.AddFile(ctx, &repb.FileNode{Digest: d2}, path))
+	c := newStore(d2)
+	_, _, releaseC, err := c.AcquireUFFDChunk(0)
+	require.NoError(t, err)
+	releaseC = track(releaseC)
+	require.Equal(t, int64(8192), copy_on_write.UFFDMappingCacheBytesForTest())
+	releaseC()
+	require.Equal(t, int64(4096), copy_on_write.UFFDMappingCacheBytesForTest(), "idle chunk must be evicted while the other chunk is pinned")
+	require.Equal(t, data, read(other))
+	releaseB()
+	// A COW write must not modify the shared immutable mapping.
+	_, err = b.WriteAt([]byte{99}, 0)
+	require.NoError(t, err)
+	dirty, _, releaseDirty, err := b.AcquireUFFDChunk(0)
+	require.NoError(t, err)
+	releaseDirty = track(releaseDirty)
+	// Concurrent acquires or UnmapChunk on a dirty chunk must not unmap it while pinned.
+	dirty2, _, releaseDirty2, err := b.AcquireUFFDChunk(0)
+	require.NoError(t, err)
+	releaseDirty2 = track(releaseDirty2)
+	require.Error(t, b.UnmapChunk(0))
+	releaseDirty()
+	releaseDirty() // idempotent
+	require.Equal(t, byte(99), read(dirty2)[0])
+	releaseDirty2()
+	require.NoError(t, b.UnmapChunk(0))
+	require.Equal(t, dirty, dirty2)
+	fresh := newStore(d)
+	original, _, releaseOriginal, err := fresh.AcquireUFFDChunk(0)
+	require.NoError(t, err)
+	releaseOriginal = track(releaseOriginal)
+	require.Equal(t, data, read(original))
+	// A hit must not bypass the caller's artifact lookup.
+	require.True(t, fc.DeleteFile(ctx, &repb.FileNode{Digest: d}))
+	_, _, _, err = newStore(d).AcquireUFFDChunk(0)
+	require.Error(t, err)
+	flags.Set(t, "executor.uffd_mapping_cache_bytes", int64(0))
+	releaseOriginal()
+	require.Equal(t, int64(0), copy_on_write.UFFDMappingCacheBytesForTest())
+}
+
+func BenchmarkAcquireUFFDChunk(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+	flags.Set(b, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(b, "executor.enable_remote_snapshot_sharing", false)
+
+	const (
+		chunkSizeBytes = 4000 * 1024 // same as firecracker.cowChunkSizeBytes
+		numChunks      = 16
+		windowBytes    = 256 * 1024
+		numVMs         = 8
+	)
+
+	ctx := b.Context()
+	env := testenv.GetTestEnv(b)
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(b), 256*1024*1024, false)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, fc.Close()) })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	digests := make([]*repb.Digest, numChunks)
+	tmpDir := testfs.MakeTempDir(b)
+	for i := range numChunks {
+		data := bytes.Repeat([]byte{byte(i + 1)}, chunkSizeBytes)
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		require.NoError(b, err)
+		digests[i] = d
+		p := filepath.Join(tmpDir, fmt.Sprintf("chunk-%d", i))
+		require.NoError(b, os.WriteFile(p, data, 0644))
+		require.NoError(b, fc.AddFile(ctx, &repb.FileNode{Digest: d}, p))
+	}
+
+	newStore := func(tb testing.TB) *copy_on_write.COWStore {
+		dir := filepath.Join(testfs.MakeTempDir(tb), snaputil.MemoryFileName)
+		require.NoError(tb, os.Mkdir(dir, 0755))
+		chunks := make([]*copy_on_write.Mmap, numChunks)
+		for i, d := range digests {
+			m, err := copy_on_write.NewLazyMmap(ctx, env, dir, int64(i)*chunkSizeBytes, d, "", false, nil)
+			require.NoError(tb, err)
+			require.NoError(tb, m.Fetch())
+			chunks[i] = m
+		}
+		s, err := copy_on_write.NewCOWStore(ctx, env, "memory", chunks, copy_on_write.COWOptions{
+			DataDir:        dir,
+			ChunkSizeBytes: chunkSizeBytes,
+			TotalSizeBytes: numChunks * chunkSizeBytes,
+		})
+		require.NoError(tb, err)
+		s.StopEagerFetch()
+		tb.Cleanup(func() { require.NoError(tb, s.Close()) })
+		return s
+	}
+
+	for _, tc := range []struct {
+		name       string
+		cacheBytes int64
+	}{
+		{name: "CacheDisabled", cacheBytes: 0},
+		{name: "CacheEnabled", cacheBytes: 128 * 1024 * 1024},
+	} {
+		b.Run(tc.name+"/SingleVM", func(b *testing.B) {
+			copy_on_write.ResetUFFDMappingCacheForTest()
+			b.Cleanup(copy_on_write.ResetUFFDMappingCacheForTest)
+			flags.Set(b, "executor.uffd_mapping_cache_bytes", tc.cacheBytes)
+
+			store := newStore(b)
+			b.ResetTimer()
+			for i := range b.N {
+				off := uintptr((i * windowBytes) % (numChunks * chunkSizeBytes))
+				_, _, release, err := store.AcquireUFFDChunk(off)
+				if err != nil {
+					b.Fatal(err)
+				}
+				release()
+			}
+		})
+
+		b.Run(tc.name+"/ConcurrentVMs", func(b *testing.B) {
+			copy_on_write.ResetUFFDMappingCacheForTest()
+			b.Cleanup(copy_on_write.ResetUFFDMappingCacheForTest)
+			flags.Set(b, "executor.uffd_mapping_cache_bytes", tc.cacheBytes)
+
+			stores := make([]*copy_on_write.COWStore, numVMs)
+			for i := range stores {
+				stores[i] = newStore(b)
+			}
+			var vmIdx atomic.Uint64
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				id := int(vmIdx.Add(1)-1) % numVMs
+				store := stores[id]
+				step := 0
+				for pb.Next() {
+					off := uintptr((step * windowBytes) % (numChunks * chunkSizeBytes))
+					step++
+					_, _, release, err := store.AcquireUFFDChunk(off)
+					if err != nil {
+						b.Error(err)
+						return
+					}
+					release()
+				}
+			})
+		})
+	}
 }

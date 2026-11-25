@@ -429,3 +429,48 @@ func TestNewHandler_InvalidCopyWindowUsesDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(4<<20), h.copyWindowBytes)
 }
+
+func TestCopyDataFromMemorySnapshot_FaultPastLastChunkServesZeroPage(t *testing.T) {
+	pageSize := int64(os.Getpagesize())
+	baseAddress := uintptr(0x100000)
+
+	// Create a store with a 2-page chunk size, 1-page initial size, write to
+	// page 0 so chunk 0 has physical size 1 page, then resize to 2 pages.
+	store, err := copy_on_write.NewCOWStore(t.Context(), nil, "test", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes:   2 * pageSize,
+		TotalSizeBytes:   pageSize,
+		DataDir:          t.TempDir(),
+		MaxMmappedChunks: 1,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	_, err = store.WriteAt([]byte{1}, 0)
+	require.NoError(t, err)
+	_, err = store.Resize(2 * pageSize)
+	require.NoError(t, err)
+
+	zeroCalls := 0
+	copyCalls := 0
+	h := newTestHandler(&fakeResolver{
+		onZeropage: func(uffd uintptr, z *uffdIoZeropage) syscall.Errno {
+			zeroCalls++
+			require.Equal(t, uint64(baseAddress+uintptr(pageSize)), z.Range.Start)
+			require.Equal(t, uint64(pageSize), z.Range.Len)
+			z.Zeropage = pageSize
+			return 0
+		},
+		onCopy: func(uffd uintptr, c *uffdioCopy) syscall.Errno {
+			copyCalls++
+			return 0
+		},
+	})
+	mapping := &GuestRegionUFFDMapping{
+		BaseHostVirtAddr: baseAddress,
+		Size:             uintptr(2 * pageSize),
+	}
+
+	err = h.copyDataFromMemorySnapshot(0 /*=uffd*/, store, mapping, baseAddress+uintptr(pageSize))
+	require.NoError(t, err)
+	require.Equal(t, 1, zeroCalls)
+	require.Equal(t, 0, copyCalls)
+}

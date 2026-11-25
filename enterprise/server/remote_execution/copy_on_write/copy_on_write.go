@@ -1,6 +1,7 @@
 package copy_on_write
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"io"
@@ -57,6 +58,7 @@ const (
 )
 
 var (
+	uffdMappingCacheBytes = flag.Int64("executor.uffd_mapping_cache_bytes", 0, "Bytes of immutable UFFD source mappings to retain. Active copies may temporarily exceed this budget; zero disables sharing.")
 	maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
 	eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 32, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
 
@@ -297,65 +299,216 @@ func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
 	return chunkRelativeAddress
 }
 
-// GetChunkStartAddressAndSize returns the start address of the chunk containing
-// the input offset, and the size of the chunk. Note that the returned chunk
-// size may not be equal to ChunkSizeBytes() if it's the last chunk in the file.
-func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
-	chunkStartOffset := c.ChunkStartOffset(int64(offset))
-	chunkStartAddress, err := c.GetPageAddress(uintptr(chunkStartOffset), write)
-	if err != nil {
-		return 0, 0, err
-	}
-	return chunkStartAddress, c.calculateChunkSize(chunkStartOffset), nil
-}
-
-// GetPageAddress returns the memory address for the given byte offset into
-// the store.
-//
-// This memory address can be used to handle a page fault with userfaultfd.
-//
-// If reading a lazily mmapped chunk, this will cause the chunk to be mmapped
-// so that the returned address is valid.
-//
-// If write is set to true, and the page is not dirty, then a copy is first
-// performed so that the returned chunk can be written to without modifying
-// readonly chunks.
-func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
+// AcquireUFFDChunk pins a source mapping until release is called after the copy.
+// Immutable chunks share mappings by digest; dirty chunks remain private.
+func (c *COWStore) AcquireUFFDChunk(offset uintptr) (addr uintptr, size int64, release func(), err error) {
 	startTime := time.Now()
 	defer func() {
 		c.updateUsageSummary("GetPageAddress", startTime)
 	}()
 
-	chunkStartOffset := c.ChunkStartOffset(int64(offset))
-	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
-
-	c.eagerFetchNextChunks(chunkStartOffset)
-
-	if write {
-		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
-			return 0, status.WrapError(err, "copy chunk")
+	start := c.ChunkStartOffset(int64(offset))
+	c.eagerFetchNextChunks(start)
+	unlock := c.chunkLock.RLock(start)
+	c.storeLock.RLock()
+	m := c.chunks[start]
+	c.storeLock.RUnlock()
+	size = c.calculateChunkSize(start)
+	if m == nil {
+		var once sync.Once
+		return memoryAddress(c.zeroBuf), size, func() { once.Do(unlock) }, nil
+	}
+	size = min(size, m.sizeBytes)
+	m.mu.Lock()
+	if m.closed {
+		err = status.InternalError("store is closed")
+	} else if *uffdMappingCacheBytes > 0 && !m.dirty && m.shareable && m.lazyDigest != nil {
+		// Resolve access using this store's context even when the shared mapping exists.
+		err = m.fetch(m.path())
+		if err == nil {
+			addr, release, err = uffdMappings.acquire(digest.NewKey(m.lazyDigest), m.path(), m.sizeBytes)
+		}
+	} else {
+		err = m.initMap()
+		if err == nil {
+			m.uffdPins++
+			addr = memoryAddress(m.data)
+			release = func() {
+				m.mu.Lock()
+				m.uffdPins--
+				var unmapErr error
+				if m.uffdPins == 0 {
+					var unmapped bool
+					unmapped, unmapErr = m.unmap()
+					if unmapped && m.lru != nil {
+						m.lru.Remove(m)
+					}
+				}
+				m.mu.Unlock()
+				if unmapErr != nil {
+					log.Warningf("unmap UFFD source: %s", unmapErr)
+				}
+			}
 		}
 	}
-
-	chunkUnlockFn := c.chunkLock.RLock(chunkStartOffset)
-	defer chunkUnlockFn()
-
-	c.storeLock.RLock()
-	chunk := c.chunks[chunkStartOffset]
-	c.storeLock.RUnlock()
-	if chunk == nil {
-		// No data (yet); map into our static zero-filled buf. Note that this
-		// can only happen for reads, since for writes we call copyChunkIfNotDirty above.
-		return memoryAddress(c.zeroBuf) + chunkRelativeAddress, nil
-	}
-
-	// Non-empty chunk; initialize the lazy mmap (if applicable) and return
-	// the offset relative to the memory start address.
-	start, err := chunk.StartAddress()
+	m.mu.Unlock()
 	if err != nil {
-		return 0, status.WrapError(err, "mmap start adddress")
+		unlock()
+		return 0, 0, nil, err
 	}
-	return start + chunkRelativeAddress, nil
+	var once sync.Once
+	unpin := release
+	return addr, size, func() {
+		once.Do(func() {
+			unpin()
+			unlock()
+		})
+	}, nil
+}
+
+type uffdMapping struct {
+	key  digest.Key
+	data []byte
+	refs int
+	idle *list.Element
+}
+
+// Only idle mappings are eligible for eviction.
+type uffdMappingCache struct {
+	sync.Mutex
+	entries map[digest.Key]*uffdMapping
+	idle    list.List
+	bytes   int64
+}
+
+var uffdMappings = uffdMappingCache{entries: make(map[digest.Key]*uffdMapping)}
+
+func (c *uffdMappingCache) acquire(key digest.Key, path string, size int64) (uintptr, func(), error) {
+	c.Lock()
+	if m := c.entries[key]; m != nil {
+		addr, release, evicted := c.pinLocked(m)
+		c.Unlock()
+		metrics.COWSnapshotUFFDMappingCacheRequests.With(prometheus.Labels{
+			metrics.CacheHitMissStatus: metrics.HitStatusLabel,
+		}).Inc()
+		unmapUFFDSlices(evicted)
+		return addr, release, nil
+	}
+	c.Unlock()
+
+	metrics.COWSnapshotUFFDMappingCacheRequests.With(prometheus.Labels{
+		metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+	}).Inc()
+
+	data, err := mmapReadOnly(path, size)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	c.Lock()
+	m := c.entries[key]
+	var duplicate []byte
+	if m == nil {
+		m = &uffdMapping{key: key, data: data}
+		c.entries[key] = m
+		c.bytes += size
+		updateMmappedBytesMetric(size, snaputil.MemoryFileName)
+	} else {
+		duplicate = data
+	}
+	addr, release, evicted := c.pinLocked(m)
+	c.Unlock()
+
+	if duplicate != nil {
+		evicted = append(evicted, duplicate)
+	}
+	unmapUFFDSlices(evicted)
+	return addr, release, nil
+}
+
+func (c *uffdMappingCache) pinLocked(m *uffdMapping) (uintptr, func(), [][]byte) {
+	if m.idle != nil {
+		c.idle.Remove(m.idle)
+		m.idle = nil
+	}
+	m.refs++
+	evicted := c.trimLocked()
+	var once sync.Once
+	return memoryAddress(m.data), func() {
+		once.Do(func() {
+			c.Lock()
+			m.refs--
+			if m.refs == 0 {
+				m.idle = c.idle.PushFront(m)
+			}
+			evicted := c.trimLocked()
+			c.Unlock()
+			unmapUFFDSlices(evicted)
+		})
+	}, evicted
+}
+
+func (c *uffdMappingCache) trimLocked() [][]byte {
+	var evicted [][]byte
+	for c.bytes > *uffdMappingCacheBytes && c.idle.Len() > 0 {
+		e := c.idle.Back()
+		m := e.Value.(*uffdMapping)
+		c.idle.Remove(e)
+		delete(c.entries, m.key)
+		size := int64(len(m.data))
+		c.bytes -= size
+		updateMmappedBytesMetric(-size, snaputil.MemoryFileName)
+		metrics.COWSnapshotUFFDMappingCacheEvictions.Inc()
+		evicted = append(evicted, m.data)
+	}
+	return evicted
+}
+
+func mmapReadOnly(path string, size int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() != size {
+		return nil, status.InternalErrorf("snapshot chunk size: got %d, want %d", info.Size(), size)
+	}
+	return syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+}
+
+func unmapUFFDSlices(slices [][]byte) {
+	for _, data := range slices {
+		if err := syscall.Munmap(data); err != nil {
+			log.Warningf("unmap shared UFFD source: %s", err)
+		}
+	}
+}
+
+func UFFDMappingCacheBytesForTest() int64 {
+	uffdMappings.Lock()
+	defer uffdMappings.Unlock()
+	return uffdMappings.bytes
+}
+
+func ResetUFFDMappingCacheForTest() {
+	uffdMappings.Lock()
+	var evicted [][]byte
+	for uffdMappings.idle.Len() > 0 {
+		e := uffdMappings.idle.Back()
+		m := e.Value.(*uffdMapping)
+		uffdMappings.idle.Remove(e)
+		delete(uffdMappings.entries, m.key)
+		size := int64(len(m.data))
+		uffdMappings.bytes -= size
+		updateMmappedBytesMetric(-size, snaputil.MemoryFileName)
+		evicted = append(evicted, m.data)
+	}
+	uffdMappings.Unlock()
+	unmapUFFDSlices(evicted)
 }
 
 // SortedChunks returns all chunks sorted by offset.
@@ -697,10 +850,9 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 	defer s.storeLock.Unlock()
 
 	for _, chunk := range s.chunks {
-		if err := chunk.Unmap(); err != nil {
+		if err := chunk.setLRU(lru); err != nil {
 			log.CtxWarningf(s.ctx, "failed to unmap chunk at offset %d: %s", chunk.Offset, err)
 		}
-		chunk.lru = lru
 	}
 	s.mmapLRU = lru
 	return nil
@@ -1138,6 +1290,8 @@ type Mmap struct {
 	source     snaputil.ChunkSource
 	fetched    bool
 	closed     bool
+	shareable  bool
+	uffdPins   int
 	lazyDigest *repb.Digest
 }
 
@@ -1160,6 +1314,7 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 		sizeBytes:          digest.GetSizeBytes(),
 		data:               nil,
 		fetched:            false,
+		shareable:          true,
 		source:             snaputil.ChunkSourceUnmapped,
 		dataDir:            dataDir,
 		lazyDigest:         digest,
@@ -1379,6 +1534,7 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
+	m.shareable = false
 	m.lazyDigest = nil
 	copy(m.data[int(off):int(off)+len(p)], p)
 	return len(p), nil
@@ -1399,6 +1555,10 @@ func (m *Mmap) Unmap() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.uffdPins > 0 {
+		return status.FailedPreconditionErrorf("cannot unmap chunk at offset %d while %d UFFD copies are active", m.Offset, m.uffdPins)
+	}
+
 	unmapped, err := m.unmap()
 	if err != nil {
 		return err
@@ -1410,6 +1570,21 @@ func (m *Mmap) Unmap() error {
 		m.lru.Remove(m)
 	}
 	return nil
+}
+
+func (m *Mmap) setLRU(lru *MmapLRU) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.lru != nil {
+		m.lru.Remove(m)
+	}
+	m.lru = lru
+	if m.uffdPins > 0 {
+		return status.FailedPreconditionErrorf("cannot unmap chunk at offset %d while %d UFFD copies are active", m.Offset, m.uffdPins)
+	}
+	_, err := m.unmap()
+	return err
 }
 
 func (m *Mmap) disableLRUEviction() {
@@ -1633,9 +1808,9 @@ func (ml *MmapLRU) processEviction(m *Mmap) {
 	lruContains := ml.lru.Contains(ml.key(m))
 	ml.mu.Unlock()
 
-	if lruContains {
-		// m was re-mapped by another goroutine before we could process this
-		// eviction - don't unmap.
+	if lruContains || m.uffdPins > 0 {
+		// m was re-mapped by another goroutine or is pinned for a UFFD copy
+		// before we could process this eviction - don't unmap.
 		return
 	}
 
