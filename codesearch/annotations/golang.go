@@ -42,7 +42,11 @@ func extractGo(ctx context.Context, filename string, content []byte, rctx *RepoC
 	}
 	defer tree.Close()
 
-	ann := &Result{Symbols: goSymbols(tree, content)}
+	syms, err := goSymbols(tree, content)
+	if err != nil {
+		return nil, err
+	}
+	ann := &Result{Symbols: syms}
 
 	// Import-identity terms additionally need a module path to resolve
 	// against, and a path within the module.
@@ -105,7 +109,7 @@ func extractGo(ctx context.Context, filename string, content []byte, rctx *RepoC
 // goSymbolQuery captures declaration names: functions, methods, types
 // (including aliases), and package-level consts/vars. Const/var captures are
 // anchored to source_file so function-local declarations are excluded.
-var goSymbolQuery = mustCompileQuery(`
+var goSymbolQuery = lazyQuery(`
 	(function_declaration name: (identifier) @sym)
 	(method_declaration name: (field_identifier) @sym)
 	(type_spec name: (type_identifier) @sym)
@@ -116,8 +120,12 @@ var goSymbolQuery = mustCompileQuery(`
 
 // goSymbols returns the declared names in the parsed file, in source order,
 // lowercased to match the keyword tokenizer's normalization.
-func goSymbols(tree *sitter.Tree, content []byte) []string {
-	return captureAll(goSymbolQuery, tree, content)
+func goSymbols(tree *sitter.Tree, content []byte) ([]string, error) {
+	q, err := goSymbolQuery()
+	if err != nil {
+		return nil, err
+	}
+	return captureAll(q, tree, content), nil
 }
 
 // goImportPaths returns the unquoted import paths of the parsed file, in
@@ -326,7 +334,7 @@ func decorateGo(ctx context.Context, content []byte, opts NavOptions) ([]Ref, er
 // name token, for the span) and @decl (the enclosing declaration node, for
 // kind/signature/doc). Const/var captures are anchored to source_file so
 // function-local declarations are excluded.
-var goDefSpecQuery = mustCompileQuery(`
+var goDefSpecQuery = lazyQuery(`
 	(function_declaration name: (identifier) @sym) @decl
 	(method_declaration name: (field_identifier) @sym) @decl
 	(type_spec name: (type_identifier) @sym) @decl
@@ -339,6 +347,10 @@ var goDefSpecQuery = mustCompileQuery(`
 // original-case name, the span of the name token, and documentation metadata
 // (kind, one-line signature, leading doc comment).
 func goDefinitions(ctx context.Context, content []byte) ([]Def, error) {
+	q, err := goDefSpecQuery()
+	if err != nil {
+		return nil, err
+	}
 	parser := sitter.NewParser()
 	defer parser.Close()
 	parser.SetLanguage(golang.GetLanguage())
@@ -350,7 +362,7 @@ func goDefinitions(ctx context.Context, content []byte) ([]Def, error) {
 
 	qc := sitter.NewQueryCursor()
 	defer qc.Close()
-	qc.Exec(goDefSpecQuery, tree.RootNode())
+	qc.Exec(q, tree.RootNode())
 
 	var defs []Def
 	for {
@@ -360,7 +372,7 @@ func goDefinitions(ctx context.Context, content []byte) ([]Def, error) {
 		}
 		var nameNode, declNode *sitter.Node
 		for _, c := range m.Captures {
-			switch goDefSpecQuery.CaptureNameForId(c.Index) {
+			switch q.CaptureNameForId(c.Index) {
 			case "sym":
 				nameNode = c.Node
 			case "decl":

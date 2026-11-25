@@ -69,18 +69,18 @@ const tsImportPattern = `
 `
 
 var (
-	tsxSymbolQuery = mustCompileQuery(tsSymbolQueryTS, tsx.GetLanguage())
-	tsSymbolQuery  = mustCompileQuery(tsSymbolQueryTS, typescript.GetLanguage())
-	jsSymbolQuery  = mustCompileQuery(tsSymbolQueryJS, javascript.GetLanguage())
+	tsxSymbolQuery = lazyQuery(tsSymbolQueryTS, tsx.GetLanguage())
+	tsSymbolQuery  = lazyQuery(tsSymbolQueryTS, typescript.GetLanguage())
+	jsSymbolQuery  = lazyQuery(tsSymbolQueryJS, javascript.GetLanguage())
 
-	tsxImportQuery = mustCompileQuery(tsImportPattern, tsx.GetLanguage())
-	tsImportQuery  = mustCompileQuery(tsImportPattern, typescript.GetLanguage())
-	jsImportQuery  = mustCompileQuery(tsImportPattern, javascript.GetLanguage())
+	tsxImportQuery = lazyQuery(tsImportPattern, tsx.GetLanguage())
+	tsImportQuery  = lazyQuery(tsImportPattern, typescript.GetLanguage())
+	jsImportQuery  = lazyQuery(tsImportPattern, javascript.GetLanguage())
 )
 
 // tsGrammar returns the tree-sitter language and the matching symbol/import
 // queries for the enry language name.
-func tsGrammar(lang string) (*sitter.Language, *sitter.Query, *sitter.Query) {
+func tsGrammar(lang string) (*sitter.Language, lazyQueryFunc, lazyQueryFunc) {
 	switch lang {
 	case "tsx":
 		return tsx.GetLanguage(), tsxSymbolQuery, tsxImportQuery
@@ -190,7 +190,15 @@ func tsImportSpecs(q *sitter.Query, tree *sitter.Tree, content []byte) []string 
 }
 
 func extractTypeScript(ctx context.Context, lang, filename string, content []byte, rctx *RepoContext) (*Result, error) {
-	grammar, symbolQuery, importQuery := tsGrammar(lang)
+	grammar, lazySymbolQuery, lazyImportQuery := tsGrammar(lang)
+	symbolQuery, err := lazySymbolQuery()
+	if err != nil {
+		return nil, err
+	}
+	importQuery, err := lazyImportQuery()
+	if err != nil {
+		return nil, err
+	}
 
 	parser := sitter.NewParser()
 	// Close the parser only after the tree: the binding keeps the parser
@@ -290,13 +298,13 @@ const tsDefPatternTS = tsDefPatternCommon + `
 `
 
 var (
-	tsxDefQuery = mustCompileQuery(tsDefPatternTS, tsx.GetLanguage())
-	tsDefQuery  = mustCompileQuery(tsDefPatternTS, typescript.GetLanguage())
-	jsDefQuery  = mustCompileQuery(tsDefPatternJS, javascript.GetLanguage())
+	tsxDefQuery = lazyQuery(tsDefPatternTS, tsx.GetLanguage())
+	tsDefQuery  = lazyQuery(tsDefPatternTS, typescript.GetLanguage())
+	jsDefQuery  = lazyQuery(tsDefPatternJS, javascript.GetLanguage())
 )
 
 // tsNavGrammar returns the grammar and definition query for the enry language.
-func tsNavGrammar(lang string) (*sitter.Language, *sitter.Query) {
+func tsNavGrammar(lang string) (*sitter.Language, lazyQueryFunc) {
 	switch lang {
 	case "tsx":
 		return tsx.GetLanguage(), tsxDefQuery
@@ -476,7 +484,11 @@ func decorateTS(ctx context.Context, lang string, content []byte, opts NavOption
 // tsDefinitions returns the top-level declarations in a TS/JS file, each with
 // its name, name-token span, and documentation metadata.
 func tsDefinitions(ctx context.Context, lang string, content []byte) ([]Def, error) {
-	grammar, defQuery := tsNavGrammar(lang)
+	grammar, lazyDefQuery := tsNavGrammar(lang)
+	defQuery, err := lazyDefQuery()
+	if err != nil {
+		return nil, err
+	}
 	parser := sitter.NewParser()
 	defer parser.Close()
 	parser.SetLanguage(grammar)
