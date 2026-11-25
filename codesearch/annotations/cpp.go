@@ -23,7 +23,7 @@ import (
 // cSymbolQuery captures C declaration names. Function names are nested inside
 // a function_declarator's declarator; type names hang off the various
 // specifiers; typedefs name a type_identifier declarator.
-var cSymbolQuery = mustCompileQuery(`
+var cSymbolQuery = lazyQuery(`
 	(function_definition declarator: (function_declarator declarator: (identifier) @sym))
 	(struct_specifier name: (type_identifier) @sym)
 	(union_specifier name: (type_identifier) @sym)
@@ -34,7 +34,7 @@ var cSymbolQuery = mustCompileQuery(`
 // cppSymbolQuery is the C query plus C++-only node types: class and namespace
 // declarations, methods (field_identifier) and qualified out-of-line
 // definitions (Class::method).
-var cppSymbolQuery = mustCompileQuery(`
+var cppSymbolQuery = lazyQuery(`
 	(function_definition declarator: (function_declarator declarator: (identifier) @sym))
 	(function_definition declarator: (function_declarator declarator: (field_identifier) @sym))
 	(function_definition declarator: (function_declarator declarator: (qualified_identifier name: (identifier) @sym)))
@@ -56,8 +56,8 @@ const cIncludePattern = `
 `
 
 var (
-	cIncludeQuery   = mustCompileQuery(cIncludePattern, c.GetLanguage())
-	cppIncludeQuery = mustCompileQuery(cIncludePattern, cpp.GetLanguage())
+	cIncludeQuery   = lazyQuery(cIncludePattern, c.GetLanguage())
+	cppIncludeQuery = lazyQuery(cIncludePattern, cpp.GetLanguage())
 )
 
 // cTerm formats an include path (or basename) as an identity term.
@@ -111,7 +111,7 @@ func extractCpp(ctx context.Context, lang, filename string, content []byte, rctx
 	}
 	defer tree.Close()
 
-	ann := &Result{Symbols: captureAll(symQuery, tree, content)}
+	ann := &Result{Symbols: captureAll(symQuery(), tree, content)}
 
 	// Identity (imports/import_id) is only meaningful for files inside the
 	// repo; symbols are extracted regardless.
@@ -128,7 +128,7 @@ func extractCpp(ctx context.Context, lang, filename string, content []byte, rctx
 
 	seen := make(map[string]struct{})
 	var imports []string
-	for _, raw := range captureAllRaw(incQuery, tree, content) {
+	for _, raw := range captureAllRaw(incQuery(), tree, content) {
 		spec := stripIncludeQuotes(raw)
 		if spec == "" {
 			continue

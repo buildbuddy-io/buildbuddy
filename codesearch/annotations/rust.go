@@ -22,7 +22,7 @@ import (
 // (struct/enum/trait/union/type-alias), modules, consts/statics, and
 // macro definitions. Type-bearing items name a (type_identifier); the rest
 // name an (identifier).
-var rustSymbolQuery = mustCompileQuery(`
+var rustSymbolQuery = lazyQuery(`
 	(function_item name: (identifier) @sym)
 	(struct_item name: (type_identifier) @sym)
 	(enum_item name: (type_identifier) @sym)
@@ -251,7 +251,7 @@ func extractRust(ctx context.Context, filename string, content []byte, rctx *Rep
 	}
 	defer tree.Close()
 
-	ann := &Result{Symbols: captureAll(rustSymbolQuery, tree, content)}
+	ann := &Result{Symbols: captureAll(rustSymbolQuery(), tree, content)}
 
 	// Identity (imports/import_id) is only meaningful for files inside the
 	// repo; symbols are extracted regardless.

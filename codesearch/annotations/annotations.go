@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
@@ -154,14 +155,15 @@ func dropWhitespaceTerms(terms []string) []string {
 	return kept
 }
 
-// mustCompileQuery compiles a tree-sitter query at package init; the pattern
-// is a compile-time constant, so failure is a programming error.
-func mustCompileQuery(pattern string, lang *sitter.Language) *sitter.Query {
-	q, err := sitter.NewQuery([]byte(pattern), lang)
-	if err != nil {
-		panic(fmt.Sprintf("compiling tree-sitter query: %s", err))
-	}
-	return q
+// lazyQuery compiles a constant query on first use. Invalid patterns panic.
+func lazyQuery(pattern string, lang *sitter.Language) func() *sitter.Query {
+	return sync.OnceValue(func() *sitter.Query {
+		q, err := sitter.NewQuery([]byte(pattern), lang)
+		if err != nil {
+			panic(fmt.Sprintf("compiling tree-sitter query: %s", err))
+		}
+		return q
+	})
 }
 
 // captureAllRaw returns the text of every capture of q in the parsed tree,

@@ -105,7 +105,7 @@ func extractGo(ctx context.Context, filename string, content []byte, rctx *RepoC
 // goSymbolQuery captures declaration names: functions, methods, types
 // (including aliases), and package-level consts/vars. Const/var captures are
 // anchored to source_file so function-local declarations are excluded.
-var goSymbolQuery = mustCompileQuery(`
+var goSymbolQuery = lazyQuery(`
 	(function_declaration name: (identifier) @sym)
 	(method_declaration name: (field_identifier) @sym)
 	(type_spec name: (type_identifier) @sym)
@@ -117,7 +117,7 @@ var goSymbolQuery = mustCompileQuery(`
 // goSymbols returns the declared names in the parsed file, in source order,
 // lowercased to match the keyword tokenizer's normalization.
 func goSymbols(tree *sitter.Tree, content []byte) []string {
-	return captureAll(goSymbolQuery, tree, content)
+	return captureAll(goSymbolQuery(), tree, content)
 }
 
 // goImportPaths returns the unquoted import paths of the parsed file, in
@@ -326,7 +326,7 @@ func decorateGo(ctx context.Context, content []byte, opts NavOptions) ([]Ref, er
 // name token, for the span) and @decl (the enclosing declaration node, for
 // kind/signature/doc). Const/var captures are anchored to source_file so
 // function-local declarations are excluded.
-var goDefSpecQuery = mustCompileQuery(`
+var goDefSpecQuery = lazyQuery(`
 	(function_declaration name: (identifier) @sym) @decl
 	(method_declaration name: (field_identifier) @sym) @decl
 	(type_spec name: (type_identifier) @sym) @decl
@@ -350,7 +350,7 @@ func goDefinitions(ctx context.Context, content []byte) ([]Def, error) {
 
 	qc := sitter.NewQueryCursor()
 	defer qc.Close()
-	qc.Exec(goDefSpecQuery, tree.RootNode())
+	qc.Exec(goDefSpecQuery(), tree.RootNode())
 
 	var defs []Def
 	for {
@@ -360,7 +360,7 @@ func goDefinitions(ctx context.Context, content []byte) ([]Def, error) {
 		}
 		var nameNode, declNode *sitter.Node
 		for _, c := range m.Captures {
-			switch goDefSpecQuery.CaptureNameForId(c.Index) {
+			switch goDefSpecQuery().CaptureNameForId(c.Index) {
 			case "sym":
 				nameNode = c.Node
 			case "decl":
