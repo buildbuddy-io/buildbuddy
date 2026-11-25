@@ -5125,7 +5125,13 @@ func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 		locals[0] = failingGetCache{locals[0]}
 		dcs := newCluster(t, locals, noConfig)
 		rn, buf := newPointer(t)
-		require.NoError(t, locals[2].Set(ctx, rn, buf))
+		// Peers after self are in hash-ring order, not index order.
+		next := dcs[0].readPeers(rn).PreferredPeers[1]
+		for i, d := range dcs {
+			if d.opts.ListenAddr == next {
+				require.NoError(t, locals[i].Set(ctx, rn, buf))
+			}
+		}
 		got, err := dcs[0].Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, buf, got)
@@ -5139,10 +5145,12 @@ func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 		// The caller is alone in its zone, so it is promoted ahead of the
 		// replicas without being one.
 		dc.zone = "A"
+		dc.heartbeatMu.Lock()
 		for _, node := range dcs[1:] {
 			dc.peerZones[node.opts.ListenAddr] = "B"
 		}
 		dc.peerZones[dc.opts.ListenAddr] = "A"
+		dc.heartbeatMu.Unlock()
 		var rn *rspb.ResourceName
 		var buf []byte
 		for {
