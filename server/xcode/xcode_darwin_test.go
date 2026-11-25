@@ -28,6 +28,10 @@ func TestXcodeDiscoverySkipsUnusablePaths(t *testing.T) {
 
 	xl := &xcodeLocator{versions: versionMap([]string{xcode, incomplete}, developerDir)}
 	require.Equal(t, []string{"26.1.0.17B55"}, xl.Versions())
+	dev, sdkRoot, err := xl.PathsForVersionAndSDK("26.1", "")
+	require.NoError(t, err)
+	require.Equal(t, developerDir, dev)
+	require.Empty(t, sdkRoot)
 	for _, sdk := range []string{"MacOSX", "MacOSX26.1"} {
 		dev, sdkRoot, err := xl.PathsForVersionAndSDK("26", sdk)
 		require.NoError(t, err)

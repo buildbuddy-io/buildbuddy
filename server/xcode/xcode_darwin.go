@@ -100,6 +100,7 @@ func (x *xcodeLocator) Versions() []string {
 
 // Finds the Xcode that matches the given Xcode version.
 // Returns the developer directory for that Xcode and the SDK root for the given SDK.
+// An empty SDK selector returns only the developer directory.
 func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error) {
 	if xcodeVersion == "" {
 		xcodeVersion = defaultXcodeVersion
@@ -114,6 +115,9 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 			err = status.FailedPreconditionErrorf("Xcode version %s not installed on remote executor. Available Xcode versions are %s", xcodeVersion, versionsString(x.versions))
 		}
 		return "", "", err
+	}
+	if sdk == "" {
+		return xv.developerDirPath, "", nil
 	}
 	sdkPath, ok := xv.sdks[sdk]
 	if !ok {

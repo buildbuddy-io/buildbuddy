@@ -1556,6 +1556,7 @@ type XcodeLocator interface {
 
 	// Finds the Xcode matching the given Xcode version selector. Returns the
 	// developer directory for that Xcode and the SDK root for the given SDK.
+	// An empty SDK selector returns only the developer directory.
 	PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error)
 }
 
