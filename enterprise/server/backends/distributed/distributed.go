@@ -1197,6 +1197,22 @@ func (c *Cache) backfillByReference(ctx context.Context) bool {
 	return fp.Boolean(ctx, "distributed_cache.backfill_gcs_references", true)
 }
 
+// treeCachePointerNearestOnly reports whether a read of r should stop after
+// the nearest replica reports NotFound. Pointers are written to all replicas
+// and a false miss only costs a normal tree walk, so the extra lookups aren't
+// worth it. During a migration reads deliberately fall through new and old
+// owners, so keep the full fallback.
+func (c *Cache) treeCachePointerNearestOnly(ctx context.Context, r *rspb.ResourceName) bool {
+	if !isTreeCacheResource(r) || len(c.opts.NewNodes) > 0 {
+		return false
+	}
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, "distributed_cache.tree_cache_pointer_nearest_replica_only", false)
+}
+
 type backfillOrder struct {
 	r      *rspb.ResourceName
 	source string
@@ -1318,6 +1334,7 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metricsLabel string) ([]byte, *interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	ps := c.readPeers(r)
+	nearestOnly := c.treeCachePointerNearestOnly(ctx, r)
 
 	lookups := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
@@ -1331,6 +1348,9 @@ func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metri
 		}
 		if status.IsNotFoundError(err) {
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(r), peer)
+			if nearestOnly {
+				break
+			}
 			continue
 		}
 		c.log.CtxDebugf(ctx, "GetWithMetadata(%q) lookup failed on peer %s: (err: %v)", distributed_client.ResourceIsolationString(r), peer, err)

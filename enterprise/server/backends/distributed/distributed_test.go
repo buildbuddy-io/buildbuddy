@@ -5020,3 +5020,86 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 	require.Zero(t, caches[nonReplica].lookups[rn.GetDigest().GetHash()])
 	caches[nonReplica].mu.Unlock()
 }
+
+func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	// The flag provider must be installed before any servers start.
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// Builds a 3 node cluster (R=3) where reads from node 0 try node 0 first.
+	// Returns node 0 and the base cache of the last node.
+	newCluster := func(t *testing.T, configure func(*Options)) (*Cache, interfaces.Cache) {
+		var peers []string
+		for range 3 {
+			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+		}
+		baseConfig := Options{
+			ReplicationFactor:  3,
+			Nodes:              slices.Clone(peers),
+			DisableLocalLookup: true,
+		}
+		configure(&baseConfig)
+		var dcs []*Cache
+		var locals []interfaces.Cache
+		for _, peer := range peers {
+			local := newMemoryCache(t, 1000000)
+			config := baseConfig
+			config.ListenAddr = peer
+			dcs = append(dcs, startNewDCache(t, env, config, local))
+			locals = append(locals, local)
+		}
+		for _, peer := range peers {
+			waitForReady(t, peer)
+		}
+		return dcs[0], locals[2]
+	}
+	noConfig := func(*Options) {}
+	flagName := "distributed_cache.tree_cache_pointer_nearest_replica_only"
+	// Reads a tree cache pointer that only the farthest replica holds.
+	pointerLookups := func(t *testing.T, flagOn bool, configure func(*Options)) (bool, []testmetrics.HistogramValues) {
+		setReferenceExperiments(t, map[string]bool{flagName: flagOn})
+		dc, last := newCluster(t, configure)
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		rn.InstanceName = digest.TreeCacheRemoteInstanceName
+		require.NoError(t, last.Set(ctx, rn, buf))
+		metrics.DistributedCachePeerLookups.Reset()
+		_, err := dc.Get(ctx, rn)
+		require.True(t, err == nil || status.IsNotFoundError(err), "%v", err)
+		return err == nil, testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	}
+
+	t.Run("flag on misses with one peer call when only a farther replica has the pointer", func(t *testing.T) {
+		found, lookups := pointerLookups(t, true, noConfig)
+		require.False(t, found)
+		require.Equal(t, []testmetrics.HistogramValues{{
+			Labels:  map[string]string{"op": "Get", metrics.CacheHitMissStatus: metrics.MissStatusLabel},
+			Buckets: map[float64]uint64{1: 1},
+		}}, lookups)
+	})
+
+	t.Run("flag off finds the pointer on a farther replica", func(t *testing.T) {
+		found, _ := pointerLookups(t, false, noConfig)
+		require.True(t, found)
+	})
+
+	t.Run("flag on keeps full fallback during migration", func(t *testing.T) {
+		found, _ := pointerLookups(t, true, func(o *Options) { o.NewNodes = slices.Clone(o.Nodes) })
+		require.True(t, found)
+	})
+
+	t.Run("flag on does not affect non tree cache reads", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{flagName: true})
+		dc, last := newCluster(t, noConfig)
+		casRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		acRN, _ := testdigest.RandomACResourceBuf(t, 100)
+		for _, rn := range []*rspb.ResourceName{casRN, acRN} {
+			buf := []byte("data")
+			require.NoError(t, last.Set(ctx, rn, buf))
+			got, err := dc.Get(ctx, rn)
+			require.NoError(t, err)
+			require.Equal(t, buf, got)
+		}
+	})
+}
