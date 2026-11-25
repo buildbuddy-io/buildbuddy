@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheopts"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -5034,9 +5035,8 @@ func (failingGetCache) GetWithMetadata(context.Context, *rspb.ResourceName) ([]b
 	return nil, nil, status.InternalError("injected read failure")
 }
 
-func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
+func TestMaxReadReplicas(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
-	flagName := "cache.distributed_cache.tree_cache_pointer_nearest_replica_only"
 
 	// Starts a cluster (R=3) with one node per cache in locals. Reads from node
 	// 0 try node 0 first, then the other replicas.
@@ -5075,21 +5075,26 @@ func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 		rn.InstanceName = digest.TreeCacheRemoteInstanceName
 		return rn, buf
 	}
-	// Reads a tree cache pointer that only the farthest replica holds.
-	pointerLookups := func(t *testing.T, flagOn bool, configure func(*Options)) (bool, []testmetrics.HistogramValues) {
-		flags.Set(t, flagName, flagOn)
+	// Reads a resource that only the last replica in read order holds.
+	farthestReplicaLookups := func(t *testing.T, limit int, configure func(*Options)) (bool, []testmetrics.HistogramValues) {
 		locals := memoryCaches(t, 3)
 		dcs := newCluster(t, locals, configure)
 		rn, buf := newPointer(t)
-		require.NoError(t, locals[2].Set(ctx, rn, buf))
+		// Peers after self are in hash-ring order, not index order.
+		last := dcs[0].readPeers(rn).PreferredPeers[2]
+		for i, d := range dcs {
+			if d.opts.ListenAddr == last {
+				require.NoError(t, locals[i].Set(ctx, rn, buf))
+			}
+		}
 		metrics.DistributedCachePeerLookups.Reset()
-		_, err := dcs[0].Get(ctx, rn)
+		_, err := dcs[0].Get(cacheopts.WithMaxReadReplicas(ctx, limit), rn)
 		require.True(t, err == nil || status.IsNotFoundError(err), "%v", err)
 		return err == nil, testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
 	}
 
-	t.Run("flag on misses with one peer call when only a farther replica has the pointer", func(t *testing.T) {
-		found, lookups := pointerLookups(t, true, noConfig)
+	t.Run("limit 1 misses with one peer call when only a farther replica has the item", func(t *testing.T) {
+		found, lookups := farthestReplicaLookups(t, 1, noConfig)
 		require.False(t, found)
 		require.Equal(t, []testmetrics.HistogramValues{{
 			Labels:  map[string]string{"op": "Get", metrics.CacheHitMissStatus: metrics.MissStatusLabel},
@@ -5097,30 +5102,33 @@ func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 		}}, lookups)
 	})
 
-	t.Run("flag off finds the pointer on a farther replica", func(t *testing.T) {
-		found, _ := pointerLookups(t, false, noConfig)
+	t.Run("no limit finds the item on a farther replica", func(t *testing.T) {
+		found, _ := farthestReplicaLookups(t, 0, noConfig)
 		require.True(t, found)
+	})
+
+	t.Run("limit 2 is not enough to reach the third replica", func(t *testing.T) {
+		found, _ := farthestReplicaLookups(t, 2, noConfig)
+		require.False(t, found)
 	})
 
 	// Only exercises the NewNodes gate; reads during a migration also reorder peers.
-	t.Run("flag on keeps full fallback during migration", func(t *testing.T) {
-		found, _ := pointerLookups(t, true, func(o *Options) { o.NewNodes = slices.Clone(o.Nodes) })
+	t.Run("limit is ignored during migration", func(t *testing.T) {
+		found, _ := farthestReplicaLookups(t, 1, func(o *Options) { o.NewNodes = slices.Clone(o.Nodes) })
 		require.True(t, found)
 	})
 
-	t.Run("flag on finds a pointer on the nearest replica", func(t *testing.T) {
-		flags.Set(t, flagName, true)
+	t.Run("limit 1 finds the item on the nearest replica", func(t *testing.T) {
 		locals := memoryCaches(t, 3)
 		dcs := newCluster(t, locals, noConfig)
 		rn, buf := newPointer(t)
 		require.NoError(t, locals[0].Set(ctx, rn, buf))
-		got, err := dcs[0].Get(ctx, rn)
+		got, err := dcs[0].Get(cacheopts.WithMaxReadReplicas(ctx, 1), rn)
 		require.NoError(t, err)
 		require.Equal(t, buf, got)
 	})
 
-	t.Run("flag on falls through when the nearest replica errors", func(t *testing.T) {
-		flags.Set(t, flagName, true)
+	t.Run("limit 1 falls through when the nearest replica errors", func(t *testing.T) {
 		locals := memoryCaches(t, 3)
 		locals[0] = failingGetCache{locals[0]}
 		dcs := newCluster(t, locals, noConfig)
@@ -5132,13 +5140,12 @@ func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 				require.NoError(t, locals[i].Set(ctx, rn, buf))
 			}
 		}
-		got, err := dcs[0].Get(ctx, rn)
+		got, err := dcs[0].Get(cacheopts.WithMaxReadReplicas(ctx, 1), rn)
 		require.NoError(t, err)
 		require.Equal(t, buf, got)
 	})
 
-	t.Run("flag on with read-through asks a canonical replica after a same-zone non-replica misses", func(t *testing.T) {
-		flags.Set(t, flagName, true)
+	t.Run("limit 1 with read-through asks a canonical replica after a same-zone non-replica misses", func(t *testing.T) {
 		locals := memoryCaches(t, 4)
 		dcs := newCluster(t, locals, func(o *Options) { o.ReadThroughLocalCache = true })
 		dc := dcs[0]
@@ -5171,23 +5178,26 @@ func TestTreeCachePointerNearestReplicaOnly(t *testing.T) {
 			}
 		}
 		require.NoError(t, locals[holder].Set(ctx, rn, buf))
-		got, err := dc.Get(ctx, rn)
+		got, err := dc.Get(cacheopts.WithMaxReadReplicas(ctx, 1), rn)
 		require.NoError(t, err)
 		require.Equal(t, buf, got)
 	})
 
-	t.Run("flag on does not affect non tree cache reads", func(t *testing.T) {
-		flags.Set(t, flagName, true)
+	t.Run("limit applies to any resource type", func(t *testing.T) {
 		locals := memoryCaches(t, 3)
 		dcs := newCluster(t, locals, noConfig)
 		casRN, _ := testdigest.RandomCASResourceBuf(t, 100)
 		acRN, _ := testdigest.RandomACResourceBuf(t, 100)
 		for _, rn := range []*rspb.ResourceName{casRN, acRN} {
 			buf := []byte("data")
-			require.NoError(t, locals[2].Set(ctx, rn, buf))
-			got, err := dcs[0].Get(ctx, rn)
-			require.NoError(t, err)
-			require.Equal(t, buf, got)
+			last := dcs[0].readPeers(rn).PreferredPeers[2]
+			for i, d := range dcs {
+				if d.opts.ListenAddr == last {
+					require.NoError(t, locals[i].Set(ctx, rn, buf))
+				}
+			}
+			_, err := dcs[0].Get(cacheopts.WithMaxReadReplicas(ctx, 1), rn)
+			require.True(t, status.IsNotFoundError(err), "%v", err)
 		}
 	})
 }

@@ -28,9 +28,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheopts"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
-	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -69,8 +69,6 @@ var (
 	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "SHA256", "A consistent hash function to use when hashing data. CRC32 or SHA256")
 	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 10000, "The number of copies of each peer on the new consistent hash ring")
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
-
-	treeCachePointerNearestReplicaOnly = expflag.Bool("cache.distributed_cache.tree_cache_pointer_nearest_replica_only", false, "If true, tree cache pointer reads stop after the nearest replica reports NotFound, instead of trying every replica.")
 
 	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 1_000_000_000, "Maximum size in bytes of the in-memory lookaside cache, which avoids disk lookups for frequently accessed small objects. Set to 0 to disable.")
 	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 1*time.Minute, "The maximum TTL of items served from the lookaside cache. When this flag is set to a duration >0, items will only be served from the lookaside cache if they were added less than this long ago. If it is set to a duration <=0, no TTL check will occur before serving items from the lookaside cache. This value should be << atime_update_threshold when used in the authoritative cache.")
@@ -1200,13 +1198,6 @@ func (c *Cache) backfillByReference(ctx context.Context) bool {
 	return fp.Boolean(ctx, "distributed_cache.backfill_gcs_references", true)
 }
 
-// treeCachePointerNearestOnly reports whether a read of r should stop at the
-// first replica that reports NotFound. A false miss only costs a normal tree
-// walk. Migrations keep the full fallback.
-func (c *Cache) treeCachePointerNearestOnly(ctx context.Context, r *rspb.ResourceName) bool {
-	return isTreeCacheResource(r) && len(c.opts.NewNodes) == 0 && treeCachePointerNearestReplicaOnly.Get(ctx)
-}
-
 type backfillOrder struct {
 	r      *rspb.ResourceName
 	source string
@@ -1328,9 +1319,14 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metricsLabel string) ([]byte, *interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	ps := c.readPeers(r)
-	nearestOnly := c.treeCachePointerNearestOnly(ctx, r)
+	// Ignored during migrations, which deliberately try every owner.
+	maxReplicas := cacheopts.MaxReadReplicas(ctx)
+	if len(c.opts.NewNodes) > 0 {
+		maxReplicas = 0
+	}
 
 	lookups := 0
+	replicaMisses := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		lookups++
 		data, md, err := c.remoteGetWithMetadata(ctx, peer, r, metricsLabel)
@@ -1344,8 +1340,11 @@ func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metri
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(r), peer)
 			// Read-through promotes same-zone non-replicas to the front; only a
 			// canonical replica's NotFound is authoritative.
-			if nearestOnly && !slices.Contains(ps.BlockBackfills, peer) {
-				break
+			if !slices.Contains(ps.BlockBackfills, peer) {
+				replicaMisses++
+				if maxReplicas > 0 && replicaMisses >= maxReplicas {
+					break
+				}
 			}
 			continue
 		}
