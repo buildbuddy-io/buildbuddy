@@ -40,6 +40,50 @@ func TestXcodeDiscoverySkipsUnusablePaths(t *testing.T) {
 	}
 }
 
+func TestXcodeDefaultNotMatchedByLaunchServicesPath(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "Xcode 26.1.app")
+	developerDir := filepath.Join(bundle, developerDirectoryPath)
+	sdkPath := "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+	writeVersionPlist(t, bundle, "26.1", "17B55")
+	require.NoError(t, os.MkdirAll(filepath.Join(developerDir, sdkPath), 0755))
+
+	t.Run("selected through a symlink", func(t *testing.T) {
+		alias := filepath.Join(root, "Xcode.app")
+		require.NoError(t, os.Symlink(bundle, alias))
+		xl := &xcodeLocator{versions: versionMap([]string{bundle}, filepath.Join(alias, developerDirectoryPath))}
+		dev, sdkRoot, err := xl.PathsForVersionAndSDK("", "MacOSX")
+		require.NoError(t, err)
+		require.Equal(t, developerDir, dev)
+		require.Equal(t, filepath.Join(developerDir, sdkPath), sdkRoot)
+	})
+	t.Run("not registered", func(t *testing.T) {
+		xl := &xcodeLocator{versions: versionMap(nil, developerDir)}
+		dev, sdkRoot, err := xl.PathsForVersionAndSDK("", "MacOSX")
+		require.NoError(t, err)
+		require.Equal(t, developerDir, dev)
+		require.Equal(t, filepath.Join(developerDir, sdkPath), sdkRoot)
+	})
+	t.Run("selected duplicate does not replace the registered build", func(t *testing.T) {
+		const iosSDK = "Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+		require.NoError(t, os.MkdirAll(filepath.Join(developerDir, iosSDK), 0755))
+		selectedBundle := filepath.Join(root, "Staged Xcode 26.1.app")
+		selectedDir := filepath.Join(selectedBundle, developerDirectoryPath)
+		writeVersionPlist(t, selectedBundle, "26.1", "17B55")
+		require.NoError(t, os.MkdirAll(filepath.Join(selectedDir, sdkPath), 0755))
+
+		xl := &xcodeLocator{versions: versionMap([]string{bundle}, selectedDir)}
+		dev, sdkRoot, err := xl.PathsForVersionAndSDK("26.1.0.17B55", "iPhoneOS")
+		require.NoError(t, err)
+		require.Equal(t, developerDir, dev)
+		require.Equal(t, filepath.Join(developerDir, iosSDK), sdkRoot)
+		dev, sdkRoot, err = xl.PathsForVersionAndSDK("", "MacOSX")
+		require.NoError(t, err)
+		require.Equal(t, selectedDir, dev)
+		require.Equal(t, filepath.Join(selectedDir, sdkPath), sdkRoot)
+	})
+}
+
 func writeVersionPlist(t *testing.T, bundle, version, build string) {
 	t.Helper()
 	path := filepath.Join(bundle, versionPlistPath)
