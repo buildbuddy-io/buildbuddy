@@ -63,7 +63,7 @@ var (
 	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
 	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 10, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
 
-	treeCachePointerBackfillProbability = expflag.Float64("cache.tree_cache_pointer_backfill_probability", 0, "The probability that a tree cache hit on a pointer without metadata rewrites the pointer with metadata, so that later GetTrees can skip reading its contents.")
+	treeCachePointerBackfillProbability = expflag.Float64("cache.tree_cache_pointer_backfill_probability", 0, "The probability that a tree cache hit on a pointer without metadata, or with an older format, rewrites the pointer with current metadata, so that later GetTrees can skip reading its contents.")
 	getTreeSkipCachedSubtreeFetch       = expflag.Bool("cache.get_tree_skip_cached_subtree_fetch", false, "If true, GetTree doesn't read the contents of cached subtrees that it only sends to the client as a digest.")
 
 	findMissingChunkFallbackConcurrency = expflag.Int64("cache.find_missing_chunk_fallback_concurrency", 8, "The maximum number of chunk manifest lookups that FindMissingBlobs performs in parallel, for missing blobs that may be stored as chunks. Values less than 1 are treated as 1.")
@@ -687,6 +687,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 	pointerBuf, err := makeTreeCacheActionResult(treeCacheBlob.ToProto(), &capb.TreeCachePointerMetadata{
 		DirCount:          int64(dirCount),
 		TreeCacheChildren: rootCache.GetTreeCacheChildren(),
+		FormatVersion:     treeCacheFormatVersion,
 	})
 	if err != nil {
 		return err
@@ -775,6 +776,11 @@ type treeCacheHit struct {
 	backfillMeta *capb.TreeCachePointerMetadata
 }
 
+// treeCacheFormatVersion is written to tree cache pointer metadata. Bump it
+// when the pointer metadata or TreeCache entry format changes, so that hits on
+// older entries are backfilled; the backfill only rewrites the pointer today.
+const treeCacheFormatVersion = 1
+
 // worthSendingAsDigest returns whether a cached subtree with dirCount
 // directories is big enough to send to the client as a digest instead of
 // inline.
@@ -821,10 +827,10 @@ func (s *ContentAddressableStorageServer) readTreeCachePointer(ctx context.Conte
 	return treeCacheRN, meta, nil
 }
 
-// backfillTreeCachePointer rewrites a pointer that has no metadata. The
-// distributed cache's lookaside cache treats pointers as immutable, so apps
-// may keep serving the old pointer (and backfilling it again) until their
-// lookaside entry expires.
+// backfillTreeCachePointer rewrites a pointer that has no metadata or an older
+// format. The distributed cache's lookaside cache treats pointers as
+// immutable, so apps may keep serving the old pointer (and backfilling it
+// again) until their lookaside entry expires.
 func (s *ContentAddressableStorageServer) backfillTreeCachePointer(ctx context.Context, treeCachePointer, treeCacheBlob *digest.ResourceName, meta *capb.TreeCachePointerMetadata) error {
 	pointerBuf, err := makeTreeCacheActionResult(treeCacheBlob.ToProto(), meta)
 	if err != nil {
@@ -845,7 +851,8 @@ func (s *ContentAddressableStorageServer) backfillTreeCachePointer(ctx context.C
 // to, or a NotFoundError. The hit is sent to the client as a digest only if
 // digestAllowed, and its contents are left unread only if it is sent as a
 // digest and skipReadAllowed (which implies digestAllowed). If the pointer has
-// no metadata, the hit asks for a backfill with backfillProbability.
+// no metadata or an older format, the hit asks for a backfill with
+// backfillProbability.
 func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName, digestAllowed, skipReadAllowed bool, backfillProbability float64) (*treeCacheHit, error) {
 	levelLabel := fmt.Sprintf("%d", min(level, 12))
 	miss := func() (*treeCacheHit, error) {
@@ -863,10 +870,13 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 	hit := &treeCacheHit{rn: treeCacheRN}
 	bytesRead := 0
 	contentsStatus := "skipped"
+	// Older pointers have no metadata, which reads as version 0. Backfilling
+	// needs the contents, so it rules out skipping the read.
+	backfill := meta.GetFormatVersion() < treeCacheFormatVersion && backfillProbability > 0 && rand.Float64() < backfillProbability
 
 	// Fast path: metadata exists, we can skip reading, and the dir is big enough to send as a digest.
 	// In this case, ensure all the children exist, but don't read anything.
-	if meta != nil && skipReadAllowed && worthSendingAsDigest(int(meta.GetDirCount())) {
+	if meta != nil && skipReadAllowed && !backfill && worthSendingAsDigest(int(meta.GetDirCount())) {
 		if err := s.checkTreeCacheBlobsExist(ctx, treeCacheRN, meta); err != nil {
 			return miss()
 		}
@@ -879,17 +889,17 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 		hit.sendAsDigest = digestAllowed && worthSendingAsDigest(len(hit.dirs))
 		contentsStatus = "read"
 
-		// Migration case, where older AC entries lack metadata. We backfill here, but only
-		// in a percentage of cases, to avoid a write storm when this initially rolls out.
-		if meta == nil {
-			if skipReadAllowed && hit.sendAsDigest {
-				contentsStatus = "read_no_metadata"
-			}
-			if backfillProbability > 0 && rand.Float64() < backfillProbability {
-				hit.backfillMeta = &capb.TreeCachePointerMetadata{
-					DirCount:          int64(len(hit.dirs)),
-					TreeCacheChildren: children,
-				}
+		if meta == nil && skipReadAllowed && hit.sendAsDigest {
+			contentsStatus = "read_no_metadata"
+		}
+		// Migration case, where older AC entries lack metadata or have an older format.
+		// We backfill here, but only in a percentage of cases, to avoid a write storm
+		// when this initially rolls out.
+		if backfill {
+			hit.backfillMeta = &capb.TreeCachePointerMetadata{
+				DirCount:          int64(len(hit.dirs)),
+				TreeCacheChildren: children,
+				FormatVersion:     treeCacheFormatVersion,
 			}
 		}
 	}

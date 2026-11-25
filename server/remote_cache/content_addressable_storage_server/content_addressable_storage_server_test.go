@@ -1615,6 +1615,8 @@ func TestStreamingChunkMappingRPCsUnimplemented(t *testing.T) {
 type treeCacheSpy struct {
 	interfaces.Cache
 	stripPointerMetadata bool
+	// If set, pointers are written with format_version 0.
+	outdatePointerMetadata bool
 
 	mu           sync.Mutex
 	blobGets     int
@@ -1654,10 +1656,21 @@ func (c *treeCacheSpy) Set(ctx context.Context, rn *rspb.ResourceName, data []by
 	isPointer := rn.GetCacheType() == rspb.CacheType_AC
 	if isPointer {
 		c.mu.Lock()
-		strip := c.stripPointerMetadata
+		strip, outdate := c.stripPointerMetadata, c.outdatePointerMetadata
 		c.mu.Unlock()
 		if err := proto.Unmarshal(data, ar); err == nil && strip {
 			ar.ExecutionMetadata = nil
+			data, _ = proto.Marshal(ar)
+		} else if err == nil && outdate {
+			anyMeta := ar.GetExecutionMetadata().GetAuxiliaryMetadata()[0]
+			meta := &capb.TreeCachePointerMetadata{}
+			if err := proto.Unmarshal(anyMeta.GetValue(), meta); err != nil {
+				return err
+			}
+			meta.FormatVersion = 0
+			if anyMeta.Value, err = proto.Marshal(meta); err != nil {
+				return err
+			}
 			data, _ = proto.Marshal(ar)
 		}
 	} else {
@@ -1789,6 +1802,10 @@ type skipFetchFixture struct {
 }
 
 func setupSkipFetch(t *testing.T, stripPointerMetadata bool) *skipFetchFixture {
+	return setupSkipFetchWithSpy(t, &treeCacheSpy{stripPointerMetadata: stripPointerMetadata})
+}
+
+func setupSkipFetchWithSpy(t *testing.T, spy *treeCacheSpy) *skipFetchFixture {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	// Only the roots of the depth-10 trees are large enough to be cached.
 	flags.Set(t, "cache.tree_cache_min_descendents", 2000)
@@ -1799,7 +1816,7 @@ func setupSkipFetch(t *testing.T, stripPointerMetadata bool) *skipFetchFixture {
 	require.NoError(t, err)
 	c, err := memory_cache.NewMemoryCache(1000000000)
 	require.NoError(t, err)
-	spy := &treeCacheSpy{Cache: c, stripPointerMetadata: stripPointerMetadata}
+	spy.Cache = c
 	te.SetCache(spy)
 	clientConn := runCASServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
@@ -1841,6 +1858,9 @@ func TestGetTreeSkipCachedSubtreeFetch(t *testing.T) {
 	assert.Zero(t, findMissing)
 
 	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
+	// Newly written pointers are current, so they're never backfilled (which
+	// would read them).
+	flags.Set(t, "cache.tree_cache_pointer_backfill_probability", 1.0)
 	f.spy.resetCounts()
 	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
 	gets, findMissing = f.spy.counts()
@@ -2008,6 +2028,12 @@ func (c *treeCacheSpy) setStripPointerMetadata(strip bool) {
 	c.stripPointerMetadata = strip
 }
 
+func (c *treeCacheSpy) setOutdatePointerMetadata(outdate bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.outdatePointerMetadata = outdate
+}
+
 // lastPointerMetadata returns the metadata of the latest pointer written for
 // the directory with the given digest.
 func (c *treeCacheSpy) lastPointerMetadata(t *testing.T, dirHash, seed string) *capb.TreeCachePointerMetadata {
@@ -2080,6 +2106,54 @@ func TestGetTreeSkipCachedSubtreeFetch_BackfillsOldFormatPointer(t *testing.T) {
 	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
 	f.spy.resetCounts()
 	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	gets, findMissing := f.spy.counts()
+	assert.Equal(t, want, got)
+	assert.Zero(t, gets)
+	assert.Positive(t, findMissing)
+}
+
+func TestGetTreeSkipCachedSubtreeFetch_OutdatedPointerSkipsWhenNotBackfilled(t *testing.T) {
+	f := setupSkipFetchWithSpy(t, &treeCacheSpy{outdatePointerMetadata: true})
+	want := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	require.Len(t, want.subtrees, 1)
+
+	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
+	f.spy.resetCounts()
+	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	gets, findMissing := f.spy.counts()
+	assert.Equal(t, want, got)
+	assert.Zero(t, gets)
+	assert.Positive(t, findMissing)
+}
+
+func TestGetTreeSkipCachedSubtreeFetch_BackfillsOutdatedPointer(t *testing.T) {
+	f := setupSkipFetchWithSpy(t, &treeCacheSpy{outdatePointerMetadata: true})
+	f.spy.setOutdatePointerMetadata(false)
+	want := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	require.Len(t, want.subtrees, 1)
+	flags.Set(t, "cache.get_tree_skip_cached_subtree_fetch", true)
+	flags.Set(t, "cache.tree_cache_pointer_backfill_probability", 1.0)
+
+	// The backfill needs the contents, so the outdated pointer is read.
+	n := f.spy.pointerCount()
+	f.spy.resetCounts()
+	got := getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
+	gets, _ := f.spy.counts()
+	assert.Equal(t, want, got)
+	assert.Positive(t, gets)
+	f.spy.waitForPointers(t, n+1)
+	f.spy.mu.Lock()
+	ar := f.spy.pointers[n]
+	f.spy.mu.Unlock()
+	meta := &capb.TreeCachePointerMetadata{}
+	require.NotEmpty(t, ar.GetExecutionMetadata().GetAuxiliaryMetadata(), "pointer has no metadata")
+	require.NoError(t, ar.GetExecutionMetadata().GetAuxiliaryMetadata()[0].UnmarshalTo(meta))
+	assert.EqualValues(t, 1, meta.GetFormatVersion())
+
+	// The rewritten pointer is current, so it is skipped even though every
+	// outdated pointer would be backfilled.
+	f.spy.resetCounts()
+	got = getTreeWithSubtrees(f.ctx, t, f.casClient, f.rootDigest2)
 	gets, findMissing := f.spy.counts()
 	assert.Equal(t, want, got)
 	assert.Zero(t, gets)

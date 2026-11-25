@@ -280,6 +280,11 @@ message TreeCachePointerMetadata {
 
   // The root TreeCache's tree_cache_children.
   repeated resource.ResourceName tree_cache_children = 2;
+
+  // The format of this pointer and its TreeCache entry. Hits on older formats
+  // are backfilled (see cache.tree_cache_pointer_backfill_probability), so
+  // format changes reach entries that stay in the cache.
+  uint32 format_version = 3;
 }
 
 // Fetch a directory tree from the CAS.
