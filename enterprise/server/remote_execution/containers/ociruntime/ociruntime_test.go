@@ -61,7 +61,7 @@ import (
 
 // Set via x_defs in BUILD file.
 var (
-	crunRlocationpath          string
+	runtimeRlocationpath       string
 	busyboxImageRlocationpath  string
 	netToolsImageRlocationpath string
 	testworkerRlocationpath    string
@@ -69,9 +69,9 @@ var (
 )
 
 func init() {
-	runtimePath, err := runfiles.Rlocation(crunRlocationpath)
+	runtimePath, err := runfiles.Rlocation(runtimeRlocationpath)
 	if err != nil {
-		log.Fatalf("Failed to locate crun in runfiles: %s", err)
+		log.Fatalf("Failed to locate OCI runtime in runfiles: %s", err)
 	}
 	*ociruntime.Runtime = runtimePath
 }
@@ -161,7 +161,7 @@ func TestPullImageIfNecessaryReauthenticatesCachedOCIImage(t *testing.T) {
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
@@ -200,6 +200,32 @@ func TestPullImageIfNecessaryReauthenticatesCachedOCIImage(t *testing.T) {
 	require.True(t, status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err), "cached private OCI image must still be re-authenticated for a different group; got %v", err)
 }
 
+// makeRuntimeRoot returns a temp dir for executor.oci.runtime_root. runsc pins
+// a shared "null-netns" mount there, which must be unmounted before removal.
+func makeRuntimeRoot(t testing.TB) string {
+	dir := testfs.MakeTempDir(t)
+	t.Cleanup(func() {
+		for unix.Unmount(filepath.Join(dir, "null-netns"), unix.MNT_DETACH) == nil {
+		}
+	})
+	return dir
+}
+
+func runtimeIsRunsc() bool {
+	return filepath.Base(*ociruntime.Runtime) == "runsc"
+}
+
+// readContainerCgroupFile reads a file from the only container cgroup under
+// parentPath, as seen from the host.
+func readContainerCgroupFile(t *testing.T, parentPath, name string) string {
+	paths, err := filepath.Glob(filepath.Join(parentPath, "*", name))
+	require.NoError(t, err)
+	require.Len(t, paths, 1)
+	b, err := os.ReadFile(paths[0])
+	require.NoError(t, err)
+	return string(b)
+}
+
 func TestRun(t *testing.T) {
 	setupNetworking(t)
 
@@ -210,7 +236,7 @@ func TestRun(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -255,7 +281,7 @@ func TestRunWithEmptyRootfs(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
-	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	flags.Set(t, "executor.oci.runtime_root", makeRuntimeRoot(t))
 	buildRoot := testfs.MakeTempDir(t)
 	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
 	require.NoError(t, err)
@@ -294,7 +320,7 @@ func TestRunWithEmptyRootfs(t *testing.T) {
 func TestRunNofileLimit(t *testing.T) {
 	setupNetworking(t)
 	flags.Set(t, "executor.oci.nofile_limit", uint64(65536))
-	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	flags.Set(t, "executor.oci.runtime_root", makeRuntimeRoot(t))
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -320,7 +346,7 @@ func TestRunNofileLimit(t *testing.T) {
 
 func TestSeccompSyscalls(t *testing.T) {
 	setupNetworking(t)
-	flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+	flags.Set(t, "executor.oci.runtime_root", makeRuntimeRoot(t))
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
@@ -363,6 +389,9 @@ func TestSeccompSyscalls(t *testing.T) {
 		{name: "exec_clone3_sys_admin", syscall: "clone3", disableNewUserNS: true, capAdd: []string{"CAP_SYS_ADMIN"}, createExec: true, wantErrno: unix.EINVAL},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			if runtimeIsRunsc() && testCase.wantErrno != unix.EINVAL {
+				t.Skip("runsc doesn't apply the seccomp profile")
+			}
 			flags.Set(t, "executor.oci.seccomp_disable_new_userns", testCase.disableNewUserNS)
 			flags.Set(t, "executor.oci.seccomp_additional_syscalls", testCase.additionalSyscalls)
 			flags.Set(t, "executor.oci.cap_add", testCase.capAdd)
@@ -404,7 +433,7 @@ func TestCgroupSettings(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -413,8 +442,14 @@ func TestCgroupSettings(t *testing.T) {
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	parent := "ociruntime-test-" + uuid.New()
+	parentPath := filepath.Join(cgroup.RootPath, parent)
+	require.NoError(t, os.Mkdir(parentPath, 0755))
+	t.Cleanup(func() { require.NoError(t, os.Remove(parentPath)) })
+	require.NoError(t, cgroup.WriteSubtreeControl(parentPath, map[string]bool{"cpu": true, "pids": true}))
 
 	c, err := provider.New(ctx, &container.Init{
+		CgroupParent: parent,
 		Task: &repb.ScheduledTask{
 			SchedulingMetadata: &scpb.SchedulingMetadata{
 				CgroupSettings: &scpb.CgroupSettings{
@@ -444,9 +479,14 @@ func TestCgroupSettings(t *testing.T) {
 
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
-	assert.Equal(t, "300000 100000\n256\n", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "300000 100000\n", readContainerCgroupFile(t, parentPath, "cpu.max"))
+	assert.Equal(t, "256\n", readContainerCgroupFile(t, parentPath, "pids.max"))
+	// runsc's in-sandbox cgroupfs doesn't show the host limits.
+	if !runtimeIsRunsc() {
+		assert.Equal(t, "300000 100000\n256\n", string(res.Stdout))
+	}
 }
 
 func TestRunUsageStats(t *testing.T) {
@@ -459,7 +499,7 @@ func TestRunUsageStats(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -500,7 +540,7 @@ func TestRunWithImage(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -554,7 +594,7 @@ func TestRunOOM(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	// Enable CAP_SYS_RESOURCE just for this test so that we can write to
 	// oom_score_adj. Otherwise it's hard to guarantee that our top-level shell
@@ -645,7 +685,7 @@ func TestCreateExecRemove(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -792,7 +832,7 @@ func TestExecUsageStats(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -840,7 +880,7 @@ func TestStatsPostExec(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -886,7 +926,17 @@ func TestStatsPostExec(t *testing.T) {
 	// even though it used 32MB of memory.
 	stats, err := c.Stats(ctx)
 	require.NoError(t, err)
-	require.Less(t, stats.GetMemoryBytes(), int64(2e6), "final memory usage should be much less than 32MB")
+	if !runtimeIsRunsc() {
+		require.Less(t, stats.GetMemoryBytes(), int64(2e6), "final memory usage should be much less than 32MB")
+		return
+	}
+	// gVisor's own memory (~10-20MB) is charged to the container's cgroup, and
+	// it returns freed memory to the host asynchronously.
+	require.Eventually(t, func() bool {
+		stats, err := c.Stats(ctx)
+		require.NoError(t, err)
+		return stats.GetMemoryBytes() < 25e6
+	}, 5*time.Second, 50*time.Millisecond, "final memory usage should be much less than 32MB plus gVisor overhead")
 }
 
 func TestPullCreateExecRemove(t *testing.T) {
@@ -899,7 +949,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -981,7 +1031,7 @@ func TestCreateExecUser(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -1035,7 +1085,7 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -1142,7 +1192,7 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -1169,6 +1219,35 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	require.ErrorContains(t, err, "nonexistent")
 }
 
+func TestExecFailureStderrNotRepeated(t *testing.T) {
+	setupNetworking(t)
+	image := busyboxImage(t)
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	flags.Set(t, "executor.oci.runtime_root", makeRuntimeRoot(t))
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{ContainerImage: image}})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.Remove(context.WithoutCancel(ctx))) })
+	require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+	require.NoError(t, c.Create(ctx, wd))
+
+	res := c.Exec(ctx, &repb.Command{Arguments: []string{"/nonexistent"}}, &interfaces.Stdio{})
+	require.NotEqual(t, 0, res.ExitCode)
+	require.Contains(t, string(res.Stderr), "nonexistent")
+
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-c", "exit 1"}}, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 1, res.ExitCode)
+	require.Empty(t, string(res.Stderr))
+}
+
 func TestDevices(t *testing.T) {
 	setupNetworking(t)
 
@@ -1179,7 +1258,7 @@ func TestDevices(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -1235,7 +1314,7 @@ func TestSignal(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -1341,7 +1420,7 @@ func TestNetworking(t *testing.T) {
 			installLeaserInEnv(t, env)
 			installFileCacheInEnv(t, env)
 
-			runtimeRoot := testfs.MakeTempDir(t)
+			runtimeRoot := makeRuntimeRoot(t)
 			flags.Set(t, "executor.network_stats_enabled", true)
 			flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 			if tc.defaultNetworkFlag != "" {
@@ -1410,7 +1489,7 @@ func TestUser(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -1521,7 +1600,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -1640,7 +1719,7 @@ func TestEntrypoint(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
@@ -1720,7 +1799,7 @@ func TestFileOwnership(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
@@ -2255,7 +2334,7 @@ func TestPersistentWorker(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	// Create workspace with testworker binary
@@ -2335,7 +2414,7 @@ func TestPersistentWorker_WorkerCrashesBeforeReadingRequest(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	// Create workspace with testworker binary
@@ -2397,7 +2476,7 @@ func TestPersistentWorker_WorkerCrashesAfterReadingRequest(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	// Create workspace with testworker binary
@@ -2459,7 +2538,7 @@ func TestCancelRun(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -2515,7 +2594,7 @@ func TestCancelExec(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -2662,7 +2741,7 @@ func TestMounts(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
@@ -2712,7 +2791,7 @@ func TestShmSize(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
@@ -2751,7 +2830,7 @@ func TestCDIDevicesMountsFromCDISpec(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
@@ -2806,7 +2885,7 @@ func TestPersistentVolumes(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.enable_persistent_volumes", true)
 	buildRoot := testfs.MakeTempDir(t)
@@ -2865,7 +2944,7 @@ func TestImageEvictionWhileInUse(t *testing.T) {
 	// Note: we don't call installFileCacheInEnv here because we need a custom
 	// filecache with a small size to test eviction behavior.
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.image_eviction_enabled", true)
 
@@ -2948,7 +3027,7 @@ func TestImageEvictionAfterContainerRemoval(t *testing.T) {
 	// Note: we don't call installFileCacheInEnv here because we need a custom
 	// filecache with a small size to test eviction behavior.
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.image_eviction_enabled", true)
 
@@ -3040,7 +3119,7 @@ func TestImageEvictionWithMultipleContainers(t *testing.T) {
 	// Note: we don't call installFileCacheInEnv here because we need a custom
 	// filecache with a small size to test eviction behavior.
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.image_eviction_enabled", true)
 
@@ -3156,7 +3235,7 @@ func TestImageRePullAfterEviction(t *testing.T) {
 	// Note: we don't call installFileCacheInEnv here because we need a custom
 	// filecache with a small size to test eviction behavior.
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.image_eviction_enabled", true)
 
@@ -3264,7 +3343,7 @@ func TestFileCachePopulatedOnStartup(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.image_eviction_enabled", true)
 
@@ -3353,7 +3432,7 @@ func TestImageResurrection(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.image_eviction_enabled", true)
 
@@ -3460,7 +3539,7 @@ func TestPopulateFileCacheTracksLayerDirsNotAlgorithmDir(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	flags.Set(t, "executor.oci.image_eviction_enabled", true)
 
@@ -3561,7 +3640,7 @@ func TestExecrootPath(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	t.Run("Default", func(t *testing.T) {
@@ -3631,7 +3710,7 @@ func TestExecrootPath_Exec(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -3673,7 +3752,7 @@ func TestExecrootPath_InvalidRelativePath(t *testing.T) {
 	installLeaserInEnv(t, env)
 	installFileCacheInEnv(t, env)
 
-	runtimeRoot := testfs.MakeTempDir(t)
+	runtimeRoot := makeRuntimeRoot(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
@@ -3699,7 +3778,7 @@ func TestTaskCPUControllerDisabled(t *testing.T) {
 			env := testenv.GetTestEnv(t)
 			installLeaserInEnv(t, env)
 			installFileCacheInEnv(t, env)
-			flags.Set(t, "executor.oci.runtime_root", testfs.MakeTempDir(t))
+			flags.Set(t, "executor.oci.runtime_root", makeRuntimeRoot(t))
 			buildRoot := testfs.MakeTempDir(t)
 			provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(t))
 			require.NoError(t, err)
@@ -3739,7 +3818,11 @@ func TestTaskCPUControllerDisabled(t *testing.T) {
 			}
 			require.NoError(t, res.Error)
 			require.Equal(t, 0, res.ExitCode, "%s", res.Stderr)
-			require.ElementsMatch(t, []string{"cpuset", "memory", "pids"}, strings.Fields(string(res.Stdout)))
+			require.ElementsMatch(t, []string{"cpuset", "memory", "pids"}, strings.Fields(readContainerCgroupFile(t, parentPath, "cgroup.controllers")))
+			// runsc's in-sandbox cgroupfs always lists cpu.
+			if !runtimeIsRunsc() {
+				require.ElementsMatch(t, []string{"cpuset", "memory", "pids"}, strings.Fields(string(res.Stdout)))
+			}
 
 			after, err := os.ReadFile(filepath.Join(parentPath, "cgroup.subtree_control"))
 			require.NoError(t, err)
@@ -3760,7 +3843,7 @@ func BenchmarkPauseUnpause(b *testing.B) {
 	env := testenv.GetTestEnv(b)
 	installLeaserInEnv(b, env)
 	installFileCacheInEnv(b, env)
-	flags.Set(b, "executor.oci.runtime_root", testfs.MakeTempDir(b))
+	flags.Set(b, "executor.oci.runtime_root", makeRuntimeRoot(b))
 	buildRoot := testfs.MakeTempDir(b)
 	provider, err := ociruntime.NewProvider(env, buildRoot, testfs.MakeTempDir(b))
 	require.NoError(b, err)
