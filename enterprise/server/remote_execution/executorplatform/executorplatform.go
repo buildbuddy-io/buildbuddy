@@ -71,6 +71,7 @@ func DefaultImage() string {
 type ExecutorProperties struct {
 	SupportedIsolationTypes []platform.ContainerType
 	DefaultXcodeVersion     string
+	SupportsVFS             bool
 }
 
 func (p *ExecutorProperties) SupportsIsolation(c platform.ContainerType) bool {
@@ -84,6 +85,8 @@ func GetExecutorProperties() *ExecutorProperties {
 	p := &ExecutorProperties{
 		SupportedIsolationTypes: make([]platform.ContainerType, 0),
 		DefaultXcodeVersion:     *defaultXcodeVersion,
+		// The VFS server is not implemented on Darwin or Windows.
+		SupportsVFS: *enableVFS && runtime.GOOS == "linux",
 	}
 
 	// NB: order matters! this list will be used in order to determine the which
