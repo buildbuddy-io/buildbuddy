@@ -18,9 +18,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientfeatures"
@@ -422,6 +425,49 @@ func TestRPCWriteAlreadyExists(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestWriteAlreadyExistsUsage(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1")))
+	ut := testusage.NewTracker()
+	te.SetUsageTracker(ut)
+	s, err := NewByteStreamServer(te)
+	require.NoError(t, err)
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), testauth.User("USER1", "GROUP1"))
+	rnProto, blob := testdigest.RandomCASResourceBuf(t, 64*1024)
+	rn, err := digest.CASResourceNameFromProto(rnProto)
+	require.NoError(t, err)
+
+	// A completed upload records its full size in both usage trackers.
+	stream := &testWriteStream{
+		ctx: ctx,
+		reqs: []*bspb.WriteRequest{{
+			ResourceName: rn.NewUploadString(),
+			Data:         blob,
+			FinishWrite:  true,
+		}},
+	}
+	require.NoError(t, s.Write(stream))
+	require.Len(t, ut.Totals(), 1)
+	require.Equal(t, rn.GetDigest().GetSizeBytes(), ut.Totals()[0].Counts.TotalUploadSizeBytes)
+	require.Len(t, ut.OLAPTotals(), 1)
+	require.Equal(t, rn.GetDigest().GetSizeBytes(), ut.OLAPTotals()[0].Counts[sku.RemoteCacheCASUploadedBytes])
+	ut.Reset()
+
+	// A duplicate succeeds without receiving the rest of the blob or recording usage.
+	stream = &testWriteStream{
+		ctx: ctx,
+		reqs: []*bspb.WriteRequest{{
+			ResourceName: rn.NewUploadString(),
+			Data:         blob[:1024],
+		}},
+	}
+	require.NoError(t, s.Write(stream))
+	require.NotNil(t, stream.resp)
+	require.Equal(t, rn.GetDigest().GetSizeBytes(), stream.resp.GetCommittedSize())
+	require.Empty(t, ut.Totals())
+	require.Empty(t, ut.OLAPTotals())
 }
 
 func TestRPCMalformedWrite(t *testing.T) {

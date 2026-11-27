@@ -827,13 +827,11 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 		if streamState == nil {
 			if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
-				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
-				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
+				return s.handleAlreadyExists(ctx, stream, req)
 			}
 			streamState, err = s.beginWrite(ctx, req)
 			if status.IsAlreadyExistsError(err) {
-				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
-				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
+				return s.handleAlreadyExists(ctx, stream, req)
 			}
 			if err != nil {
 				return err
@@ -896,21 +894,12 @@ func ClientHandlesAlreadyExists(ctx context.Context) bool {
 	return v != nil && v.IsAtLeast(bazel6_2_0)
 }
 
-func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
 		return err
 	}
-	clientUploadedBytes := int64(len(firstRequest.Data))
-
-	uploadTracker := ht.TrackUpload(r.GetDigest())
-	defer func() {
-		if err := uploadTracker.CloseWithBytesTransferred(0, clientUploadedBytes, r.GetCompressor(), "byte_stream_server"); err != nil {
-			log.Debugf("handleAlreadyExists: uploadTracker.CloseWithBytesTransferred error: %s", err)
-		}
-	}()
-
-	clientUploadedBytes, err = EndWriteAlreadyExists(ctx, stream, r, clientUploadedBytes, firstRequest.FinishWrite)
+	_, err = EndWriteAlreadyExists(ctx, stream, r, int64(len(firstRequest.Data)), firstRequest.FinishWrite)
 	return err
 }
 
