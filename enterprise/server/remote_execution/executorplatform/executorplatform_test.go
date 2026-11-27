@@ -11,7 +11,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -112,7 +114,9 @@ func TestParse_ApplyOverrides(t *testing.T) {
 			{Name: "osfamily", Value: "darwin"},
 		}, []*repb.Command_EnvironmentVariable{
 			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
-		}, []*repb.Command_EnvironmentVariable{},
+		}, []*repb.Command_EnvironmentVariable{
+			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.4.app/Contents/Developer"},
+		},
 			false,
 			"12.2",
 		},
@@ -121,7 +125,9 @@ func TestParse_ApplyOverrides(t *testing.T) {
 			{Name: "OSFAMILY", Value: "dArWiN"},
 		}, []*repb.Command_EnvironmentVariable{
 			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
-		}, []*repb.Command_EnvironmentVariable{},
+		}, []*repb.Command_EnvironmentVariable{
+			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.4.app/Contents/Developer"},
+		},
 			false,
 			"12.2",
 		},
@@ -305,6 +311,137 @@ func TestApplyOverrides_RejectsEmptyAppleSDKPlatform(t *testing.T) {
 	require.True(t, status.IsFailedPreconditionError(err), "%v", err)
 	require.ErrorContains(t, err, "APPLE_SDK_PLATFORM must not be empty")
 	require.Len(t, command.EnvironmentVariables, 2)
+}
+
+func TestApplyOverrides_XcodeSelectors(t *testing.T) {
+	const (
+		path         = "/Applications/Xcode 26.1.app/Contents/Developer"
+		installedDir = "/Applications/Xcode_12.4.app/Contents/Developer"
+		macSDK       = "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+	)
+	for _, tc := range []struct {
+		name            string
+		version         string
+		additionalEnv   []*repb.Command_EnvironmentVariable
+		overrides       []*repb.Platform_Property
+		wantDeveloper   *repb.Command_EnvironmentVariable
+		wantSDKPlatform string
+		wantSDKRoot     *repb.Command_EnvironmentVariable
+		wantFallbacks   float64
+	}{
+		{
+			name:          "absolute Xcode selector",
+			version:       path,
+			wantDeveloper: &repb.Command_EnvironmentVariable{Name: "DEVELOPER_DIR", Value: path},
+		},
+		{
+			name:          "installed Xcode overrides the worker default",
+			version:       "12.4",
+			wantDeveloper: &repb.Command_EnvironmentVariable{Name: "DEVELOPER_DIR", Value: installedDir},
+		},
+		{
+			name:          "missing Xcode leaves the worker default unchanged",
+			version:       "26.1",
+			wantFallbacks: 1,
+		},
+		{
+			name:          "action explicitly keeps the system default",
+			version:       "26.1",
+			additionalEnv: []*repb.Command_EnvironmentVariable{{Name: "DEVELOPER_DIR", Value: ""}},
+			wantDeveloper: &repb.Command_EnvironmentVariable{Name: "DEVELOPER_DIR", Value: ""},
+		},
+		{
+			name:    "platform selects an explicit developer directory",
+			version: "26.1",
+			overrides: []*repb.Platform_Property{
+				{Name: platform.EnvOverridesPropertyName, Value: "DEVELOPER_DIR=" + path},
+			},
+			wantDeveloper: &repb.Command_EnvironmentVariable{Name: "DEVELOPER_DIR", Value: path},
+		},
+		{
+			name:    "an SDK override pairs with the command Xcode version",
+			version: "12.4",
+			overrides: []*repb.Platform_Property{
+				{Name: platform.EnvOverridesPropertyName, Value: "APPLE_SDK_PLATFORM=MacOSX"},
+			},
+			wantSDKPlatform: "MacOSX",
+			wantDeveloper:   &repb.Command_EnvironmentVariable{Name: "DEVELOPER_DIR", Value: installedDir},
+			wantSDKRoot:     &repb.Command_EnvironmentVariable{Name: "SDKROOT", Value: installedDir + "/" + macSDK},
+		},
+		{
+			name:    "an SDK override replaces the command SDK selector",
+			version: "12.4",
+			additionalEnv: []*repb.Command_EnvironmentVariable{
+				{Name: "APPLE_SDK_PLATFORM", Value: "iPhone"},
+			},
+			overrides: []*repb.Platform_Property{
+				{Name: platform.EnvOverridesPropertyName, Value: "APPLE_SDK_PLATFORM=MacOSX"},
+			},
+			wantSDKPlatform: "MacOSX",
+			wantDeveloper:   &repb.Command_EnvironmentVariable{Name: "DEVELOPER_DIR", Value: installedDir},
+			wantSDKRoot:     &repb.Command_EnvironmentVariable{Name: "SDKROOT", Value: installedDir + "/" + macSDK},
+		},
+		{
+			name:    "explicit environment overrides win over derived paths",
+			version: "12.4",
+			overrides: []*repb.Platform_Property{
+				{Name: platform.EnvOverridesPropertyName, Value: "APPLE_SDK_PLATFORM=MacOSX,DEVELOPER_DIR=" + path + ",SDKROOT=/explicit/sdk"},
+			},
+			wantSDKPlatform: "MacOSX",
+			wantDeveloper:   &repb.Command_EnvironmentVariable{Name: "DEVELOPER_DIR", Value: path},
+			wantSDKRoot:     &repb.Command_EnvironmentVariable{Name: "SDKROOT", Value: "/explicit/sdk"},
+		},
+		{
+			name:    "secret SDK override is not sent to the locator",
+			version: "12.4",
+			overrides: []*repb.Platform_Property{
+				{Name: platform.SecretEnvOverridesPropertyName, Value: "APPLE_SDK_PLATFORM=MacOSX"},
+			},
+			wantSDKPlatform: "MacOSX",
+		},
+		{
+			name:    "secret version is not sent to the locator",
+			version: "12.4",
+			additionalEnv: []*repb.Command_EnvironmentVariable{
+				{Name: ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction, Value: `["XCODE_VERSION_OVERRIDE"]`},
+			},
+		},
+		{
+			name:    "secret platform override is not sent to the locator",
+			version: "12.4",
+			overrides: []*repb.Platform_Property{
+				{Name: platform.SecretEnvOverridesPropertyName, Value: "XCODE_VERSION_OVERRIDE=12.2"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := &repb.ExecutionTask{Command: &repb.Command{
+				Platform: &repb.Platform{Properties: append([]*repb.Platform_Property{
+					{Name: "OSFamily", Value: "Darwin"},
+				}, tc.overrides...)},
+				EnvironmentVariables: append([]*repb.Command_EnvironmentVariable{
+					{Name: "XCODE_VERSION_OVERRIDE", Value: tc.version},
+				}, tc.additionalEnv...),
+			}}
+			props, err := platform.ParseProperties(task)
+			require.NoError(t, err)
+			env := testenv.GetTestEnv(t)
+			env.SetXcodeLocator(&xcodeLocator{sdks12_4: map[string]string{"MacOSX": macSDK}})
+
+			fallbacksBefore := testmetrics.CounterValue(t, metrics.RemoteExecutionXcodeVersionFallbacks)
+			err = ApplyOverrides(t.Context(), env, bare, props, task)
+			require.NoError(t, err)
+			fallbacksAfter := testmetrics.CounterValue(t, metrics.RemoteExecutionXcodeVersionFallbacks)
+			require.Equal(t, tc.wantFallbacks, fallbacksAfter-fallbacksBefore)
+			effectiveEnv := make(map[string]*repb.Command_EnvironmentVariable)
+			for _, v := range task.Command.EnvironmentVariables {
+				effectiveEnv[v.Name] = v
+			}
+			require.Equal(t, tc.wantDeveloper, effectiveEnv["DEVELOPER_DIR"])
+			require.Equal(t, tc.wantSDKPlatform, effectiveEnv["APPLE_SDK_PLATFORM"].GetValue())
+			require.Equal(t, tc.wantSDKRoot, effectiveEnv["SDKROOT"])
+		})
+	}
 }
 
 func TestApplyOverrides_PersistentVolumesExperiment(t *testing.T) {

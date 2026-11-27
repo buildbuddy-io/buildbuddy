@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -217,6 +218,74 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 	return nil
 }
 
+// resolveXcode uses the effective selectors after environment overrides.
+func resolveXcode(command *repb.Command, locator interfaces.XcodeLocator, overrideStart int) error {
+	var version, sdk string
+	var hasVersion, hasSDK, hasDeveloperDir, secretSelector bool
+	for _, v := range command.EnvironmentVariables {
+		switch v.Name {
+		case "APPLE_SDK_PLATFORM":
+			sdk = v.Value
+			hasSDK = true
+		case "DEVELOPER_DIR":
+			hasDeveloperDir = true
+		case "XCODE_VERSION_OVERRIDE":
+			version = v.Value
+			hasVersion = true
+		case ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction:
+			var names []string
+			// The execution server always appends valid metadata. A malformed
+			// client entry does not hide a later declaration.
+			if json.Unmarshal([]byte(v.Value), &names) == nil &&
+				(slices.Contains(names, "XCODE_VERSION_OVERRIDE") || slices.Contains(names, "APPLE_SDK_PLATFORM")) {
+				secretSelector = true
+			}
+		}
+	}
+
+	if !hasVersion || secretSelector {
+		return nil
+	}
+	if hasSDK {
+		if sdk == "" {
+			return status.FailedPreconditionError("APPLE_SDK_PLATFORM must not be empty when XCODE_VERSION_OVERRIDE is set")
+		}
+		developerDir, sdkRoot, err := locator.PathsForVersionAndSDK(version, sdk)
+		if err != nil {
+			return err
+		}
+		// Keep overrides of the derived paths ahead of them in precedence,
+		// even though we use the effective selectors to derive the paths.
+		command.EnvironmentVariables = slices.Insert(command.EnvironmentVariables, overrideStart,
+			&repb.Command_EnvironmentVariable{Name: "DEVELOPER_DIR", Value: developerDir},
+			&repb.Command_EnvironmentVariable{Name: "SDKROOT", Value: sdkRoot},
+		)
+		return nil
+	}
+	if version == "" || hasDeveloperDir {
+		return nil
+	}
+	// Like Bazel's local provider, use an absolute selector directly when
+	// there is no SDK path to derive.
+	developerDir := version
+	if !strings.HasPrefix(version, "/") {
+		var err error
+		developerDir, _, err = locator.PathsForVersionAndSDK(version, "")
+		if err != nil {
+			if status.IsFailedPreconditionError(err) {
+				// Without an SDK, a lookup miss preserves the worker's default.
+				metrics.RemoteExecutionXcodeVersionFallbacks.Inc()
+				return nil
+			}
+			return err
+		}
+	}
+	command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+		Name: "DEVELOPER_DIR", Value: developerDir,
+	})
+	return nil
+}
+
 // ApplyOverrides modifies the platformProps and task (its command and
 // possibly the platform's container-image) as needed to match the locally
 // configured executor properties.
@@ -307,40 +376,6 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 		platformProps.ContainerImage = containerImageName(platformProps.ContainerImage)
 	}
 
-	if strings.EqualFold(platformProps.OS, platform.DarwinOperatingSystemName) {
-		appleSDKPlatform := ""
-		xcodeVersion := ""
-		hasAppleSDKPlatform := false
-		hasXcodeVersionOverride := false
-
-		for _, v := range command.EnvironmentVariables {
-			// Environment variables from: https://github.com/bazelbuild/bazel/blob/0878dd724149b73a731ab83859a55a65e9b438ed/src/main/java/com/google/devtools/build/lib/exec/local/XcodeLocalEnvProvider.java#L86-L107
-			switch v.Name {
-			case "APPLE_SDK_PLATFORM":
-				appleSDKPlatform = v.Value
-				hasAppleSDKPlatform = true
-			case "XCODE_VERSION_OVERRIDE":
-				xcodeVersion = v.Value
-				hasXcodeVersionOverride = true
-			}
-		}
-
-		if hasAppleSDKPlatform && hasXcodeVersionOverride {
-			if appleSDKPlatform == "" {
-				return status.FailedPreconditionError("APPLE_SDK_PLATFORM must not be empty when XCODE_VERSION_OVERRIDE is set")
-			}
-			developerDir, sdkRoot, err := env.GetXcodeLocator().PathsForVersionAndSDK(xcodeVersion, appleSDKPlatform)
-			if err != nil {
-				return err
-			}
-
-			command.EnvironmentVariables = append(command.EnvironmentVariables, []*repb.Command_EnvironmentVariable{
-				{Name: "DEVELOPER_DIR", Value: developerDir},
-				{Name: "SDKROOT", Value: sdkRoot},
-			}...)
-		}
-	}
-
 	command.Arguments = append(command.Arguments, platformProps.ExtraArgs...)
 
 	if platformProps.RunUnder != "" {
@@ -351,6 +386,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 		command.Arguments = append(tokens, command.Arguments...)
 	}
 
+	overrideStart := len(command.EnvironmentVariables)
 	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
 	additionalEnvVars = append(additionalEnvVars, platformProps.SecretEnvOverrides...)
 	for _, e := range additionalEnvVars {
@@ -367,6 +403,11 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 
 	if err := registerSecretEnvVarNames(command, platformProps.SecretEnvOverrides); err != nil {
 		return err
+	}
+	if strings.EqualFold(platformProps.OS, platform.DarwinOperatingSystemName) {
+		if err := resolveXcode(command, env.GetXcodeLocator(), overrideStart); err != nil {
+			return err
+		}
 	}
 
 	// TODO: find a cleaner way to set the origin header, other than by
