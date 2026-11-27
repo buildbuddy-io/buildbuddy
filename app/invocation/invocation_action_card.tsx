@@ -2083,33 +2083,43 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div className="action-section">
                         <div className="action-property-title">Stderr</div>
                         <div>
+                          {this.state.actionResult.stderrDigest && (
+                            <div>
+                              <DigestComponent digest={this.state.actionResult.stderrDigest} />
+                            </div>
+                          )}
                           {this.state.stderr ? (
                             <TerminalComponent
                               value={this.state.stderr}
                               lightTheme={this.props.preferences.lightTerminalEnabled}
                             />
                           ) : (
-                            <div>None</div>
+                            !this.state.actionResult.stderrDigest && <div>None</div>
                           )}
                         </div>
                       </div>
                       <div className="action-section">
                         <div className="action-property-title">Stdout</div>
                         <div>
+                          {this.state.actionResult.stdoutDigest && (
+                            <div>
+                              <DigestComponent digest={this.state.actionResult.stdoutDigest} />
+                            </div>
+                          )}
                           {this.state.stdout ? (
                             <TerminalComponent
                               value={this.state.stdout}
                               lightTheme={this.props.preferences.lightTerminalEnabled}
                             />
                           ) : (
-                            <div>None</div>
+                            !this.state.actionResult.stdoutDigest && <div>None</div>
                           )}
                         </div>
                       </div>
-                      <div className="action-section">
-                        <div className="action-property-title">Server logs</div>
-                        {this.state.serverLogs ? (
-                          this.state.serverLogs.map((log) => (
+                      {Boolean(this.state.serverLogs?.length) && (
+                        <div className="action-section">
+                          <div className="action-property-title">Server logs</div>
+                          {this.state.serverLogs?.map((log) => (
                             <div key={log.name}>
                               <TerminalComponent
                                 title={<b className="server-log-title">{log.name}</b>}
@@ -2117,11 +2127,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 lightTheme={this.props.preferences.lightTerminalEnabled}
                               />
                             </div>
-                          ))
-                        ) : (
-                          <div>None</div>
-                        )}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
