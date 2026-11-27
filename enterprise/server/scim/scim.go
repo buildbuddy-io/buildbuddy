@@ -392,7 +392,7 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 			Statuses:    []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
 			SubIDPrefix: saml.SubIDPrefixForGroup(g.URLIdentifier),
 		}
-		displayUsers, err := s.env.GetUserDB().GetGroupUsers(ctx, g.GroupID, opts)
+		displayUsers, err := s.env.GetUserDB().GetGroupUsers(ctx, opts)
 		if err != nil {
 			return nil, err
 		}
