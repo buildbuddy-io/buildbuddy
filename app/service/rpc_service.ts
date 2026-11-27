@@ -104,41 +104,79 @@ class RpcService {
   }
 
   getRegionalServiceOrDefault(server: string): ExtendedBuildBuddyService {
-    if (!capabilities.config.regions) {
-      return this.service;
+    const appServer = this.getRegionalServerOrDefault(server);
+    const region = capabilities.config.regions?.find((region) => region.server === appServer);
+    return (region && this.regionalServices.get(region.name)) || this.service;
+  }
+
+  /** Resolves an execution endpoint to a configured app server, or same-origin (""). */
+  getRegionalServerOrDefault(server: string): string {
+    // Bazel defaults bare HOST[:PORT] endpoints to grpcs. Preserve the
+    // explicit TLS choice: grpcs maps to HTTPS, while grpc maps to HTTP.
+    if (server && !server.includes("://")) server = `grpcs://${server}`;
+    // Endpoints must not contain paths, queries, or userinfo. URL normalizes
+    // default ports for matching the configured app origins.
+    if (!/^(http|https|grpc|grpcs):\/\/[^/?#]+\/?$/.test(server)) return "";
+    let url: URL;
+    try {
+      url = new URL(server.replace(/^grpcs:/, "https:").replace(/^grpc:/, "http:"));
+    } catch {
+      return "";
     }
+    if (url.username || url.password || url.pathname !== "/") return "";
+    server = url.origin;
 
-    // grpcs uses https, let's just treat them as equivalent to make matching easier..
-    server = server.replace("grpcs://", "https://");
-
-    let bestMatch = this.service;
+    let bestMatch = "";
     let bestMatchDepth = 0;
-    for (let i = 0; i < capabilities.config.regions.length; i++) {
-      const region = capabilities.config.regions[i];
-      if (region.server === server) {
-        return this.regionalServices.get(region.name) ?? this.service;
+    for (const region of capabilities.config.regions ?? []) {
+      try {
+        const configuredApp = new URL(region.server);
+        if (configuredApp.origin === server) return region.server;
+        if (configuredApp.protocol !== url.protocol) continue;
+      } catch {
+        continue;
       }
-      const chunks = region.subdomains.split("*");
+      // The configured pattern must match both the scheme and port. In
+      // particular, HTTP wildcard endpoints cannot match HTTPS requests.
+      let subdomains: string;
+      try {
+        // Canonicalize configured default ports, but do not turn a malformed
+        // pattern containing paths, queries, or userinfo into an allowed origin.
+        if (!/^(http|https):\/\/[^/?#]+\/?$/.test(region.subdomains)) continue;
+        const pattern = new URL(region.subdomains);
+        if (pattern.username || pattern.password || pattern.pathname !== "/") continue;
+        subdomains = pattern.origin;
+      } catch {
+        continue;
+      }
+      const chunks = subdomains.split("*");
       // Only one wildcard is allowed for the subdomain.
-      if (chunks.length != 2) {
-        continue;
-      }
-
-      // Trim the http:// prefix bit and the top level domain suffix.
-      if (!server.startsWith(chunks[0]) || !server.endsWith(chunks[1])) {
-        continue;
-      }
-      const subdomain = server.substring(0, server.length - chunks[1].length).substring(chunks[0].length);
-      // Make sure the subdomain doesn't have any non alphanumeric or dash characters.
-      if (subdomain.match(SUBDOMAIN_REGEX)) {
+      if (chunks.length !== 2 || !server.startsWith(chunks[0]) || !server.endsWith(chunks[1])) continue;
+      const subdomain = server.substring(chunks[0].length, server.length - chunks[1].length);
+      if (SUBDOMAIN_REGEX.test(subdomain)) {
         const domainSuffixDepth = chunks[1].split(".").length;
         if (domainSuffixDepth > bestMatchDepth) {
           bestMatchDepth = domainSuffixDepth;
-          bestMatch = this.regionalServices.get(region.name) ?? this.service;
+          bestMatch = region.server;
         }
       }
     }
     return bestMatch;
+  }
+
+  private isRegionalAppUrl(url: string): boolean {
+    try {
+      const origin = new URL(url, window.location.href).origin;
+      return (capabilities.config.regions ?? []).some((region) => {
+        try {
+          return new URL(region.server).origin === origin;
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -161,8 +199,12 @@ class RpcService {
     return `${path}?${new URLSearchParams({ ...params, request_context: encodedRequestContext })}`;
   }
 
-  getDownloadUrl(params: Record<string, string>, view = false): string {
-    return this.getAuthenticatedUrl(`/file/${view ? "view" : "download"}`, params);
+  getDownloadUrl(params: Record<string, string>, view = false, server = ""): string {
+    const appServer = this.getRegionalServerOrDefault(server);
+    // Use the canonical origin so a configured trailing slash cannot produce
+    // a double-slash path (and a redirect outside the authenticated CORS route).
+    const origin = appServer ? new URL(appServer).origin : "";
+    return this.getAuthenticatedUrl(`${origin}/file/${view ? "view" : "download"}`, params);
   }
 
   getBytestreamUrl(
@@ -238,6 +280,7 @@ class RpcService {
     const controller = new AbortController();
     return new CancelablePromise(
       this.fetch(url, (responseType || "") as FetchResponseType, {
+        ...(this.isRegionalAppUrl(url) ? { credentials: "include" as const } : {}),
         ...(init ?? {}),
         signal: controller.signal,
       }) as Promise<FetchPromiseType<T>>,
