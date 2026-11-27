@@ -136,7 +136,8 @@ export default class TapComponent extends React.Component<Props, State> {
   render() {
     const tab = this.getSelectedTab();
     const repo = this.selectedRepo();
-    const title = this.getPageTitle();
+    const title = tab === "flakes" ? "Flakes" : "Tests";
+    const target = tab === "flakes" ? this.props.search.get("target") : null;
     let tabContent;
     if (tab === "flakes") {
       tabContent = <FlakesComponent repo={repo} search={this.props.search} dark={this.props.dark}></FlakesComponent>;
@@ -147,14 +148,14 @@ export default class TapComponent extends React.Component<Props, State> {
     }
 
     return (
-      <div className={`tap ${this.isV2 ? "v2" : ""}`}>
+      <div className={`tap ${this.isV2 ? "v2" : ""} ${tab === "flakes" ? "flakes" : ""}`}>
         <div className={`tap-top-bar  ${tab !== "flakes" ? "stick" : ""}`}>
           <div className="container">
             <div className="tap-header-group">
               <div className="tap-header">
                 <div className="tap-header-left-section">
                   <div className="tap-title">{title}</div>
-                  {this.isV2 && this.state.repos.length > 0 && (
+                  {!target && this.isV2 && this.state.repos.length > 0 && (
                     <>
                       <Select
                         onChange={this.handleRepoChange.bind(this)}
@@ -180,6 +181,7 @@ export default class TapComponent extends React.Component<Props, State> {
                   {tab === "flakes" && <DateRangePickerButton search={this.props.search} />}
                 </div>
               </div>
+              {target && <div className="flakes-target-label">{target}</div>}
             </div>
           </div>
         </div>
