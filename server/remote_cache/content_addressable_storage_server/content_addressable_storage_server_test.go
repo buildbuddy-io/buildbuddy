@@ -8,12 +8,14 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -33,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
@@ -1681,4 +1684,352 @@ func TestStreamingChunkMappingRPCsUnimplemented(t *testing.T) {
 	require.NoError(t, err)
 	_, err = registerStream.CloseAndRecv()
 	require.Equal(t, gcodes.Unimplemented, gstatus.Code(err))
+}
+
+// treeCacheSpy records tree cache pointers and the blobs they refer to.
+type treeCacheSpy struct {
+	interfaces.Cache
+	mu       sync.Mutex
+	blobs    map[string][]byte
+	pointers []string // hashes of the tree cache blobs the pointers refer to
+	// multiGets counts GetMulti calls, which GetTree makes to fetch the
+	// directories under each node it doesn't find in the tree cache.
+	multiGets int
+}
+
+func (c *treeCacheSpy) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	c.mu.Lock()
+	c.multiGets++
+	c.mu.Unlock()
+	return c.Cache.GetMulti(ctx, resources)
+}
+
+func (c *treeCacheSpy) getMultiCalls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.multiGets
+}
+
+func (c *treeCacheSpy) treeCacheBlob(t *testing.T, hash string) *capb.TreeCache {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	tc := &capb.TreeCache{}
+	require.NoError(t, proto.Unmarshal(c.blobs[hash], tc))
+	return tc
+}
+
+func (c *treeCacheSpy) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	c.mu.Lock()
+	if r.GetCacheType() == rspb.CacheType_CAS {
+		c.blobs[r.GetDigest().GetHash()] = slices.Clone(data)
+	} else {
+		ar := &repb.ActionResult{}
+		if err := proto.Unmarshal(data, ar); err == nil && len(ar.GetOutputFiles()) > 0 {
+			c.pointers = append(c.pointers, ar.GetOutputFiles()[0].GetDigest().GetHash())
+		}
+	}
+	c.mu.Unlock()
+	return c.Cache.Set(ctx, r, data)
+}
+
+// treeCaches waits for n tree cache pointers and returns the entries they refer to.
+func (c *treeCacheSpy) treeCaches(t *testing.T, n int) []*capb.TreeCache {
+	require.Eventually(t, func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return len(c.pointers) >= n
+	}, 30*time.Second, 10*time.Millisecond)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []*capb.TreeCache
+	for _, h := range c.pointers {
+		tc := &capb.TreeCache{}
+		require.NoError(t, proto.Unmarshal(c.blobs[h], tc))
+		out = append(out, tc)
+	}
+	return out
+}
+
+func newTreeCacheSpyServer(t *testing.T) (context.Context, *treeCacheSpy, bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	mc, err := memory_cache.NewMemoryCache(1000000000)
+	require.NoError(t, err)
+	spy := &treeCacheSpy{Cache: mc, blobs: map[string][]byte{}}
+	te.SetCache(spy)
+	clientConn := runCASServer(ctx, t, te)
+	return ctx, spy, bspb.NewByteStreamClient(clientConn), repb.NewContentAddressableStorageClient(clientConn)
+}
+
+// mapFileCache is the part of an executor's file cache that tree cache
+// subtrees use.
+type mapFileCache struct {
+	interfaces.FileCache
+	files map[string][]byte
+}
+
+func (c *mapFileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
+	b, ok := c.files[node.GetDigest().GetHash()]
+	if !ok {
+		return nil, status.NotFoundError("not in file cache")
+	}
+	return b, nil
+}
+
+func (c *mapFileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (int, error) {
+	c.files[node.GetDigest().GetHash()] = b
+	return len(b), nil
+}
+
+func dirNode(name string, d *repb.Digest) *repb.DirectoryNode {
+	return &repb.DirectoryNode{Name: name, Digest: d}
+}
+
+func uploadDirOf(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, nodes ...*repb.DirectoryNode) *repb.Digest {
+	d, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, &repb.Directory{Directories: nodes})
+	require.NoError(t, err)
+	return d
+}
+
+// readTreeHashes returns the sorted hashes of the directories GetTree returns.
+func readTreeHashes(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, root *repb.Digest) []string {
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{RootDigest: root})
+	require.NoError(t, err)
+	var hashes []string
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		for _, dir := range rsp.GetDirectories() {
+			d, err := digest.ComputeForMessage(dir, repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			hashes = append(hashes, d.GetHash())
+		}
+	}
+	slices.Sort(hashes)
+	return hashes
+}
+
+func distinct(sorted []string) []string {
+	return slices.Compact(slices.Clone(sorted))
+}
+
+func entryHashes(tc *capb.TreeCache) []string {
+	var hashes []string
+	for _, d := range tc.GetChildren() {
+		hashes = append(hashes, d.GetResourceName().GetDigest().GetHash())
+	}
+	slices.Sort(hashes)
+	return hashes
+}
+
+// entryContaining returns the one entry that has the directory in it.
+func entryContaining(t *testing.T, entries []*capb.TreeCache, dir *repb.Digest) *capb.TreeCache {
+	var found []*capb.TreeCache
+	for _, e := range entries {
+		if slices.Contains(entryHashes(e), dir.GetHash()) {
+			found = append(found, e)
+		}
+	}
+	require.Len(t, found, 1)
+	return found[0]
+}
+
+func TestGetTreeCachingDedupeEntries(t *testing.T) {
+	for _, dedupe := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dedupe=%v", dedupe), func(t *testing.T) {
+			flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+			flags.Set(t, "cache.tree_cache_dedupe_entries", dedupe)
+			ctx, spy, bsClient, casClient := newTreeCacheSpyServer(t)
+
+			// top/n has the same directory (and its child) at two paths.
+			shared, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
+			n := uploadDirOf(ctx, t, bsClient, dirNode("a", shared), dirNode("b", shared))
+			top := uploadDirOf(ctx, t, bsClient, dirNode("n", n))
+
+			// An uncached read returns a directory at every path.
+			want := readTreeHashes(ctx, t, casClient, top)
+			require.Greater(t, len(want), len(distinct(want)))
+			entries := spy.treeCaches(t, 1)
+			// n, shared and shared's child; twice each without dedupe.
+			if dedupe {
+				assert.Len(t, entries[0].GetChildren(), 3)
+			} else {
+				assert.Len(t, entries[0].GetChildren(), 5)
+			}
+
+			// The second read is served from the tree cache: only the root's
+			// children are fetched. A deduped hit returns a repeated
+			// directory once.
+			flags.Set(t, "cache.tree_cache_write_probability", 0.0)
+			fetchesBefore := spy.getMultiCalls()
+			got := readTreeHashes(ctx, t, casClient, top)
+			assert.Equal(t, 1, spy.getMultiCalls()-fetchesBefore)
+			if dedupe {
+				assert.Equal(t, distinct(want), got)
+			} else {
+				assert.Equal(t, want, got)
+			}
+		})
+	}
+}
+
+// uploadRepeatedDirs uploads root/wrap/{child,other}, where child/n/{a,b} and
+// other/s are the same directory. Reading pre caches the entries for child
+// (level 1) and n.
+func uploadRepeatedDirs(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient) (pre, root, wrap *repb.Digest) {
+	shared, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
+	n := uploadDirOf(ctx, t, bsClient, dirNode("a", shared), dirNode("b", shared))
+	child := uploadDirOf(ctx, t, bsClient, dirNode("n", n))
+	other := uploadDirOf(ctx, t, bsClient, dirNode("s", shared))
+	wrap = uploadDirOf(ctx, t, bsClient, dirNode("child", child), dirNode("other", other))
+	root = uploadDirOf(ctx, t, bsClient, dirNode("wrap", wrap))
+	pre = uploadDirOf(ctx, t, bsClient, dirNode("c", child))
+	return pre, root, wrap
+}
+
+func TestGetTreeCachingDedupeEntriesCopiedIntoParent(t *testing.T) {
+	for _, dedupe := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dedupe=%v", dedupe), func(t *testing.T) {
+			flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+			flags.Set(t, "cache.tree_cache_dedupe_entries", dedupe)
+			ctx, spy, bsClient, casClient := newTreeCacheSpyServer(t)
+			pre, root, wrap := uploadRepeatedDirs(ctx, t, bsClient)
+
+			readTreeHashes(ctx, t, casClient, pre)
+			spy.treeCaches(t, 2)
+
+			// wrap (level 1) merges child's cached contents with other's
+			// directories; shared is in both.
+			want := readTreeHashes(ctx, t, casClient, root)
+			// The entries for n and child, then wrap and other.
+			wrapEntry := entryContaining(t, spy.treeCaches(t, 4), wrap)
+			got := entryHashes(wrapEntry)
+			// wrap, child, n, shared, shared's child and other.
+			require.Len(t, distinct(got), 6)
+			if dedupe {
+				assert.Equal(t, distinct(got), got)
+			} else {
+				assert.Len(t, got, 10)
+			}
+
+			flags.Set(t, "cache.tree_cache_write_probability", 0.0)
+			fetchesBefore := spy.getMultiCalls()
+			hit := readTreeHashes(ctx, t, casClient, root)
+			assert.Equal(t, 1, spy.getMultiCalls()-fetchesBefore)
+			if dedupe {
+				assert.Equal(t, distinct(want), hit)
+			} else {
+				assert.Equal(t, want, hit)
+			}
+		})
+	}
+}
+
+func TestGetTreeCachingDedupeEntriesSplitChildren(t *testing.T) {
+	for _, dedupe := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dedupe=%v", dedupe), func(t *testing.T) {
+			flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+			flags.Set(t, "cache.tree_cache_splitting", true)
+			flags.Set(t, "cache.tree_cache_splitting_min_size", 3)
+			flags.Set(t, "cache.tree_cache_dedupe_entries", dedupe)
+			ctx, spy, bsClient, casClient := newTreeCacheSpyServer(t)
+
+			shared, _ := cas.MakeTree(ctx, t, bsClient, "", 1, 1)
+			nodeModules := uploadDirOf(ctx, t, bsClient, dirNode("a", shared), dirNode("b", shared))
+			pkg := uploadDirOf(ctx, t, bsClient, dirNode("node_modules", nodeModules))
+			top := uploadDirOf(ctx, t, bsClient, dirNode("pkg", pkg))
+
+			want := readTreeHashes(ctx, t, casClient, top)
+			// pkg's entry, with node_modules split out, and node_modules' own.
+			var split *capb.TreeCache
+			for _, e := range spy.treeCaches(t, 2) {
+				if len(e.GetTreeCacheChildren()) > 0 {
+					split = e
+				}
+			}
+			require.NotNil(t, split)
+			require.Len(t, split.GetTreeCacheChildren(), 1)
+			child := spy.treeCacheBlob(t, split.GetTreeCacheChildren()[0].GetDigest().GetHash())
+			got := entryHashes(child)
+			// node_modules, shared and shared's child.
+			require.Len(t, distinct(got), 3)
+			if dedupe {
+				assert.Equal(t, distinct(got), got)
+			} else {
+				assert.Len(t, got, 5)
+			}
+
+			flags.Set(t, "cache.tree_cache_write_probability", 0.0)
+			fetchesBefore := spy.getMultiCalls()
+			hit := readTreeHashes(ctx, t, casClient, top)
+			assert.Equal(t, 1, spy.getMultiCalls()-fetchesBefore)
+			if dedupe {
+				assert.Equal(t, distinct(want), hit)
+			} else {
+				assert.Equal(t, want, hit)
+			}
+		})
+	}
+}
+
+// Executors read cached subtrees by reference; the directories they get must
+// be the same as an inline GetTree returns.
+func TestGetTreeCachingDedupeEntriesExecutorPath(t *testing.T) {
+	for _, dedupe := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dedupe=%v", dedupe), func(t *testing.T) {
+			flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+			flags.Set(t, "cache.tree_cache_dedupe_entries", dedupe)
+			flags.Set(t, "cache.request_cached_subtree_digests", true)
+			flags.Set(t, "cache.get_tree_subtree_min_dir_count", 2)
+			ctx, spy, bsClient, casClient := newTreeCacheSpyServer(t)
+			pre, root, wrap := uploadRepeatedDirs(ctx, t, bsClient)
+			rootRN := digest.NewCASResourceName(root, "", repb.DigestFunction_SHA256)
+
+			fc := &mapFileCache{files: map[string][]byte{}}
+
+			readTreeHashes(ctx, t, casClient, pre)
+			spy.treeCaches(t, 2)
+
+			readExecutorTree := func() map[digest.Key]*repb.Directory {
+				written := testmetrics.CounterValue(t, metrics.GetTreeFilecacheTreesWritten)
+				tree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, casClient, rootRN, fc, bsClient)
+				require.NoError(t, err)
+				assert.Greater(t, testmetrics.CounterValue(t, metrics.GetTreeFilecacheTreesWritten), written, "no subtree was read by reference")
+				_, dirMap, err := dirtools.DirMapFromTree(tree, repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				return dirMap
+			}
+			assertMatchesInline := func(got map[digest.Key]*repb.Directory) {
+				tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, rootRN)
+				require.NoError(t, err)
+				_, want, err := dirtools.DirMapFromTree(tree, repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				require.Len(t, want, 7) // root, wrap, child, n, shared, its child, other
+				assert.Len(t, got, len(want))
+				for k := range want {
+					assert.Contains(t, got, k)
+				}
+			}
+
+			// Wrap's entry isn't written yet, so this read gets child as a
+			// cached subtree and writes wrap's entry from its contents and
+			// other's directories.
+			assertMatchesInline(readExecutorTree())
+
+			wrapEntry := entryHashes(entryContaining(t, spy.treeCaches(t, 4), wrap))
+			if dedupe {
+				assert.Equal(t, distinct(wrapEntry), wrapEntry)
+			} else {
+				assert.NotEqual(t, distinct(wrapEntry), wrapEntry)
+			}
+
+			// Now all of wrap is a cached subtree.
+			assertMatchesInline(readExecutorTree())
+		})
+	}
 }
