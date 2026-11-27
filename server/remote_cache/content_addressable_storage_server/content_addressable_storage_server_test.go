@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheopts"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -684,6 +686,87 @@ func TestGetTreeCaching(t *testing.T) {
 
 	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
 	assert.Less(t, fetch2Time, fetch1Time/2)
+}
+
+// maxReplicasCache records the max read replicas option on each read.
+type maxReplicasCache struct {
+	interfaces.Cache
+	mu      sync.Mutex
+	pointer []int
+	// Reads of cached TreeCache blobs.
+	treeCacheCAS []int
+	otherCAS     []int
+}
+
+func (c *maxReplicasCache) record(ctx context.Context, r *rspb.ResourceName) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if r.GetCacheType() == rspb.CacheType_AC {
+		c.pointer = append(c.pointer, cacheopts.MaxReadReplicas(ctx))
+	} else if strings.HasPrefix(r.GetInstanceName(), digest.TreeCacheRemoteInstanceName) {
+		c.treeCacheCAS = append(c.treeCacheCAS, cacheopts.MaxReadReplicas(ctx))
+	} else {
+		c.otherCAS = append(c.otherCAS, cacheopts.MaxReadReplicas(ctx))
+	}
+}
+
+func (c *maxReplicasCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	c.record(ctx, r)
+	return c.Cache.Get(ctx, r)
+}
+
+func (c *maxReplicasCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	for _, r := range resources {
+		c.record(ctx, r)
+	}
+	return c.Cache.GetMulti(ctx, resources)
+}
+
+func TestGetTreeTreeCachePointerMaxReadReplicas(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		flagOn      bool
+		wantPointer int
+	}{
+		{name: "flag on limits only the pointer read", flagOn: true, wantPointer: 1},
+		{name: "flag off sets no limit", flagOn: false, wantPointer: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+			flags.Set(t, "cache.tree_cache_pointer_nearest_replica_only", tc.flagOn)
+			instanceName := ""
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			rc := &maxReplicasCache{Cache: te.GetCache()}
+			te.SetCache(rc)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
+
+			clientConn := runCASServer(ctx, t, te)
+			bsClient := bspb.NewByteStreamClient(clientConn)
+			casClient := repb.NewContentAddressableStorageClient(clientConn)
+			rootDigest, _ := cas.MakeTree(ctx, t, bsClient, instanceName, 5, 2)
+
+			// The first walk writes the tree cache; the second hits it and reads
+			// the cached nodes from the CAS.
+			cas.ReadTree(ctx, t, casClient, instanceName, rootDigest)
+			rc.mu.Lock()
+			rc.pointer, rc.treeCacheCAS, rc.otherCAS = nil, nil, nil
+			rc.mu.Unlock()
+			cas.ReadTree(ctx, t, casClient, instanceName, rootDigest)
+
+			rc.mu.Lock()
+			defer rc.mu.Unlock()
+			require.NotEmpty(t, rc.pointer)
+			require.NotEmpty(t, rc.treeCacheCAS)
+			for _, n := range rc.pointer {
+				require.Equal(t, tc.wantPointer, n)
+			}
+			for _, n := range append(rc.treeCacheCAS, rc.otherCAS...) {
+				require.Zero(t, n)
+			}
+		})
+	}
 }
 
 // Reads cached trees whose TreeCaches are too small for the buffer pool, fit

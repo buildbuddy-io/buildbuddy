@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheopts"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -5019,4 +5020,185 @@ func TestFindMissing_Quorum_IgnoresNonReplicaCopies(t *testing.T) {
 	caches[nonReplica].mu.Lock()
 	require.Zero(t, caches[nonReplica].lookups[rn.GetDigest().GetHash()])
 	caches[nonReplica].mu.Unlock()
+}
+
+// failingGetCache fails every read with a non-NotFound error.
+type failingGetCache struct {
+	interfaces.Cache
+}
+
+func (failingGetCache) Get(context.Context, *rspb.ResourceName) ([]byte, error) {
+	return nil, status.InternalError("injected read failure")
+}
+
+func (failingGetCache) GetWithMetadata(context.Context, *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	return nil, nil, status.InternalError("injected read failure")
+}
+
+func TestMaxReadReplicas(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+
+	// Starts a cluster (R=3) with one node per cache in locals. Reads from node
+	// 0 try node 0 first, then the other replicas.
+	newCluster := func(t *testing.T, locals []interfaces.Cache, configure func(*Options)) []*Cache {
+		var peers []string
+		for range locals {
+			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+		}
+		baseConfig := Options{
+			ReplicationFactor:  3,
+			Nodes:              slices.Clone(peers),
+			DisableLocalLookup: true,
+		}
+		configure(&baseConfig)
+		var dcs []*Cache
+		for i, peer := range peers {
+			config := baseConfig
+			config.ListenAddr = peer
+			dcs = append(dcs, startNewDCache(t, env, config, locals[i]))
+		}
+		for _, peer := range peers {
+			waitForReady(t, peer)
+		}
+		return dcs
+	}
+	memoryCaches := func(t *testing.T, n int) []interfaces.Cache {
+		var locals []interfaces.Cache
+		for range n {
+			locals = append(locals, newMemoryCache(t, 1000000))
+		}
+		return locals
+	}
+	noConfig := func(*Options) {}
+	newPointer := func(t *testing.T) (*rspb.ResourceName, []byte) {
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		rn.InstanceName = digest.TreeCacheRemoteInstanceName
+		return rn, buf
+	}
+	// Reads a resource that only the last replica in read order holds.
+	farthestReplicaLookups := func(t *testing.T, limit int, configure func(*Options)) (bool, []testmetrics.HistogramValues) {
+		locals := memoryCaches(t, 3)
+		dcs := newCluster(t, locals, configure)
+		rn, buf := newPointer(t)
+		// Peers after self are in hash-ring order, not index order.
+		last := dcs[0].readPeers(rn).PreferredPeers[2]
+		for i, d := range dcs {
+			if d.opts.ListenAddr == last {
+				require.NoError(t, locals[i].Set(ctx, rn, buf))
+			}
+		}
+		metrics.DistributedCachePeerLookups.Reset()
+		_, err := dcs[0].Get(cacheopts.WithMaxReadReplicas(ctx, limit), rn)
+		require.True(t, err == nil || status.IsNotFoundError(err), "%v", err)
+		return err == nil, testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	}
+
+	t.Run("limit 1 misses with one peer call when only a farther replica has the item", func(t *testing.T) {
+		found, lookups := farthestReplicaLookups(t, 1, noConfig)
+		require.False(t, found)
+		require.Equal(t, []testmetrics.HistogramValues{{
+			Labels:  map[string]string{"op": "Get", metrics.CacheHitMissStatus: metrics.MissStatusLabel},
+			Buckets: map[float64]uint64{1: 1},
+		}}, lookups)
+	})
+
+	t.Run("no limit finds the item on a farther replica", func(t *testing.T) {
+		found, _ := farthestReplicaLookups(t, 0, noConfig)
+		require.True(t, found)
+	})
+
+	t.Run("limit 2 is not enough to reach the third replica", func(t *testing.T) {
+		found, _ := farthestReplicaLookups(t, 2, noConfig)
+		require.False(t, found)
+	})
+
+	// Only exercises the NewNodes gate; reads during a migration also reorder peers.
+	t.Run("limit is ignored during migration", func(t *testing.T) {
+		found, _ := farthestReplicaLookups(t, 1, func(o *Options) { o.NewNodes = slices.Clone(o.Nodes) })
+		require.True(t, found)
+	})
+
+	t.Run("limit 1 finds the item on the nearest replica", func(t *testing.T) {
+		locals := memoryCaches(t, 3)
+		dcs := newCluster(t, locals, noConfig)
+		rn, buf := newPointer(t)
+		require.NoError(t, locals[0].Set(ctx, rn, buf))
+		got, err := dcs[0].Get(cacheopts.WithMaxReadReplicas(ctx, 1), rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("limit 1 falls through when the nearest replica errors", func(t *testing.T) {
+		locals := memoryCaches(t, 3)
+		locals[0] = failingGetCache{locals[0]}
+		dcs := newCluster(t, locals, noConfig)
+		rn, buf := newPointer(t)
+		// Peers after self are in hash-ring order, not index order.
+		next := dcs[0].readPeers(rn).PreferredPeers[1]
+		for i, d := range dcs {
+			if d.opts.ListenAddr == next {
+				require.NoError(t, locals[i].Set(ctx, rn, buf))
+			}
+		}
+		got, err := dcs[0].Get(cacheopts.WithMaxReadReplicas(ctx, 1), rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("limit 1 with read-through asks a canonical replica after a same-zone non-replica misses", func(t *testing.T) {
+		locals := memoryCaches(t, 4)
+		dcs := newCluster(t, locals, func(o *Options) { o.ReadThroughLocalCache = true })
+		dc := dcs[0]
+		// The caller is alone in its zone, so it is promoted ahead of the
+		// replicas without being one.
+		dc.zone = "A"
+		dc.heartbeatMu.Lock()
+		for _, node := range dcs[1:] {
+			dc.peerZones[node.opts.ListenAddr] = "B"
+		}
+		dc.peerZones[dc.opts.ListenAddr] = "A"
+		dc.heartbeatMu.Unlock()
+		var rn *rspb.ResourceName
+		var buf []byte
+		for i := 0; ; i++ {
+			require.Less(t, i, 1000, "no digest without self as a replica")
+			rn, buf = newPointer(t)
+			replicas := dc.consistentHash.GetAllReplicas(rn.GetDigest().GetHash())[:dc.opts.ReplicationFactor]
+			if !slices.Contains(replicas, dc.opts.ListenAddr) {
+				break
+			}
+		}
+		ps := dc.readPeers(rn)
+		require.Contains(t, ps.BlockBackfills, dc.opts.ListenAddr)
+		require.Equal(t, dc.opts.ListenAddr, ps.PreferredPeers[0])
+		// The first canonical replica in read order.
+		var holder int
+		for i, d := range dcs {
+			if d.opts.ListenAddr == ps.PreferredPeers[1] {
+				holder = i
+			}
+		}
+		require.NoError(t, locals[holder].Set(ctx, rn, buf))
+		got, err := dc.Get(cacheopts.WithMaxReadReplicas(ctx, 1), rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("limit applies to any resource type", func(t *testing.T) {
+		locals := memoryCaches(t, 3)
+		dcs := newCluster(t, locals, noConfig)
+		casRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		acRN, _ := testdigest.RandomACResourceBuf(t, 100)
+		for _, rn := range []*rspb.ResourceName{casRN, acRN} {
+			buf := []byte("data")
+			last := dcs[0].readPeers(rn).PreferredPeers[2]
+			for i, d := range dcs {
+				if d.opts.ListenAddr == last {
+					require.NoError(t, locals[i].Set(ctx, rn, buf))
+				}
+			}
+			_, err := dcs[0].Get(cacheopts.WithMaxReadReplicas(ctx, 1), rn)
+			require.True(t, status.IsNotFoundError(err), "%v", err)
+		}
+	})
 }

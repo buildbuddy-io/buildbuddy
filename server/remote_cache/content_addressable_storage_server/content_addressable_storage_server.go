@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheopts"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -63,6 +64,8 @@ var (
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
 	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
 	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 10, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
+
+	treeCachePointerNearestReplicaOnly = expflag.Bool("cache.tree_cache_pointer_nearest_replica_only", false, "If true, tree cache pointer lookups ask only the nearest replica, so a pointer held only by a farther replica reads as a miss.")
 
 	findMissingChunkFallbackConcurrency = expflag.Int64("cache.find_missing_chunk_fallback_concurrency", 8, "The maximum number of chunk manifest lookups that FindMissingBlobs performs in parallel, for missing blobs that may be stored as chunks. Values less than 1 are treated as 1.")
 )
@@ -799,7 +802,11 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.
 func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName) ([]*capb.DirectoryWithDigest, *digest.ResourceName, error) {
 	levelLabel := fmt.Sprintf("%d", min(level, 12))
 
-	if pointerBuf, err := s.cache.Get(ctx, treeCachePointer.ToProto()); err == nil {
+	pointerCtx := ctx
+	if treeCachePointerNearestReplicaOnly.Get(ctx) {
+		pointerCtx = cacheopts.WithMaxReadReplicas(ctx, 1)
+	}
+	if pointerBuf, err := s.cache.Get(pointerCtx, treeCachePointer.ToProto()); err == nil {
 		ar := &repb.ActionResult{}
 		if err := proto.Unmarshal(pointerBuf, ar); err == nil {
 			if len(ar.OutputFiles) >= 1 && ar.OutputFiles[0].Path == digest.TreeCacheRemoteInstanceName {

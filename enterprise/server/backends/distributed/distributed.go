@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheopts"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
@@ -1318,8 +1319,14 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metricsLabel string) ([]byte, *interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	ps := c.readPeers(r)
+	// Ignored during migrations, which deliberately try every owner.
+	maxReplicas := cacheopts.MaxReadReplicas(ctx)
+	if len(c.opts.NewNodes) > 0 {
+		maxReplicas = 0
+	}
 
 	lookups := 0
+	replicaMisses := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		lookups++
 		data, md, err := c.remoteGetWithMetadata(ctx, peer, r, metricsLabel)
@@ -1331,6 +1338,14 @@ func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metri
 		}
 		if status.IsNotFoundError(err) {
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(r), peer)
+			// Read-through promotes same-zone non-replicas to the front; only a
+			// canonical replica's NotFound is authoritative.
+			if maxReplicas > 0 && !slices.Contains(ps.BlockBackfills, peer) {
+				replicaMisses++
+				if replicaMisses >= maxReplicas {
+					break
+				}
+			}
 			continue
 		}
 		c.log.CtxDebugf(ctx, "GetWithMetadata(%q) lookup failed on peer %s: (err: %v)", distributed_client.ResourceIsolationString(r), peer, err)
