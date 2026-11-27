@@ -38,6 +38,11 @@ export default class MenuComponent extends React.Component<Props, State> {
     this.dismissMenu();
   }
 
+  handleToggleDarkModeClicked() {
+    this.props.preferences.setTheme(this.props.preferences.darkModeEnabled ? "light" : "dark");
+    this.dismissMenu();
+  }
+
   handleSetupClicked() {
     router.navigateToSetup();
     this.dismissMenu();
@@ -98,6 +103,11 @@ export default class MenuComponent extends React.Component<Props, State> {
                   <li onClick={this.handleToggleDenseModeClicked.bind(this)}>
                     {this.props.preferences.denseModeEnabled ? "Disable" : "Enable"} dense mode
                   </li>
+                  {capabilities.config.darkModeEnabled && (
+                    <li onClick={this.handleToggleDarkModeClicked.bind(this)}>
+                      {this.props.preferences.darkModeEnabled ? "Disable" : "Enable"} dark mode
+                    </li>
+                  )}
                   <li onClick={this.handleSetupClicked.bind(this)}>Quickstart</li>
                   {!capabilities.enterprise && (
                     <li onClick={this.dismissMenu.bind(this)}>
