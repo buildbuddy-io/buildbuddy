@@ -567,41 +567,71 @@ func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr, mapping *Gue
 	return nil
 }
 
+// zeroPage resolves a single page fault with UFFDIO_ZEROPAGE.
+func (h *Handler) zeroPage(uffd uintptr, faultingAddress uintptr) error {
+	pageSize := int64(os.Getpagesize())
+	zeroIO := uffdIoZeropage{
+		Range: uffdIoRange{
+			Start: uint64(faultingAddress),
+			Len:   uint64(pageSize),
+		},
+	}
+	errno := h.faultResolver.zeropage(uffd, &zeroIO)
+	zeroed := max(zeroIO.Zeropage, 0)
+	if zeroed > pageSize || zeroed%pageSize != 0 {
+		return status.InternalErrorf("UFFDIO_ZEROPAGE reported invalid progress: zeroed %d of %d bytes", zeroed, pageSize)
+	}
+	if errno == unix.EEXIST {
+		return nil
+	}
+	if errno != 0 {
+		return wrapErrno(errno, "UFFDIO_ZEROPAGE failed")
+	}
+	if zeroed == 0 {
+		return status.InternalError("UFFDIO_ZEROPAGE succeeded but zeroed 0 bytes")
+	}
+	return nil
+}
+
 // copyDataFromMemorySnapshot handles a page fault by copying data from the memory
 // snapshot into the guest.
 func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_write.COWStore, mapping *GuestRegionUFFDMapping, faultingAddress uintptr) error {
 	// Find the memory data in the store that should be used to handle the page fault
 	faultStoreOffset := guestMemoryAddrToStoreOffset(faultingAddress, *mapping)
 	chunkStartOffset := memoryStore.ChunkStartOffset(int64(faultStoreOffset))
+	chunkAddr, chunkSize, release, err := memoryStore.AcquireUFFDChunk(faultStoreOffset)
+	if err != nil {
+		return status.WrapError(err, "acquire backing chunk")
+	}
+	defer release()
 
 	var hostAddr, destAddr uintptr
 	var copySize int64
-	var err error
+	relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
+	if int64(relOffset) >= chunkSize {
+		// Fault landed past the physical end of the last chunk (e.g. virtual
+		// zero-padding after a resize); resolve with a zero page.
+		return h.zeroPage(uffd, faultingAddress)
+	}
+	if int64(relOffset)+int64(os.Getpagesize()) > chunkSize {
+		return status.InternalErrorf("UFFD fault at store offset %d exceeds backing chunk size %d", faultStoreOffset, chunkSize)
+	}
 	if *snaputil.EnableBalloon && memoryStore.PartiallyMapped(chunkStartOffset) {
 		// If the chunk is partially mapped (i.e. contains some removed
 		// pages), only page fault in 1 page at a time
 		// because holes and data must be handled differently and chunk-level
 		// operations don't provide enough granularity.
-		hostAddr, err = memoryStore.GetPageAddress(faultStoreOffset, false)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
+		hostAddr = chunkAddr + relOffset
 		destAddr = faultingAddress
 		copySize = int64(os.Getpagesize())
 	} else {
 		// To reduce the number of UFFD round trips, copy the aligned window of
 		// the chunk around the faulting address. Copying whole chunks makes
 		// each first touch slow.
-		var chunkAddr uintptr
-		chunkAddr, copySize, err = memoryStore.GetChunkStartAddressAndSize(faultStoreOffset, false /*=write*/)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
-		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
 		windowOffset := relOffset &^ uintptr(h.copyWindowBytes-1)
 		hostAddr = chunkAddr + windowOffset
 		destAddr = faultingAddress - relOffset + windowOffset
-		copySize = min(copySize-int64(windowOffset), h.copyWindowBytes)
+		copySize = min(chunkSize-int64(windowOffset), h.copyWindowBytes)
 	}
 
 	// Check that the request is within the valid guest memory range.
@@ -614,6 +644,9 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 		hostAddr += invalidBytesAtChunkStart
 		copySize -= int64(invalidBytesAtChunkStart)
 	}
+	if copySize <= 0 {
+		return status.InternalErrorf("UFFD fault at store offset %d has empty copy range (chunk size %d)", faultStoreOffset, chunkSize)
+	}
 	// Check for data above the valid memory range
 	mappingEndAddr := mapping.BaseHostVirtAddr + mapping.Size
 	copyEndAddr := destAddr + uintptr(copySize)
@@ -622,16 +655,14 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 		invalidBytesAtChunkEnd = int64(copyEndAddr - mappingEndAddr)
 		copySize -= invalidBytesAtChunkEnd
 	}
+	if copySize <= 0 {
+		return status.InternalErrorf("UFFD fault at store offset %d has empty copy range (chunk size %d)", faultStoreOffset, chunkSize)
+	}
 
 	if err := h.copyRange(uffd, destAddr, hostAddr, copySize); err != nil {
 		return err
 	}
 
-	// After memory has been copied to the VM, unmap the chunk to save memory
-	// usage on the executor
-	if err := memoryStore.UnmapChunk(chunkStartOffset); err != nil {
-		return err
-	}
 	return nil
 }
 
