@@ -243,8 +243,9 @@ func TestIsAllowed(t *testing.T) {
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"10.1.2.3"})
 	allowed, err := networking.TaskAllowedPrivateIPs(context.Background())
 	require.NoError(t, err)
-	n := &Network{externalNetwork: true, allowedPrefixes: allowed}
-	local := &Network{externalNetwork: false}
+	n := &Network{allowedPrefixes: allowed}
+	n.SetExternalNetworking(true)
+	local := &Network{}
 	for _, tc := range []struct {
 		addr    string
 		allowed bool

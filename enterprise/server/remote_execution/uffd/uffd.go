@@ -155,7 +155,7 @@ type Handler struct {
 	removedAddresses map[int64]struct{}
 
 	// Most memory copied into the guest per page fault.
-	copyWindowBytes int64
+	copyWindowBytes atomic.Int64
 
 	// faultResolver performs the userfaultfd ioctls.
 	faultResolver faultResolver
@@ -166,15 +166,21 @@ const defaultCopyWindowBytes = 256 * 1024
 // NewHandler returns a handler that copies at most copyWindowBytes, a power of
 // two of at least the page size, into the guest per page fault.
 func NewHandler(copyWindowBytes int64) (*Handler, error) {
+	h := &Handler{
+		removedAddresses: make(map[int64]struct{}),
+		faultResolver:    uffdFaultResolver{},
+	}
+	h.SetCopyWindowBytes(copyWindowBytes)
+	return h, nil
+}
+
+// SetCopyWindowBytes changes the most memory copied per page fault.
+func (h *Handler) SetCopyWindowBytes(copyWindowBytes int64) {
 	if copyWindowBytes < int64(os.Getpagesize()) || copyWindowBytes&(copyWindowBytes-1) != 0 {
 		alert.UnexpectedEvent("invalid_uffd_copy_window", "UFFD fault copy window %d is not a power of two of at least the page size; using %d", copyWindowBytes, defaultCopyWindowBytes)
 		copyWindowBytes = defaultCopyWindowBytes
 	}
-	return &Handler{
-		removedAddresses: make(map[int64]struct{}),
-		copyWindowBytes:  copyWindowBytes,
-		faultResolver:    uffdFaultResolver{},
-	}, nil
+	h.copyWindowBytes.Store(copyWindowBytes)
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
@@ -573,35 +579,33 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 	// Find the memory data in the store that should be used to handle the page fault
 	faultStoreOffset := guestMemoryAddrToStoreOffset(faultingAddress, *mapping)
 	chunkStartOffset := memoryStore.ChunkStartOffset(int64(faultStoreOffset))
+	chunkAddr, chunkSize, release, err := memoryStore.AcquireUFFDChunk(faultStoreOffset)
+	if err != nil {
+		return status.WrapError(err, "acquire backing chunk")
+	}
+	defer release()
 
 	var hostAddr, destAddr uintptr
 	var copySize int64
-	var err error
 	if *snaputil.EnableBalloon && memoryStore.PartiallyMapped(chunkStartOffset) {
 		// If the chunk is partially mapped (i.e. contains some removed
 		// pages), only page fault in 1 page at a time
 		// because holes and data must be handled differently and chunk-level
 		// operations don't provide enough granularity.
-		hostAddr, err = memoryStore.GetPageAddress(faultStoreOffset, false)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
+		hostAddr = chunkAddr + memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
 		destAddr = faultingAddress
 		copySize = int64(os.Getpagesize())
 	} else {
 		// To reduce the number of UFFD round trips, copy the aligned window of
 		// the chunk around the faulting address. Copying whole chunks makes
 		// each first touch slow.
-		var chunkAddr uintptr
-		chunkAddr, copySize, err = memoryStore.GetChunkStartAddressAndSize(faultStoreOffset, false /*=write*/)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
+		copySize = chunkSize
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-		windowOffset := relOffset &^ uintptr(h.copyWindowBytes-1)
+		copyWindowBytes := h.copyWindowBytes.Load()
+		windowOffset := relOffset &^ uintptr(copyWindowBytes-1)
 		hostAddr = chunkAddr + windowOffset
 		destAddr = faultingAddress - relOffset + windowOffset
-		copySize = min(copySize-int64(windowOffset), h.copyWindowBytes)
+		copySize = min(copySize-int64(windowOffset), copyWindowBytes)
 	}
 
 	// Check that the request is within the valid guest memory range.
@@ -627,11 +631,6 @@ func (h *Handler) copyDataFromMemorySnapshot(uffd uintptr, memoryStore *copy_on_
 		return err
 	}
 
-	// After memory has been copied to the VM, unmap the chunk to save memory
-	// usage on the executor
-	if err := memoryStore.UnmapChunk(chunkStartOffset); err != nil {
-		return err
-	}
 	return nil
 }
 

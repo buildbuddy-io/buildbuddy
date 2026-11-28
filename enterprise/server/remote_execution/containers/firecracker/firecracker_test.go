@@ -120,7 +120,10 @@ var (
 	testBazelBuild = flag.Bool("test_bazel_build", false, "Whether to test a bazel build.")
 	filecacheDir   = flag.String("persistent_filecache_dir", "", "Filecache directory to be used across test runs.")
 
-	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
+	genericPoolBenchmarkConcurrency = flag.Int("generic_pool_benchmark_concurrency", 4, "Concurrent actions in BenchmarkFirecrackerGenericSnapshotPool.")
+	genericPoolBenchmarkSize        = flag.Int("generic_pool_benchmark_size", 2, "Maximum idle plus restoring VMs in the benchmark pool.")
+	genericPoolBenchmarkRestores    = flag.Int("generic_pool_benchmark_restores", 2, "Concurrent background restores in the benchmark.")
+	skipDockerTests                 = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
 
 var (
@@ -5549,6 +5552,54 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoo
 		require.NoError(t, result.Error)
 		require.Equal(t, 0, result.ExitCode)
 	})
+	t.Run("pooled", func(t *testing.T) {
+		flags.Set(t, "executor.firecracker_generic_vm_pool_max_size", 1)
+		// The executor starts the pool without task credentials.
+		poolOpts := firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig(1, off)}
+		t.Cleanup(firecracker.StartGenericVMPool(context.Background(), env, experiments, poolOpts))
+		hits := func() float64 {
+			return testmetrics.CounterValueForLabels(t, metrics.FirecrackerGenericVMPoolTakes, prometheus.Labels{metrics.StatusHumanReadableLabel: "hit"})
+		}
+		for _, tc := range []struct {
+			name, check string
+			mode        fcpb.NetworkMode
+			drain       bool
+		}{
+			{name: "external", mode: fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, check: "ping -c1 -W5 8.8.8.8"},
+			{name: "off", mode: off, check: "! ping -c1 -W1 8.8.8.8"},
+			{name: "drained", mode: off, drain: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				if tc.drain {
+					// A rebuild restarts the pool, which drains the existing one.
+					firecracker.StartGenericVMPool(context.Background(), env, experiments, poolOpts)
+				}
+				createCtx, cancel := context.WithCancel(ctx)
+				defer cancel()
+				hitsBefore := hits()
+				var c *firecracker.FirecrackerContainer
+				for start := time.Now(); ; time.Sleep(100 * time.Millisecond) {
+					c = newContainer(t, createCtx, busyboxImage, "", 1, tc.mode)
+					snapshotID := c.SnapshotID()
+					require.NoError(t, c.Create(createCtx, testfs.MakeTempDir(t)))
+					if c.SnapshotID() != snapshotID {
+						break
+					}
+					require.Less(t, time.Since(start), 30*time.Second, "no task adopted a pooled VM")
+				}
+				require.Equal(t, hitsBefore+1, hits())
+				// Task cancellation must not cancel the VM's lazy image reads.
+				cancel()
+				command := `test -e /etc/hostname; test "$(grep -c '^processor' /proc/cpuinfo)" -eq 1; test "$(cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.max)" = 1073741824`
+				if tc.check != "" {
+					command += "; " + tc.check
+				}
+				result := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-ec", command}}, nil)
+				require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+				require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
+			})
+		}
+	})
 	// Without a usable snapshot, generic VMs boot from scratch.
 	runFromScratch := func(t *testing.T, cpus int64) {
 		c := newContainer(t, ctx, busyboxImage, "", cpus, off)
@@ -5592,8 +5643,13 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 		// Allocates and fills 1GiB, which touches that much guest memory.
 		{"touch_1GiB", []string{"dd", "if=/dev/zero", "of=/dev/null", "bs=1G", "count=1"}},
 	} {
-		for _, generic := range []bool{false, true} {
-			b.Run(fmt.Sprintf("command=%s/generic=%t", tc.name, generic), func(b *testing.B) {
+		for _, v := range []struct{ generic, pool bool }{{false, false}, {true, false}, {true, true}} {
+			generic := v.generic
+			b.Run(fmt.Sprintf("command=%s/generic=%t/pool=%t", tc.name, v.generic, v.pool), func(b *testing.B) {
+				if v.pool {
+					flags.Set(b, "executor.firecracker_generic_vm_pool_max_size", 2)
+					b.Cleanup(firecracker.StartGenericVMPool(ctx, env, nil /*=experiments*/, firecracker.ContainerOpts{ExecutorConfig: cfg, VMConfiguration: vmConfig}))
+				}
 				var createTime, execTime time.Duration
 				run := func() {
 					b.StopTimer()
@@ -5632,6 +5688,108 @@ func BenchmarkFirecrackerGenericSnapshot(b *testing.B) {
 			})
 		}
 	}
+}
+
+// Includes VM creation, execution, and teardown. Setup and cache warmup are untimed.
+func BenchmarkFirecrackerGenericSnapshotPool(b *testing.B) {
+	require.NoError(b, log.Configure())
+	require.Positive(b, *genericPoolBenchmarkConcurrency)
+	require.Positive(b, *genericPoolBenchmarkSize)
+	require.Positive(b, *genericPoolBenchmarkRestores)
+	flags.Set(b, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(b, "executor.firecracker_generic_vm_pool_max_size", *genericPoolBenchmarkSize)
+	flags.Set(b, "executor.firecracker_generic_vm_pool_max_concurrent_restores", *genericPoolBenchmarkRestores)
+	ctx := context.Background()
+	env := getTestEnv(ctx, b, envOpts{})
+	auth := testauth.NewTestAuthenticator(b, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(b, err)
+	cfg := getExecutorConfig(b)
+	opts := firecracker.ContainerOpts{
+		ExecutorConfig: cfg, GenericSnapshot: true,
+		VMConfiguration: &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 2385, ScratchDiskSizeMb: 100, NetworkMode: fcpb.NetworkMode_NETWORK_MODE_LOCAL},
+	}
+	require.NoError(b, firecracker.BuildGenericSnapshot(ctx, env, nil, opts))
+	command := &repb.Command{Arguments: []string{"/bin/true"}}
+	task := &repb.ExecutionTask{Command: command}
+	root := testfs.MakeTempDir(b)
+	run := func() (bool, error) {
+		dir, err := os.MkdirTemp(root, "action-")
+		if err != nil {
+			return false, err
+		}
+		defer os.RemoveAll(dir)
+		taskOpts := opts
+		taskOpts.ContainerImage = busyboxImage
+		c, err := firecracker.NewContainer(ctx, env, task, taskOpts)
+		if err != nil {
+			return false, err
+		}
+		defer c.Remove(context.Background())
+		id := c.SnapshotID()
+		result := c.Run(ctx, command, dir, oci.Credentials{})
+		if result.Error != nil {
+			return false, result.Error
+		}
+		if result.ExitCode != 0 {
+			return false, fmt.Errorf("command exited %d: %s", result.ExitCode, result.Stderr)
+		}
+		return id != c.SnapshotID(), nil
+	}
+	_, err = run() // Cache the image before starting the pool.
+	require.NoError(b, err)
+	stopPool := firecracker.StartGenericVMPool(context.Background(), env, nil, opts)
+	defer stopPool()
+	// Ensure at least one ready VM has actually been adopted before measuring.
+	for start := time.Now(); ; time.Sleep(10 * time.Millisecond) {
+		hit, err := run()
+		require.NoError(b, err)
+		if hit {
+			break
+		}
+		require.Less(b, time.Since(start), 30*time.Second, "pool did not become ready")
+	}
+	counter := func(status string) float64 {
+		return testmetrics.CounterValueForLabels(b, metrics.FirecrackerGenericVMPoolTakes, prometheus.Labels{metrics.StatusHumanReadableLabel: status})
+	}
+	hits, misses := counter("hit"), counter("miss")
+	latencies := make([]time.Duration, b.N)
+	var next atomic.Int64
+	var eg errgroup.Group
+	b.ResetTimer()
+	start := time.Now()
+	for range min(*genericPoolBenchmarkConcurrency, b.N) {
+		eg.Go(func() error {
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= b.N {
+					return nil
+				}
+				start := time.Now()
+				if _, err := run(); err != nil {
+					return err
+				}
+				latencies[i] = time.Since(start)
+			}
+		})
+	}
+	err = eg.Wait()
+	elapsed := time.Since(start)
+	b.StopTimer()
+	require.NoError(b, err)
+	var total time.Duration
+	for _, d := range latencies {
+		total += d
+	}
+	slices.Sort(latencies)
+	b.ReportMetric(float64(b.N)/elapsed.Seconds(), "actions/s")
+	b.ReportMetric(float64(total.Microseconds())/float64(b.N)/1000, "mean-ms")
+	b.ReportMetric(float64(latencies[(b.N*95+99)/100-1].Microseconds())/1000, "p95-ms")
+	b.ReportMetric(float64(latencies[(b.N*99+99)/100-1].Microseconds())/1000, "p99-ms")
+	b.ReportMetric(float64(latencies[b.N-1].Microseconds())/1000, "max-ms")
+	b.ReportMetric(counter("hit")-hits, "pool-hits")
+	b.ReportMetric(counter("miss")-misses, "pool-misses")
 }
 
 // Runs commands that leave dirty data in and outside the workspace, which the

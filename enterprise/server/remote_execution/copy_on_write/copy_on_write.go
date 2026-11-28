@@ -1,6 +1,7 @@
 package copy_on_write
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"io"
@@ -57,6 +58,7 @@ const (
 )
 
 var (
+	uffdMappingCacheBytes = flag.Int64("executor.uffd_mapping_cache_bytes", 512*1024*1024, "Bytes of immutable UFFD source mappings to retain. Active copies may temporarily exceed this budget; zero disables sharing.")
 	maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
 	eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 32, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
 
@@ -356,6 +358,124 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 		return 0, status.WrapError(err, "mmap start adddress")
 	}
 	return start + chunkRelativeAddress, nil
+}
+
+// AcquireUFFDChunk pins a source mapping until release is called after the copy.
+// Immutable chunks share mappings by digest; dirty chunks remain private.
+func (c *COWStore) AcquireUFFDChunk(offset uintptr) (addr uintptr, size int64, release func(), err error) {
+	start := c.ChunkStartOffset(int64(offset))
+	c.eagerFetchNextChunks(start)
+	unlock := c.chunkLock.RLock(start)
+	c.storeLock.RLock()
+	m := c.chunks[start]
+	c.storeLock.RUnlock()
+	size = c.calculateChunkSize(start)
+	if m == nil {
+		return memoryAddress(c.zeroBuf), size, unlock, nil
+	}
+	m.mu.Lock()
+	if m.closed {
+		err = status.InternalError("store is closed")
+	} else if *uffdMappingCacheBytes > 0 && !m.dirty && m.lazyDigest != nil {
+		// Resolve access using this store's context even when the shared mapping exists.
+		err = m.fetch(m.path())
+		if err == nil {
+			addr, release, err = uffdMappings.acquire(digest.String(m.lazyDigest), m.path(), m.sizeBytes)
+		}
+	} else {
+		err = m.initMap()
+		if err == nil {
+			addr = memoryAddress(m.data)
+			release = func() {
+				if err := m.Unmap(); err != nil {
+					log.Warningf("unmap UFFD source: %s", err)
+				}
+			}
+		}
+	}
+	m.mu.Unlock()
+	if err != nil {
+		unlock()
+		return 0, 0, nil, err
+	}
+	unpin := release
+	return addr, size, func() { unpin(); unlock() }, nil
+}
+
+type uffdMapping struct {
+	key  string
+	data []byte
+	refs int
+	idle *list.Element
+}
+
+// Only idle mappings are eligible for eviction.
+type uffdMappingCache struct {
+	sync.Mutex
+	entries map[string]*uffdMapping
+	idle    list.List
+	bytes   int64
+}
+
+var uffdMappings = uffdMappingCache{entries: make(map[string]*uffdMapping)}
+
+func (c *uffdMappingCache) acquire(key, path string, size int64) (uintptr, func(), error) {
+	c.Lock()
+	defer c.Unlock()
+	m := c.entries[key]
+	if m == nil {
+		f, err := os.Open(path)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil {
+			return 0, nil, err
+		}
+		if info.Size() != size {
+			return 0, nil, status.InternalErrorf("snapshot chunk size: got %d, want %d", info.Size(), size)
+		}
+		data, err := syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+		if err != nil {
+			return 0, nil, err
+		}
+		m = &uffdMapping{key: key, data: data}
+		c.entries[key] = m
+		c.bytes += size
+		updateMmappedBytesMetric(size, snaputil.MemoryFileName)
+	}
+	if m.idle != nil {
+		c.idle.Remove(m.idle)
+		m.idle = nil
+	}
+	m.refs++
+	c.trim()
+	return memoryAddress(m.data), func() {
+		c.Lock()
+		defer c.Unlock()
+		m.refs--
+		if m.refs == 0 {
+			m.idle = c.idle.PushFront(m)
+		}
+		c.trim()
+	}, nil
+}
+
+func (c *uffdMappingCache) trim() {
+	for c.bytes > *uffdMappingCacheBytes && c.idle.Len() > 0 {
+		e := c.idle.Back()
+		m := e.Value.(*uffdMapping)
+		if err := syscall.Munmap(m.data); err != nil {
+			log.Warningf("unmap shared UFFD source: %s", err)
+			return
+		}
+		c.idle.Remove(e)
+		delete(c.entries, m.key)
+		size := int64(len(m.data))
+		c.bytes -= size
+		updateMmappedBytesMetric(-size, snaputil.MemoryFileName)
+	}
 }
 
 // SortedChunks returns all chunks sorted by offset.
@@ -858,6 +978,17 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 			return nil
 		})
 	}
+}
+
+// FetchAll fetches every chunk without mapping it, so the store no longer
+// depends on the cache.
+func (s *COWStore) FetchAll() error {
+	for _, c := range s.SortedChunks() {
+		if err := s.fetchChunk(c.Offset); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *COWStore) fetchChunk(offset int64) error {
