@@ -77,6 +77,8 @@ For more information on how to write your own plugins, check out the [plugin doc
 
 The BuildBuddy CLI makes authentication to BuildBuddy a breeze. You can simply type `bb login` and follow the instructions. Once you're logged in, all of your requests to BuildBuddy will be authenticated to your organization.
 
+`bb login` saves your API key to `.git/config`. If the `BUILDBUDDY_API_KEY` environment variable is set, the CLI uses it instead, and `bb login --check` checks that key.
+
 ### Configuration
 
 You can save BuildBuddy CLI options in a [`.bbrc` file](/docs/cli-config). It
