@@ -169,6 +169,17 @@ message InitializeRequest {
   // Mount the container root read-only under an overlay whose writes go to
   // the scratch disk, which goinit mounts at /scratch.
   bool overlay_container_root = 7;
+
+  // If set, start dockerd and wait for it to be ready.
+  Dockerd dockerd = 8;
+}
+
+message Dockerd {
+  // JSON daemon configuration for dockerd (written to /etc/docker/daemon.json).
+  bytes daemon_json = 1;
+
+  // If true, dockerd will listen for TCP traffic on port 2375.
+  bool enable_tcp = 2;
 }
 
 message InitializeResponse {

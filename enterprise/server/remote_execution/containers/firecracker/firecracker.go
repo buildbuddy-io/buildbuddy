@@ -246,6 +246,9 @@ const (
 	// Timeout when mounting/unmounting the workspace within the guest.
 	mountTimeout = 1 * time.Minute
 
+	// Timeout when waiting for dockerd to initialize within the guest.
+	dockerdInitTimeout = 30 * time.Second
+
 	// How long to allow for the VM to be finalized (paused, outputs copied, etc.)
 	finalizationTimeout = 10 * time.Second
 
@@ -739,6 +742,9 @@ func (p *Provider) rebuildGenericSnapshot(c *FirecrackerContainer, cgroupParent 
 	hash := c.snapshotKeySet.GetWriteKey().GetConfigurationHash()
 	experiments := c.task.GetExperiments()
 	vmConfig := c.vmConfig.CloneVT()
+	vmConfig.InitDockerd = false
+	vmConfig.EnableDockerdTcp = false
+	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=genericSnapshot*/)
 	go p.genericRebuilds.Do(p.env.GetServerContext(), hash, func(ctx context.Context) (struct{}, error) {
 		p.buildGenericSnapshot(ctx, cgroupParent, experiments, vmConfig)
 		return struct{}{}, nil
@@ -800,7 +806,7 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	enableLogging := platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs"))
 	// Generic VMs use userspace networking, which doesn't support IPv6.
 	// Snapshots are built without logging, so VMs with logging never match one.
-	if !props.UseGenericSnapshot || props.RecycleRunner || props.InitDockerd || props.EnableVFS ||
+	if !props.UseGenericSnapshot || props.RecycleRunner || props.EnableVFS ||
 		props.NetworkEnableIPv6 || props.OverrideSnapshotKey != nil || enableLogging || *debugTerminal {
 		return nil, status.FailedPreconditionError("task can't use a generic snapshot")
 	}
@@ -818,6 +824,8 @@ func (p *Provider) newFromGenericSnapshot(ctx context.Context, args *container.I
 	vmConfig := genericVMConfig(ctx, shape, networkMode)
 	vmConfig.ScratchDiskSizeMb = int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
 	vmConfig.BootArgs = getBootArgs(vmConfig, true /*=genericSnapshot*/)
+	vmConfig.InitDockerd = props.InitDockerd
+	vmConfig.EnableDockerdTcp = props.EnableDockerdTCP
 	// The host memory limit is computed from the scheduled size, which the
 	// guest's memory exceeds, so the guest enforces that size instead.
 	cgroupSettings := args.Task.GetSchedulingMetadata().GetCgroupSettings().CloneVT()
@@ -1322,6 +1330,8 @@ func (c *FirecrackerContainer) genericSnapshotKey() (*fcpb.SnapshotKey, error) {
 	config.ScratchDiskSizeMb = 0
 	// Only the host side of the network depends on the network mode.
 	config.NetworkMode = fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED
+	config.InitDockerd = false
+	config.EnableDockerdTcp = false
 	configurationDigest, err := digest.ComputeForMessage(config, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
@@ -2149,11 +2159,13 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration, genericSnapshot bool) string {
 	if networkingEnabled(vmConfig.NetworkMode) {
 		initArgs = append(initArgs, "-set_default_route")
 	}
-	if vmConfig.InitDockerd {
-		initArgs = append(initArgs, "-init_dockerd")
-	}
-	if vmConfig.EnableDockerdTcp {
-		initArgs = append(initArgs, "-enable_dockerd_tcp")
+	if !genericSnapshot {
+		if vmConfig.InitDockerd {
+			initArgs = append(initArgs, "-init_dockerd")
+		}
+		if vmConfig.EnableDockerdTcp {
+			initArgs = append(initArgs, "-enable_dockerd_tcp")
+		}
 	}
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		initArgs = append(initArgs, "-enable_rootfs")
@@ -2882,8 +2894,23 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 	if _, err := crand.Read(entropy); err != nil {
 		return err
 	}
-	mountCtx, cancel := context.WithTimeout(ctx, mountTimeout)
+	timeout := mountTimeout
+	if c.vmConfig.InitDockerd {
+		timeout += dockerdInitTimeout
+	}
+	mountCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	var dockerd *vmxpb.Dockerd
+	if c.vmConfig.InitDockerd {
+		dockerDaemonConfig, err := getDockerDaemonConfig()
+		if err != nil {
+			return status.UnavailableErrorf("get Docker daemon config: %s", err)
+		}
+		dockerd = &vmxpb.Dockerd{
+			DaemonJson: dockerDaemonConfig,
+			EnableTcp:  c.vmConfig.EnableDockerdTcp,
+		}
+	}
 	rsp, err := vmxpb.NewExecClient(conn).Initialize(mountCtx, &vmxpb.InitializeRequest{
 		Entropy:                  entropy,
 		MountContainerRoot:       true,
@@ -2892,9 +2919,13 @@ func (c *FirecrackerContainer) attachContainerRoot(ctx context.Context) error {
 		MemoryLimitBytes:         c.guestMemoryLimitBytes,
 		ClearArpCache:            true,
 		UnixTimestampNanoseconds: time.Now().UnixNano(),
+		Dockerd:                  dockerd,
 	})
 	if err != nil {
 		if status.IsDeadlineExceededError(err) && ctx.Err() == nil {
+			if strings.Contains(err.Error(), "docker") {
+				return status.UnavailableErrorf("init dockerd: %s", err)
+			}
 			return status.UnavailableErrorf("mount container root: %s", err)
 		}
 		return err
@@ -3016,7 +3047,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// configuration. goinit will fall back to default nameservers if unavailable.
 	metadata["resolv_conf"] = c.hostResolvConf
 
-	if c.vmConfig.InitDockerd {
+	if c.vmConfig.InitDockerd && !c.genericSnapshot {
 		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
 			return status.UnavailableErrorf("get Docker daemon config: %s", err)

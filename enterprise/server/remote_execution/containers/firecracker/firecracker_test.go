@@ -176,10 +176,10 @@ func TestGuestAPIVersion(t *testing.T) {
 	//
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
-	// Compatible change: only VMs with an EROFS root pass -scratch_ext4 or
-	// set overlay_container_root.
+	// Compatible change: only generic VMs (which are keyed by InitrdVersion)
+	// set InitializeRequest.dockerd or mount overlay container roots.
 	const (
-		expectedHash    = "e9a0f7d90a3f5473f4f339105d35833a334572e67595aaeae4260c95aa3739b4"
+		expectedHash    = "b230a4d06a2862d708b13a3a3e9401667a2eff1304caa3a2237e0c0ac7c70bfb"
 		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -5528,6 +5528,41 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoo
 	t.Run("external networking", func(t *testing.T) {
 		assert.Equal(t, genericSnapshotID, run(t, ctx, busyboxImage, "", 1, fcpb.NetworkMode_NETWORK_MODE_EXTERNAL).GetVMMetadata().GetSnapshotId())
 	})
+	runDockerd := func(t *testing.T, cpus int64, expectSnapshot bool) {
+		skipUnsupportedImage(t, imageWithDockerInstalled)
+		dockerVMConfig := vmConfig(cpus, fcpb.NetworkMode_NETWORK_MODE_EXTERNAL)
+		dockerVMConfig.InitDockerd = true
+		opts := firecracker.ContainerOpts{
+			ContainerImage:        imageWithDockerInstalled,
+			ExecutorConfig:        cfg,
+			VMConfiguration:       dockerVMConfig,
+			GenericSnapshot:       true,
+			GuestMemoryLimitBytes: 1 << 30,
+		}
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, c.Remove(context.Background())) })
+		workDir := testfs.MakeTempDir(t)
+		cmd := &repb.Command{
+			Arguments: []string{"bash", "-c", `
+				docker info 2>/dev/null | grep 'Storage Driver'
+				docker run --rm ` + busyboxImage + ` echo hello
+			`},
+		}
+		result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+		require.NoError(t, result.Error, "%s", result.AuxiliaryLogs)
+		require.Equal(t, 0, result.ExitCode, "%s", result.Stderr)
+		if expectSnapshot {
+			assert.Equal(t, genericSnapshotID, result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+		} else {
+			assert.NotEqual(t, genericSnapshotID, result.VMMetadata.GetLastExecutedTask().GetSnapshotId())
+		}
+		assert.Regexp(t, `Storage Driver: (overlay2|overlayfs)`, string(result.Stdout))
+		assert.Contains(t, string(result.Stdout), "hello")
+	}
+	t.Run("dockerd", func(t *testing.T) {
+		runDockerd(t, 1, true)
+	})
 	t.Run("two CPUs", func(t *testing.T) {
 		assert.NotEqual(t, genericSnapshotID, run(t, ctx, busyboxImage, "", 2, off).GetVMMetadata().GetSnapshotId())
 	})
@@ -5559,6 +5594,9 @@ func testFirecrackerGenericSnapshot(t *testing.T, experiments []string, erofsRoo
 	}
 	t.Run("not built", func(t *testing.T) {
 		runFromScratch(t, 3)
+	})
+	t.Run("dockerd from scratch", func(t *testing.T) {
+		runDockerd(t, 3, false)
 	})
 	t.Run("evicted memory", func(t *testing.T) {
 		var memory *fcpb.ChunkedFile

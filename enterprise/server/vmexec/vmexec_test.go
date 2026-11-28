@@ -5,8 +5,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -19,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -205,4 +209,81 @@ func startExecService(t *testing.T) vmxpb.ExecClient {
 	require.NoError(t, err)
 	client := vmxpb.NewExecClient(conn)
 	return client
+}
+
+func TestCopyDirContents(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	dst := filepath.Join(t.TempDir(), "dst")
+	require.NoError(t, os.Mkdir(src, 0755))
+	require.NoError(t, os.Mkdir(dst, 0755))
+
+	// Nested read-only subdir with a file inside (verifies post-order chmod).
+	roDir := filepath.Join(src, "ro")
+	require.NoError(t, os.Mkdir(roDir, 0755))
+	dataFile := filepath.Join(roDir, "data.txt")
+	require.NoError(t, os.WriteFile(dataFile, []byte("hello"), 0640))
+	xattrsSupported := unix.Lsetxattr(dataFile, "user.test", []byte("val"), 0) == nil
+	if xattrsSupported {
+		require.NoError(t, unix.Lsetxattr(roDir, "user.dir", []byte("opaque"), 0))
+	}
+	require.NoError(t, os.Chmod(roDir, 0555))
+	t.Cleanup(func() { _ = os.Chmod(roDir, 0755) })
+
+	// Hardlinked pair.
+	orig := filepath.Join(src, "orig")
+	hard := filepath.Join(src, "hard")
+	require.NoError(t, os.WriteFile(orig, []byte("shared"), 0600))
+	require.NoError(t, os.Link(orig, hard))
+
+	// Symlink (dangling target should be preserved verbatim, not dereferenced).
+	require.NoError(t, os.Symlink("/nonexistent/target", filepath.Join(src, "link")))
+
+	// Set non-default mode on top-level src dir.
+	require.NoError(t, os.Chmod(src, 0710))
+
+	srcInfo, err := os.Lstat(src)
+	require.NoError(t, err)
+	require.NoError(t, vmexec.CopyDirContents(src, dst, srcInfo))
+	t.Cleanup(func() {
+		_ = os.Chmod(dst, 0755)
+		_ = os.Chmod(filepath.Join(dst, "ro"), 0755)
+	})
+
+	dstInfo, err := os.Lstat(dst)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0710), dstInfo.Mode().Perm())
+
+	dstROInfo, err := os.Lstat(filepath.Join(dst, "ro"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0555), dstROInfo.Mode().Perm())
+
+	data, err := os.ReadFile(filepath.Join(dst, "ro", "data.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(data))
+	dataInfo, err := os.Lstat(filepath.Join(dst, "ro", "data.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0640), dataInfo.Mode().Perm())
+
+	origInfo, err := os.Lstat(filepath.Join(dst, "orig"))
+	require.NoError(t, err)
+	hardInfo, err := os.Lstat(filepath.Join(dst, "hard"))
+	require.NoError(t, err)
+	origSt := origInfo.Sys().(*syscall.Stat_t)
+	hardSt := hardInfo.Sys().(*syscall.Stat_t)
+	assert.Equal(t, origSt.Ino, hardSt.Ino, "hardlinks should share an inode")
+
+	linkTarget, err := os.Readlink(filepath.Join(dst, "link"))
+	require.NoError(t, err)
+	assert.Equal(t, "/nonexistent/target", linkTarget)
+
+	if xattrsSupported {
+		buf := make([]byte, 32)
+		n, err := unix.Lgetxattr(filepath.Join(dst, "ro", "data.txt"), "user.test", buf)
+		require.NoError(t, err)
+		assert.Equal(t, "val", string(buf[:n]))
+
+		n, err = unix.Lgetxattr(filepath.Join(dst, "ro"), "user.dir", buf)
+		require.NoError(t, err)
+		assert.Equal(t, "opaque", string(buf[:n]))
+	}
 }

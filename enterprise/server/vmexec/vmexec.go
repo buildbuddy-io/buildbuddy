@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -200,6 +202,55 @@ func maintainVMExecReadySignal(ctx context.Context) {
 	}
 }
 
+// StartDockerd writes daemonJSON to /etc/docker/daemon.json and starts dockerd
+// in the background.
+func StartDockerd(ctx context.Context, daemonJSON []byte, enableTCP bool) error {
+	// Make sure we can locate both docker and dockerd.
+	for _, bin := range []string{"docker", "dockerd"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			return status.FailedPreconditionErrorf("init-dockerd enabled, but %q was not found in PATH: %s", bin, err)
+		}
+	}
+	if len(daemonJSON) > 0 {
+		if err := os.MkdirAll("/etc/docker", 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile("/etc/docker/daemon.json", daemonJSON, 0644); err != nil {
+			return err
+		}
+	}
+
+	log.Infof("Starting dockerd")
+
+	args := []string{}
+	if enableTCP {
+		args = append(args, "--host=unix:///var/run/docker.sock", "--host=tcp://0.0.0.0:2375", "--tls=false")
+	}
+	cmd := exec.CommandContext(ctx, "dockerd", args...)
+	// TODO(bduffany): update arm64 image and remove this check for arm64 as well.
+	if runtime.GOARCH != "amd64" {
+		// Note: despite the big scary INSECURE env var name, dockerd is completely sandboxed inside a VM, so it's secure for our usage. Once we upgrade our guest kernels to support nf tables, we can remove this.
+		cmd.Env = append(os.Environ(), "DOCKER_INSECURE_NO_IPTABLES_RAW=1")
+	}
+	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3306):
+	// enable logging by default
+	if *log.LogLevel == "debug" {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Errorf("dockerd exited with error: %s", err)
+		} else {
+			log.Infof("dockerd exited")
+		}
+	}()
+	return nil
+}
+
 func waitForDockerd(ctx context.Context, enableDockerdTCP bool) error {
 	ctx, cancel := context.WithTimeout(ctx, dockerdInitTimeout)
 	defer cancel()
@@ -355,9 +406,25 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 			}
 		}
 		x.rootMountAttempted = true
-		if err := mountContainerRoot(req.GetOverlayContainerRoot()); err != nil {
+		if err := mountContainerRoot(req.GetOverlayContainerRoot(), req.GetDockerd() != nil); err != nil {
 			return nil, status.WrapError(err, "mount container root")
 		}
+	}
+	// Started before the memory limit so that dockerd runs in the root cgroup
+	// and can create subcgroups for containers without conflicting with the task's cgroup.
+	if d := req.GetDockerd(); d != nil {
+		// The root is mounted at most once, so dockerd starts at most once.
+		if !req.GetMountContainerRoot() {
+			return nil, status.InvalidArgumentError("starting dockerd requires mounting the container root")
+		}
+		start := time.Now()
+		if err := StartDockerd(context.Background(), d.GetDaemonJson(), d.GetEnableTcp()); err != nil {
+			return nil, status.WrapError(err, "start dockerd")
+		}
+		if err := waitForDockerd(ctx, d.GetEnableTcp()); err != nil {
+			return nil, err
+		}
+		x.metrics.DockerdWaitDurationUsec = time.Since(start).Microseconds()
 	}
 	if req.GetMemoryLimitBytes() > 0 {
 		if err := limitTaskMemory(ctx, req.GetMemoryLimitBytes()); err != nil {
@@ -975,7 +1042,7 @@ func detectFormat(device string) (diskimage.Format, error) {
 
 // mountOverlayRoot mounts the container image read-only at lower, under an
 // overlay at root whose writes go to the scratch disk.
-func mountOverlayRoot(format diskimage.Format, root string) error {
+func mountOverlayRoot(format diskimage.Format, root string, initDockerd bool) error {
 	if mounted, err := isMounted(scratchMountPath); err != nil {
 		return err
 	} else if !mounted {
@@ -997,10 +1064,232 @@ func mountOverlayRoot(format diskimage.Format, root string) error {
 	}
 	// The root never needs to survive a guest crash.
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,volatile", lower, upper, work)
-	return syscall.Mount("overlay", root, "overlay", syscall.MS_NOATIME, opts)
+	if err := syscall.Mount("overlay", root, "overlay", syscall.MS_NOATIME, opts); err != nil {
+		return err
+	}
+	if !initDockerd {
+		return nil
+	}
+	// Container storage drivers refuse to run on overlayfs, so give them
+	// directories on the scratch disk, copying any pre-existing image content
+	// first so it is not hidden by the bind mount.
+	for _, name := range []string{"docker", "containers", "containerd"} {
+		p := root
+		symlinkOrInvalid := false
+		var targetInfo os.FileInfo
+		for _, part := range []string{"var", "lib", name} {
+			p = filepath.Join(p, part)
+			info, err := os.Lstat(p)
+			if err != nil {
+				if os.IsNotExist(err) {
+					if err := os.Mkdir(p, 0755); err != nil {
+						symlinkOrInvalid = true
+						break
+					}
+					targetInfo = nil
+					continue
+				}
+				symlinkOrInvalid = true
+				break
+			}
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				symlinkOrInvalid = true
+				break
+			}
+			targetInfo = info
+		}
+		if symlinkOrInvalid {
+			continue
+		}
+		src := filepath.Join(scratchMountPath, name)
+		if err := os.MkdirAll(src, 0755); err != nil {
+			return err
+		}
+		if targetInfo != nil {
+			// Copy from lower (the raw container image), not the merged
+			// overlay view, so overlay2 whiteouts and opaque xattrs are
+			// preserved.
+			lowerSrc := filepath.Join(lower, "var", "lib", name)
+			if err := CopyDirContents(lowerSrc, src, targetInfo); err != nil {
+				return err
+			}
+		}
+		if err := syscall.Mount(src, p, "", syscall.MS_BIND, ""); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func mountContainerRoot(overlay bool) error {
+type copyFileID struct {
+	dev uint64
+	ino uint64
+}
+
+// CopyDirContents recursively copies the contents of src into dst (which must
+// already exist), preserving permissions, ownership, symlinks, hardlinks, and
+// special files.
+func CopyDirContents(src, dst string, srcInfo os.FileInfo) error {
+	return copyDirTree(src, dst, srcInfo, make(map[copyFileID]string))
+}
+
+func copyDirTree(src, dst string, srcInfo os.FileInfo, hardlinks map[copyFileID]string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		info, err := os.Lstat(srcPath)
+		if err != nil {
+			return err
+		}
+		if err := copyEntry(srcPath, dstPath, info, hardlinks); err != nil {
+			return err
+		}
+	}
+	return applyFileMetadata(src, dst, srcInfo)
+}
+
+func copyEntry(src, dst string, info os.FileInfo, hardlinks map[copyFileID]string) error {
+	mode := info.Mode()
+	switch {
+	case mode.IsDir():
+		if err := os.Mkdir(dst, 0755); err != nil {
+			return err
+		}
+		return copyDirTree(src, dst, info, hardlinks)
+	case mode&os.ModeSymlink != 0:
+		target, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(target, dst); err != nil {
+			return err
+		}
+		if err := applyOwnership(dst, info); err != nil {
+			return err
+		}
+		return copyXattrs(src, dst)
+	case mode&os.ModeSocket != 0:
+		return nil
+	case mode&os.ModeNamedPipe != 0:
+		if err := unix.Mkfifo(dst, 0600); err != nil {
+			return err
+		}
+		return applyFileMetadata(src, dst, info)
+	case mode&os.ModeDevice != 0:
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return status.InternalErrorf("missing stat_t for device %s", src)
+		}
+		if err := unix.Mknod(dst, uint32(st.Mode), int(st.Rdev)); err != nil {
+			return err
+		}
+		return applyFileMetadata(src, dst, info)
+	case mode.IsRegular():
+		if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Nlink > 1 {
+			id := copyFileID{dev: uint64(st.Dev), ino: st.Ino}
+			if existing, ok := hardlinks[id]; ok {
+				return os.Link(existing, dst)
+			}
+			hardlinks[id] = dst
+		}
+		if err := copyRegularFile(src, dst); err != nil {
+			return err
+		}
+		return applyFileMetadata(src, dst, info)
+	default:
+		return nil
+	}
+}
+
+func copyRegularFile(src, dst string) (retErr error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := out.Close(); err != nil && retErr == nil {
+			retErr = err
+		}
+	}()
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func applyOwnership(dst string, info os.FileInfo) error {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil
+	}
+	return os.Lchown(dst, int(st.Uid), int(st.Gid))
+}
+
+func applyFileMetadata(src, dst string, info os.FileInfo) error {
+	if err := applyOwnership(dst, info); err != nil {
+		return err
+	}
+	if err := copyXattrs(src, dst); err != nil {
+		return err
+	}
+	return os.Chmod(dst, info.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky))
+}
+
+func copyXattrs(src, dst string) error {
+	size, err := unix.Llistxattr(src, nil)
+	if err != nil {
+		if errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.ENODATA) {
+			return nil
+		}
+		return err
+	}
+	if size == 0 {
+		return nil
+	}
+	buf := make([]byte, size)
+	size, err = unix.Llistxattr(src, buf)
+	if err != nil {
+		return err
+	}
+	var valBuf []byte
+	for rawName := range bytes.SplitSeq(buf[:size], []byte{0}) {
+		if len(rawName) == 0 {
+			continue
+		}
+		name := string(rawName)
+		valSize, err := unix.Lgetxattr(src, name, nil)
+		if err != nil {
+			if errors.Is(err, unix.ENODATA) {
+				continue
+			}
+			return err
+		}
+		if cap(valBuf) < valSize {
+			valBuf = make([]byte, valSize)
+		} else {
+			valBuf = valBuf[:valSize]
+		}
+		if valSize > 0 {
+			valSize, err = unix.Lgetxattr(src, name, valBuf)
+			if err != nil {
+				return err
+			}
+		}
+		if err := unix.Lsetxattr(dst, name, valBuf[:valSize], 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mountContainerRoot(overlay, initDockerd bool) error {
 	const root = "/mnt"
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
@@ -1011,7 +1300,7 @@ func mountContainerRoot(overlay bool) error {
 	}
 	switch {
 	case overlay:
-		if err := mountOverlayRoot(format, root); err != nil {
+		if err := mountOverlayRoot(format, root, initDockerd); err != nil {
 			return status.WrapError(err, "mount overlay root")
 		}
 	case format == diskimage.Ext4:
